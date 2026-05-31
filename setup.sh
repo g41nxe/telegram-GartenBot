@@ -18,7 +18,11 @@ BOLD='\033[1m'
 NC='\033[0m'
 
 ZIGBEE_PORT="${1:-/dev/ttyUSB0}"
-CURRENT_USER=$USER
+if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+    CURRENT_USER="$SUDO_USER"
+else
+    CURRENT_USER="$USER"
+fi
 CURRENT_HOME=$(getent passwd "$CURRENT_USER" | cut -d: -f6)
 VALVE_NAME="garden_valve"
 PAIRING_TIMEOUT=120
@@ -121,7 +125,8 @@ cd "$INSTALL_DIR"
 export NODE_OPTIONS="--max-old-space-size=400"
 npm install --omit=dev --ignore-scripts --no-audit --no-fund --prefer-offline
 
-
+log "Kompiliere TypeScript-Quellcode für Zigbee2MQTT..."
+npm run build
 
 
 # Restore originale Swap-Größe um die SD-Karte des Pi langfristig zu schonen
@@ -169,6 +174,9 @@ ok "Mittelweg-Dienst konfiguriert"
 # ══════════════════════════════════════════════════════════════
 log "[5/6] Richte systemd-Dienste ein..."
 
+NODE_PATH=$(command -v node || echo "/usr/bin/node")
+PYTHON_PATH=$(command -v python3 || echo "/usr/bin/python3")
+
 # Mittelweg-Dienst (Zigbee2MQTT)
 sudo tee /etc/systemd/system/zigbee2mqtt.service > /dev/null <<EOF
 [Unit]
@@ -180,7 +188,7 @@ Wants=mosquitto.service
 Type=simple
 User=${CURRENT_USER}
 WorkingDirectory=${INSTALL_DIR}
-ExecStart=/usr/bin/node ${INSTALL_DIR}/index.js
+ExecStart=${NODE_PATH} ${INSTALL_DIR}/index.js
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -201,7 +209,7 @@ Wants=mosquitto.service zigbee2mqtt.service
 Type=simple
 User=${CURRENT_USER}
 WorkingDirectory=${CURRENT_HOME}/garden
-ExecStart=/usr/bin/python3 -m src.daemon.main
+ExecStart=${PYTHON_PATH} -m src.daemon.main
 Restart=always
 RestartSec=5
 StandardOutput=journal
