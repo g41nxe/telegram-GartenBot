@@ -6,17 +6,33 @@ Write-Host "   Gartenbewässerung: Projekt-Bereitstellung auf dem Pi   " -Foregr
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host ""
 
+# Lade Standardwerte aus .env falls vorhanden
+$DefaultHost = "raspberrypi.local"
+$DefaultUser = "pi"
+
+if (Test-Path ".env") {
+    Get-Content ".env" | ForEach-Object {
+        if ($_ -match "^\s*DEPLOY_PI_HOST\s*=\s*(.+)$") {
+            $DefaultHost = $Matches[1].Trim()
+        }
+        if ($_ -match "^\s*DEPLOY_PI_USER\s*=\s*(.+)$") {
+            $DefaultUser = $Matches[1].Trim()
+        }
+    }
+}
+
 # Abfrage von IP/Hostname
-$PiHost = Read-Host "Geben Sie die IP-Adresse oder den Hostnamen des Pi ein [Voreinstellung: raspberrypi.local]"
+$PiHost = Read-Host "Geben Sie die IP-Adresse oder den Hostnamen des Pi ein [Voreinstellung: $DefaultHost]"
 if ([string]::IsNullOrEmpty($PiHost)) {
-    $PiHost = "raspberrypi.local"
+    $PiHost = $DefaultHost
 }
 
 # Abfrage des Benutzernamens
-$PiUser = Read-Host "Geben Sie den Benutzernamen des Pi ein [Voreinstellung: pi]"
+$PiUser = Read-Host "Geben Sie den Benutzernamen des Pi ein [Voreinstellung: $DefaultUser]"
 if ([string]::IsNullOrEmpty($PiUser)) {
-    $PiUser = "pi"
+    $PiUser = $DefaultUser
 }
+
 
 Write-Host ""
 Write-Host "Starte Übertragung zu ${PiUser}@${PiHost} via scp..." -ForegroundColor Cyan
