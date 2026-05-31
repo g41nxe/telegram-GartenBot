@@ -116,10 +116,11 @@ export npm_config_target_arch=arm
 export npm_config_platform=linux
 
 log "Installiere npm-Abhängigkeiten (kann einige Minuten dauern, bitte Geduld)..."
-# npm install statt npm ci ausführen (da in git clone manchmal keine package-lock.json enthalten ist)
+# npm install im Produktionsmodus ausführen, um Dev-Tools wie esbuild (verursacht SIGILL auf ARMv6) komplett zu ignorieren.
 cd "$INSTALL_DIR"
 export NODE_OPTIONS="--max-old-space-size=400"
-npm install --no-audit --no-fund --prefer-offline
+npm install --omit=dev --ignore-scripts --no-audit --no-fund --prefer-offline
+
 
 
 
