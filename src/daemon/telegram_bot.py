@@ -73,12 +73,23 @@ def broadcast_notification(message: str):
 # --- Hauptmenüs (Tastaturen) ---
 
 def get_main_keyboard() -> dict:
-    """Erstellt die permanente Haupttastatur unten im Chat."""
+    """Erstellt die permanente Haupttastatur unten im Chat.
+    
+    Der '🔧 Ventil koppeln'-Button wird nur angezeigt, solange das Ventil
+    noch nicht gekoppelt ist (Ventil-Kopplung noch nicht durchgeführt).
+    """
+    from . import mqtt_client
+    valve_paired = mqtt_client.get_valve_status()["last_update"] is not None
+
+    rows = [
+        [{"text": "📊 Status anzeigen"}, {"text": "📅 Zeitpläne"}],
+        [{"text": "🟢 Bewässern starten"}, {"text": "🔴 Sofort Stopp"}]
+    ]
+    if not valve_paired:
+        rows.append([{"text": "🔧 Ventil koppeln"}])
+
     return {
-        "keyboard": [
-            [{"text": "📊 Status anzeigen"}, {"text": "📅 Zeitpläne"}],
-            [{"text": "🟢 Bewässern starten"}, {"text": "🔴 Sofort Stopp"}]
-        ],
+        "keyboard": rows,
         "resize_keyboard": True
     }
 
@@ -284,6 +295,54 @@ def _get_wmo_description(code: int) -> str:
 
 # --- Befehlsverarbeitung ---
 
+# --- Ventil-Kopplung ---
+
+def _start_pairing(chat_id: int):
+    """Startet die Ventil-Kopplung im Hintergrund und informiert den Nutzer."""
+    from . import pairing
+    send_message(
+        chat_id,
+        "🔧 *Ventil-Kopplung gestartet*\n\n"
+        "Bitte drücke jetzt den *Reset-Knopf* am Sonoff Hydro ONE für "
+        "*5 Sekunden*, bis die LED schnell blinkt.\n\n"
+        "⏱️ Das System wartet bis zu 90 Sekunden auf das Ventil."
+    )
+    pairing.start_pairing(chat_id, send_message)
+
+
+def handle_setup(chat_id: int):
+    """Verarbeitet den /setup-Befehl zur Ventil-Kopplung."""
+    from . import mqtt_client, pairing
+
+    if pairing.is_pairing_active():
+        send_message(
+            chat_id,
+            "⏳ Eine Ventil-Kopplung läuft bereits im Hintergrund. Bitte warten."
+        )
+        return
+
+    valve_paired = mqtt_client.get_valve_status()["last_update"] is not None
+
+    if valve_paired:
+        # Bestätigung anfordern – könnte ein Gerätetausch sein
+        send_message(
+            chat_id,
+            "⚠️ *Ein Ventil ist bereits aktiv.*\n\n"
+            "Möchtest du trotzdem eine neue Ventil-Kopplung starten?\n"
+            "Das bestehende Ventil wird dabei überschrieben.\n\n"
+            "_(Nur sinnvoll bei Gerätetausch)_",
+            {
+                "inline_keyboard": [[
+                    {"text": "❌ Abbrechen",       "callback_data": "setup_cancel"},
+                    {"text": "✅ Ja, neu koppeln", "callback_data": "setup_confirm"}
+                ]]
+            }
+        )
+        return
+
+    _start_pairing(chat_id)
+
+
 def handle_status(chat_id: int):
     """Erstellt und sendet die Statusübersicht."""
     # 1. Ventil-Status
@@ -298,21 +357,16 @@ def handle_status(chat_id: int):
         broker_status = "⚡ Simulationsmodus (Lokaler Test)"
     else:
         broker_status = "🟢 Aktiv (Verbunden)" if mqtt_client.is_broker_connected() else "🔴 Inaktiv (Kein Dongle / Keine Verbindung)"
-        if status["last_update"] is None:
-            valve_connected = "🔴 Nicht gekoppelt / Offline"
-            warning_text = "⚠️ **Achtung:** Ventil hat nie ein Signal gesendet."
-        else:
-            warning_text = ""
-            try:
-                last_up = datetime.fromisoformat(status["last_update"])
-                time_str = last_up.strftime("%d.%m. %H:%M:%S Uhr")
-                valve_connected = f"🟢 Gekoppelt (Letztes Signal: {time_str})"
-                # Check for 5‑minute timeout
-                if (datetime.now() - last_up).total_seconds() > 300:
-                    warning_text = "⚠️ **Achtung:** Ventil seit über 5 Minuten kein Signal mehr."
-            except Exception:
-                valve_connected = "🟢 Gekoppelt / Aktiv"
-                warning_text = ""
+        
+    if status["last_update"] is None:
+        valve_connected = "🔴 Nicht gekoppelt / Offline"
+    else:
+        try:
+            last_up = datetime.fromisoformat(status["last_update"])
+            time_str = last_up.strftime("%d.%m. %H:%M:%S Uhr")
+            valve_connected = f"🟢 Gekoppelt (Letztes Signal: {time_str})"
+        except Exception:
+            valve_connected = "🟢 Gekoppelt / Aktiv"
             
     # 3. Aktive Bewässerung
     active = scheduler.get_active_cycle()
@@ -358,9 +412,7 @@ def handle_status(chat_id: int):
     msg = (
         f"📊 **System-Status Gartenbewässerung**\n\n"
         f"🔌 **MQTT-Broker:** {broker_status}\n"
-        f"📶 **Ventil-Verbindung:** {valve_connected}\n"
-        f"{warning_text}\n"
-        f"\n"
+        f"📶 **Ventil-Verbindung:** {valve_connected}\n\n"
         f"💧 **Ventil-Zustand:** {state_icon}\n"
         f"{battery_icon} **Batterie:** {status['battery']}%\n"
         f"📡 **Signalqualität:** {status['linkquality']} LQI\n"
@@ -589,6 +641,8 @@ def _process_message(msg_obj: dict):
         handle_status(chat_id)
     elif text == "📅 Zeitsteuerung" or text == "📅 Zeitpläne" or text.startswith("/zeitplan"):
         handle_schedules(chat_id)
+    elif text == "🔧 Ventil koppeln" or text.startswith("/setup"):
+        handle_setup(chat_id)
     elif text == "🟢 Bewässern starten":
         # Launch manual wizard
         manual_states[chat_id] = {"step": 1}
@@ -846,7 +900,16 @@ def _process_callback_query(cb_obj: dict):
             del manual_states[chat_id]
         answer_callback_query(cb_id, "Abgebrochen")
         send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
-        
+
+    # --- Ventil-Kopplung Callbacks ---
+    elif data == "setup_confirm":
+        answer_callback_query(cb_id, "Ventil-Kopplung wird gestartet...")
+        _start_pairing(chat_id)
+
+    elif data == "setup_cancel":
+        answer_callback_query(cb_id, "Abgebrochen")
+        send_message(chat_id, "❌ Ventil-Kopplung abgebrochen.", get_main_keyboard())
+
     else:
         answer_callback_query(cb_id)
 

@@ -40,7 +40,7 @@ graph TD
 ├── CONTEXT.md               # Projektspezifische Ubiquitous Language (Glossar)
 ├── README.md                # Diese Dokumentation
 ├── deploy.ps1               # PowerShell Bereitstellungsskript für Windows
-├── setup.sh                 # Automatisches Pi-Installationsskript
+├── setup.sh                 # Vollautomatisches Pi-Installationsskript (alle Dienste)
 ├── garden.db                # Lokale SQLite-Datenbank
 ├── zeitsteuerung_guide.md   # Detaillierter Leitfaden zur Zeitsteuerung
 ├── docs/
@@ -62,47 +62,51 @@ graph TD
 
 ## 🚀 Installation & Bereitstellung auf dem Pi Zero W
 
-### 1. Voraussetzungen auf dem Raspberry Pi
-1. Ein angeschlossener **Zigbee USB-Koordinator** (z. B. *Sonoff Zigbee 3.0 USB Dongle Plus*).
-2. Installierter **Mosquitto MQTT Broker** und **Zigbee2MQTT** (das Ventil muss als Friendly Name `garden_valve` gekoppelt sein).
-3. Installierte MQTT-Bibliothek für Python:
+### Voraussetzungen
+1. **Funk-Koordinator** (Sonoff Zigbee 3.0 USB Dongle Plus) am Pi eingesteckt
+2. **Sonoff Hydro ONE Ventil** griffbereit (wird während des Setups gekoppelt)
+3. `.env`-Datei mit deinen Zugangsdaten (aus `.env.template` erstellen):
    ```bash
-   pip install paho-mqtt
+   cp .env.template .env
+   nano .env
+   ```
+   ```ini
+   TELEGRAM_BOT_TOKEN="DEIN_BOT_TOKEN_VOM_BOTFATHER"
+   TELEGRAM_ALLOWED_USER_IDS="DEINE_TELEGRAM_USER_ID"
+   LATITUDE=52.502778
+   LONGITUDE=13.515556
+   RAIN_THRESHOLD_MM=3.0
    ```
 
-### 2. Projektdateien übertragen (Deployment)
-Das Projekt enthält ein PowerShell-Skript zur schnellen Übertragung vom Entwicklungs-PC zum Pi:
+### 1. Projektdateien übertragen (Windows → Pi)
 ```powershell
 .\deploy.ps1
 ```
-*Geben Sie bei der Abfrage einfach die IP-Adresse (z. B. `192.168.0.165`) und den SSH-Benutzernamen (z. B. `g41nxe`) des Pi ein.*
+*IP-Adresse und SSH-Benutzernamen des Pi eingeben, wenn gefragt.*
 
-### 3. Konfiguration einrichten (`.env`)
-Erstellen Sie im Projektordner auf dem Pi eine `.env`-Datei:
+### 2. Vollautomatisches Setup auf dem Pi starten
 ```bash
-cp .env.template .env
-nano .env
-```
-Tragen Sie dort Ihre Zugangsdaten ein:
-```ini
-TELEGRAM_BOT_TOKEN="DEIN_BOT_TOKEN_VOM_BOTFATHER"
-TELEGRAM_ALLOWED_USER_IDS="DEINE_TELEGRAM_USER_ID"
-LATITUDE=52.502778
-LONGITUDE=13.515556
-RAIN_THRESHOLD_MM=3.0
-```
-
-### 4. Als systemd-Service einrichten (Autostart & Crash-Resistenz)
-Starten Sie das automatisierte Installationsskript auf dem Pi:
-```bash
+ssh <user>@<pi-ip>
 cd ~/garden && bash setup.sh
 ```
-Das Skript richtet die SQLite-Datenbank ein, erstellt den Linux-Systemdienst `garden-irrigation.service` und startet diesen.
 
-Prüfen Sie den Status mit:
+Das Skript richtet **alle drei Systemdienste** vollautomatisch ein:
+
+| Dienst | Beschreibung |
+|---|---|
+| `mosquitto` | MQTT-Broker |
+| `zigbee2mqtt` | Mittelweg-Dienst (Funk-Koordinator → MQTT) |
+| `garden-irrigation` | Bewässerungs-Daemon |
+
+Die Startreihenfolge beim Booten ist: **Mosquitto → Zigbee2MQTT → Bewässerungs-Daemon**
+
+> **Während des Setups:** Das Skript fordert dich auf, den **Reset-Knopf am Sonoff Hydro ONE 5 Sekunden** zu halten. Das Ventil wird danach automatisch erkannt, auf den Namen `garden_valve` konfiguriert und die Kopplung abgeschlossen.
+
+### 3. Ergebnis prüfen
 ```bash
-sudo systemctl status garden-irrigation.service
+sudo systemctl status mosquitto zigbee2mqtt garden-irrigation
 ```
+Oder einfach den Telegram-Bot öffnen und `/status` senden.
 
 ---
 

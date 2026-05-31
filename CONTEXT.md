@@ -48,6 +48,10 @@ _Avoid_: Abrufzeitpunkt, API-Zeit
 Ein Bewässerungslauf, der durch eine maximale Dauer (Zeitlimit) und eine maximale Wassermenge (Volumenlimit) definiert ist. Die Bewässerung stoppt automatisch, sobald einer der beiden Grenzwerte zuerst erreicht wird.
 _Avoid_: Dual-Modus, Mengen-Guss, Zeit-Guss
 
+**Ventil-Kopplung**:
+Der einmalige, geführte Einrichtungsvorgang im Telegram-Bot (`/setup`), bei dem das Ventil erstmals mit dem Funk-Koordinator verbunden wird. Der Bewässerungs-Daemon aktiviert dabei temporär den Koppelmodus des Mittelweg-Dienstes, wartet auf das Beitrittssignal des Ventils und weist ihm automatisch den Systemnamen `garden_valve` zu.
+_Avoid_: Pairing, Registrierung, Gerät hinzufügen
+
 
 
 
