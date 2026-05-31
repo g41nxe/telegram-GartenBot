@@ -114,4 +114,9 @@ env/
 # Poetry
 poetry.lock
 
+# SQLite Databases (lokale Laufzeitdaten)
+*.db
+*.sqlite3
+
 # End of file
+
