@@ -84,9 +84,9 @@ cd "$INSTALL_DIR" && npm ci --silent
 ok "Mittelweg-Dienst installiert"
 
 # ══════════════════════════════════════════════════════════════
-# SCHRITT 4: Konfiguration & Ventil-Kopplung (vollautomatisch)
+# SCHRITT 4: Konfiguration des Mittelweg-Dienstes
 # ══════════════════════════════════════════════════════════════
-log "[4/6] Konfiguriere Mittelweg-Dienst und koppele Ventil..."
+log "[4/6] Konfiguriere Mittelweg-Dienst..."
 
 mkdir -p "$INSTALL_DIR/data"
 cat > "$INSTALL_DIR/data/configuration.yaml" <<EOF
@@ -96,7 +96,7 @@ cat > "$INSTALL_DIR/data/configuration.yaml" <<EOF
 serial:
   port: ${ZIGBEE_PORT}
 
-permit_join: true
+permit_join: false
 
 mqtt:
   base_topic: zigbee2mqtt
@@ -108,69 +108,8 @@ frontend:
 homeassistant: false
 EOF
 
-# Zigbee2MQTT temporär starten für die Kopplung
-node "$INSTALL_DIR/index.js" &
-Z2M_PID=$!
-cleanup_z2m() { kill "$Z2M_PID" 2>/dev/null || true; wait "$Z2M_PID" 2>/dev/null || true; }
-trap cleanup_z2m EXIT
+ok "Mittelweg-Dienst konfiguriert"
 
-log "Warte auf Start des Mittelweg-Dienstes..."
-sleep 10
-
-echo ""
-echo -e "${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${YELLOW}${BOLD}  JETZT: Ventil (Sonoff Hydro ONE) in Pairing-Modus setzen${NC}"
-echo -e "${YELLOW}${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "  → Reset-Knopf am Ventil ${BOLD}5 Sekunden${NC} gedrückt halten"
-echo -e "  → Warten bis LED ${BOLD}schnell blinkt${NC}"
-echo -e "  → System erkennt das Ventil automatisch (max. ${PAIRING_TIMEOUT} Sek.)"
-echo ""
-
-# Auf Pairing-Event lauschen
-log "Warte auf Ventil-Erkennungssignal..."
-IEEE_ADDRESS=""
-ELAPSED=0
-
-while [ $ELAPSED -lt $PAIRING_TIMEOUT ]; do
-    EVENT=$(mosquitto_sub -h localhost -t "zigbee2mqtt/bridge/event" -C 1 -W 5 2>/dev/null || true)
-    if echo "$EVENT" | grep -q '"device_joined"'; then
-        IEEE_ADDRESS=$(echo "$EVENT" | grep -o '"ieee_address":"[^"]*"' | grep -o '0x[^"]*')
-        break
-    fi
-    ELAPSED=$((ELAPSED + 5))
-    REMAINING=$((PAIRING_TIMEOUT - ELAPSED))
-    printf "\r  ⏳ Warte auf Ventil... noch %d Sek.  " "$REMAINING"
-done
-echo ""
-
-if [ -z "$IEEE_ADDRESS" ]; then
-    cleanup_z2m
-    trap - EXIT
-    fail "Kein Ventil erkannt nach ${PAIRING_TIMEOUT} Sekunden.\n  Reset-Knopf 5 Sek. halten und Setup erneut starten."
-fi
-
-ok "Ventil erkannt! IEEE-Adresse: ${IEEE_ADDRESS}"
-
-# Automatisch umbenennen auf garden_valve
-log "Benenne Ventil auf '${VALVE_NAME}' um..."
-mosquitto_pub -h localhost \
-    -t "zigbee2mqtt/bridge/request/device/rename" \
-    -m "{\"from\":\"${IEEE_ADDRESS}\",\"to\":\"${VALVE_NAME}\"}"
-sleep 3
-
-CONFIRM=$(mosquitto_sub -h localhost -t "zigbee2mqtt/bridge/response/device/rename" -C 1 -W 5 2>/dev/null || true)
-if echo "$CONFIRM" | grep -q '"status":"ok"'; then
-    ok "Ventil als '${VALVE_NAME}' registriert"
-else
-    warn "Umbenennung konnte nicht bestätigt werden – bitte in der Web-UI prüfen (http://$(hostname -I | awk '{print $1}'):8080)"
-fi
-
-# permit_join deaktivieren
-sed -i 's/permit_join: true/permit_join: false/' "$INSTALL_DIR/data/configuration.yaml"
-ok "permit_join deaktiviert"
-
-cleanup_z2m
-trap - EXIT
 
 # ══════════════════════════════════════════════════════════════
 # SCHRITT 5: Alle systemd-Dienste einrichten
