@@ -52,11 +52,19 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host ""
     Write-Host "🎉 Übertragung erfolgreich abgeschlossen!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Führen Sie nun die folgenden Schritte aus:" -ForegroundColor Yellow
-    Write-Host "1. Verbinden Sie sich per SSH mit Ihrem Pi:" -ForegroundColor Yellow
-    Write-Host "   ssh ${PiUser}@${PiHost}" -ForegroundColor Green
-    Write-Host "2. Starten Sie das automatische Setup-Skript auf dem Pi:" -ForegroundColor Yellow
-    Write-Host "   cd ~/garden && bash setup.sh" -ForegroundColor Green
+    Write-Host "Starte den Bewässerungs-Daemon auf dem Pi neu, um den neuen Code zu aktivieren..." -ForegroundColor Cyan
+    
+    # Führe einen schnellen Neustart des Daemons über SSH aus
+    ssh -o ConnectTimeout=5 "${PiUser}@${PiHost}" "sudo systemctl restart garden-irrigation.service"
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "⚡ Bewässerungs-Daemon erfolgreich neugestartet!" -ForegroundColor Green
+        Write-Host "ℹ️ Der neue Code ist jetzt live aktiv." -ForegroundColor Green
+    } else {
+        Write-Host "⚠️ Warnung: Der Daemon konnte nicht neugestartet werden. Möglicherweise fehlt sudo-Passwortfreiheit auf dem Pi." -ForegroundColor Yellow
+        Write-Host "   Führen Sie manuell aus: ssh ${PiUser}@${PiHost} 'sudo systemctl restart garden-irrigation.service'" -ForegroundColor Gray
+    }
 } else {
     Write-Host "❌ Fehler bei der Übertragung. Prüfen Sie die Verbindung und Zugangsdaten." -ForegroundColor Red
 }
+
