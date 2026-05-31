@@ -116,8 +116,11 @@ export npm_config_target_arch=arm
 export npm_config_platform=linux
 
 log "Installiere npm-Abhängigkeiten (kann einige Minuten dauern, bitte Geduld)..."
-# npm ci mit RAM-schonenden Parametern ausführen
-cd "$INSTALL_DIR" && node --max-old-space-size=400 /usr/bin/npm ci --no-audit --no-fund --prefer-offline
+# npm ci mit RAM-schonenden Parametern ausführen (npm direkt aufrufen, Node.js-Optionen über NODE_OPTIONS übergeben)
+cd "$INSTALL_DIR"
+export NODE_OPTIONS="--max-old-space-size=400"
+npm ci --no-audit --no-fund --prefer-offline
+
 
 # Restore originale Swap-Größe um die SD-Karte des Pi langfristig zu schonen
 if [ -f /etc/dphys-swapfile.bak ]; then
