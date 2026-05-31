@@ -23,8 +23,14 @@ Write-Host "Starte Übertragung zu ${PiUser}@${PiHost} via scp..." -ForegroundCo
 Write-Host "Ggf. werden Sie gleich nach dem SSH-Passwort des Pi gefragt." -ForegroundColor Gray
 Write-Host ""
 
-# Ausführung der Übertragung (ohne das temporäre git clone Verzeichnis falls noch da)
-scp -r . "${PiUser}@${PiHost}:/home/${PiUser}/garden"
+# Ausführung der Übertragung der notwendigen Ordner und Dateien (ohne .git, garden.db, etc. zur Vermeidung von Konflikten)
+$TransferItems = @("src", "tests", "docs", ".agents", "README.md", "CONTEXT.md", "setup.sh", "deploy.ps1", ".env", ".env.template")
+foreach ($Item in $TransferItems) {
+    if (Test-Path $Item) {
+        scp -r $Item "${PiUser}@${PiHost}:/home/${PiUser}/garden/"
+    }
+}
+
 
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
