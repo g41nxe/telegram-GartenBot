@@ -19,7 +19,7 @@ NC='\033[0m'
 
 ZIGBEE_PORT="${1:-/dev/ttyUSB0}"
 CURRENT_USER=$USER
-CURRENT_HOME=$HOME
+CURRENT_HOME=$(getent passwd "$CURRENT_USER" | cut -d: -f6)
 VALVE_NAME="garden_valve"
 PAIRING_TIMEOUT=120
 
