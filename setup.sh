@@ -109,9 +109,15 @@ if [ -f /etc/dphys-swapfile ]; then
     log "Swap-Speicher temporär auf 1024MB erhöht."
 fi
 
+log "Konfiguriere npm für ARMv6 pre-built Binaries..."
+# Setze Umgebungsvariablen für npm, um nach vorkompilierten ARM-Binärdateien zu suchen
+export npm_config_arch=arm
+export npm_config_target_arch=arm
+export npm_config_platform=linux
+
 log "Installiere npm-Abhängigkeiten (kann einige Minuten dauern, bitte Geduld)..."
-# npm mit RAM-schonenden Parametern ausführen (max-old-space-size begrenzen, um OOM-Crashes zu verhindern)
-cd "$INSTALL_DIR" && node --max-old-space-size=400 /usr/bin/npm ci --no-audit --no-fund
+# npm ci mit RAM-schonenden Parametern ausführen
+cd "$INSTALL_DIR" && node --max-old-space-size=400 /usr/bin/npm ci --no-audit --no-fund --prefer-offline
 
 # Restore originale Swap-Größe um die SD-Karte des Pi langfristig zu schonen
 if [ -f /etc/dphys-swapfile.bak ]; then
@@ -122,6 +128,7 @@ if [ -f /etc/dphys-swapfile.bak ]; then
 fi
 
 ok "Mittelweg-Dienst installiert"
+
 
 
 # ══════════════════════════════════════════════════════════════
