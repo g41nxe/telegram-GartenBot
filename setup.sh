@@ -49,9 +49,28 @@ ok "System-Pakete installiert"
 # SCHRITT 2: Node.js für Zigbee2MQTT
 # ══════════════════════════════════════════════════════════════
 log "[2/6] Installiere Node.js 20..."
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - >/dev/null 2>&1
-sudo apt install -y nodejs >/dev/null 2>&1
-ok "Node.js $(node --version) installiert"
+
+ARCH=$(uname -m)
+if [ "$ARCH" = "armv6l" ]; then
+    log "ARMv6-Architektur erkannt (z.B. Raspberry Pi Zero W / Pi 1)."
+    log "Nodesource unterstützt ARMv6 nicht offiziell. Verwende inoffizielle Build-Quellen..."
+    if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -d'.' -f1)" != "v20" ]; then
+        log "Lade inoffizielles Node.js v20.9.0-Build für ARMv6 herunter..."
+        cd /tmp
+        wget -q https://unofficial-builds.nodejs.org/download/release/v20.9.0/node-v20.9.0-linux-armv6l.tar.xz
+        log "Entpacke Node.js nach /usr/local..."
+        sudo tar -xJf node-v20.9.0-linux-armv6l.tar.xz -C /usr/local --strip-components=1
+        rm node-v20.9.0-linux-armv6l.tar.xz
+    else
+        log "Eine kompatible Node.js-Version ($(node -v)) ist bereits installiert."
+    fi
+else
+    # Standard-Installation für ARMv7/ARMv8/x86_64 via Nodesource
+    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - >/dev/null 2>&1
+    sudo apt install -y nodejs >/dev/null 2>&1
+fi
+
+ok "Node.js $(node -v 2>/dev/null || node --version 2>/dev/null || echo 'unbekannt') installiert"
 
 # ══════════════════════════════════════════════════════════════
 # SCHRITT 3: Mittelweg-Dienst (Zigbee2MQTT) installieren
@@ -79,9 +98,31 @@ else
     git clone --depth 1 https://github.com/Koenkk/zigbee2mqtt.git "$INSTALL_DIR" >/dev/null 2>&1
 fi
 
-log "Installiere npm-Abhängigkeiten (kann einige Minuten dauern)..."
-cd "$INSTALL_DIR" && npm ci --silent
+log "Optimiere Swap-Speicher für RAM-schonende NPM-Installation (Erstelle 1024MB temporären Swap)..."
+# Prüfen, ob wir die dphys-swapfile Konfiguration anpassen können
+if [ -f /etc/dphys-swapfile ]; then
+    # Sichere originale Konfiguration
+    sudo cp /etc/dphys-swapfile /etc/dphys-swapfile.bak
+    # Setze CONF_SWAPSIZE temporär auf 1024
+    sudo sed -i 's/^CONF_SWAPSIZE=.*/CONF_SWAPSIZE=1024/' /etc/dphys-swapfile
+    sudo systemctl restart dphys-swapfile.service
+    log "Swap-Speicher temporär auf 1024MB erhöht."
+fi
+
+log "Installiere npm-Abhängigkeiten (kann einige Minuten dauern, bitte Geduld)..."
+# npm mit RAM-schonenden Parametern ausführen (max-old-space-size begrenzen, um OOM-Crashes zu verhindern)
+cd "$INSTALL_DIR" && node --max-old-space-size=400 /usr/bin/npm ci --no-audit --no-fund
+
+# Restore originale Swap-Größe um die SD-Karte des Pi langfristig zu schonen
+if [ -f /etc/dphys-swapfile.bak ]; then
+    log "Stelle originalen Swap-Speicher wieder her..."
+    sudo mv /etc/dphys-swapfile.bak /etc/dphys-swapfile
+    sudo systemctl restart dphys-swapfile.service
+    ok "Swap-Speicher zurückgesetzt"
+fi
+
 ok "Mittelweg-Dienst installiert"
+
 
 # ══════════════════════════════════════════════════════════════
 # SCHRITT 4: Konfiguration des Mittelweg-Dienstes
