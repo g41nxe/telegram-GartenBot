@@ -1,0 +1,118 @@
+import json
+import logging
+import urllib.request
+import urllib.error
+from datetime import datetime, timedelta
+from . import config, database
+
+logger = logging.getLogger("garden_weather")
+
+def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int]:
+    """
+    Ruft stündliche Niederschlagsdaten der letzten 24h, der nächsten 24h,
+    die aktuelle Temperatur und den aktuellen Wettercode aus der Open-Meteo API ab.
+    Gibt ein Tuple (regen_letzte_24h_mm, regen_naechste_24h_mm, temp_c, wetter_code) zurück.
+    """
+    # Open-Meteo-Abfrage: past_days=1 (letzte 24h), forecast_days=2 (kommende 24h) sowie aktuelle Temperatur & Wettercode
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat}&longitude={lon}&current=temperature_2m,weather_code"
+        f"&hourly=precipitation&timezone=auto&past_days=1&forecast_days=2"
+    )
+    
+    try:
+        logger.info(f"Rufe Wetterdaten ab: {url}")
+        req = urllib.request.Request(url, headers={'User-Agent': 'GardenIrrigationDaemon/1.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            
+        current = data.get("current", {})
+        current_temp = float(current.get("temperature_2m", 0.0))
+        weather_code = int(current.get("weather_code", 0))
+        
+        hourly = data.get("hourly", {})
+        times = hourly.get("time", [])
+        precip = hourly.get("precipitation", [])
+        
+        if not times or not precip:
+            logger.warning("Keine stündlichen Niederschlagsdaten in der API-Antwort gefunden.")
+            return 0.0, 0.0, current_temp, weather_code
+            
+        # Finde den Index für die aktuelle Stunde
+        current_time_str = datetime.now().strftime("%Y-%m-%dT%H:00")
+        
+        current_idx = -1
+        for idx, t_str in enumerate(times):
+            if t_str == current_time_str:
+                current_idx = idx
+                break
+                
+        # Fallback, falls die genaue Stunde nicht exakt matched (z.B. Zeitzonen-Offset)
+        if current_idx == -1:
+            # past_days=1 hat 24 Stunden, also sollte der heutige Tag ab Index 24 starten
+            current_idx = 24
+            logger.warning(f"Exakte Stunde {current_time_str} nicht gefunden. Nutze Fallback-Index {current_idx}.")
+            
+        # Summiere die letzten 24 Stunden vor der aktuellen Stunde
+        start_past_idx = max(0, current_idx - 24)
+        rain_last_24h = sum(precip[start_past_idx:current_idx])
+        
+        # Summiere die nächsten 24 Stunden ab der aktuellen Stunde
+        end_forecast_idx = min(len(precip), current_idx + 24)
+        rain_next_24h = sum(precip[current_idx:end_forecast_idx])
+        
+        # Werte runden auf 2 Dezimalstellen
+        rain_last_24h = round(rain_last_24h, 2)
+        rain_next_24h = round(rain_next_24h, 2)
+        
+        logger.info(
+            f"Wetterdaten geladen - Temp: {current_temp}°C, Code: {weather_code}, "
+            f"Regen 24h: {rain_last_24h}mm, Vorhersage: {rain_next_24h}mm"
+        )
+        
+        # In lokaler Datenbank für spätere Anzeige archivieren
+        database.log_weather(rain_last_24h, rain_next_24h, current_temp, weather_code)
+        
+        return rain_last_24h, rain_next_24h, current_temp, weather_code
+        
+    except urllib.error.URLError as e:
+        logger.error(f"Netzwerkfehler beim Abruf der Wetterdaten: {e}")
+    except Exception as e:
+        logger.error(f"Unerwarteter Fehler beim Verarbeiten der Wetterdaten: {e}")
+        
+    # Im Fehlerfall versuchen wir den letzten lokal gespeicherten Zustand zu lesen
+    last_stored = database.get_last_weather()
+    if last_stored:
+        logger.info("Nutze lokal archivierte Wetterdaten aufgrund eines API-Fehlers.")
+        return (
+            last_stored["rain_last_24h_mm"], 
+            last_stored["rain_next_24h_mm"],
+            last_stored.get("current_temp", 0.0),
+            last_stored.get("weather_code", 0)
+        )
+        
+    return 0.0, 0.0, 0.0, 0
+
+def should_skip_watering() -> tuple[bool, str]:
+    """
+    Prüft, ob die Summe aus gefallendem Regen (letzte 24h) und
+    erwartetem Regen (nächste 24h) den konfigurierten Schwellenwert überschreitet.
+    Gibt ein Tuple (should_skip, details_text) zurück.
+    """
+    rain_last, rain_next, _, _ = get_weather_data(config.LATITUDE, config.LONGITUDE)
+    total_rain = rain_last + rain_next
+    
+    if total_rain >= config.RAIN_THRESHOLD_MM:
+        details = (
+            f"Regenschwelle überschritten: Gesamt {total_rain}mm "
+            f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {config.RAIN_THRESHOLD_MM}mm)"
+        )
+        logger.info(f"Bewässerung überspringen: {details}")
+        return True, details
+    else:
+        details = (
+            f"Regen liegt unter Grenzwert: Gesamt {total_rain}mm "
+            f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {config.RAIN_THRESHOLD_MM}mm)"
+        )
+        logger.info(f"Bewässerung freigegeben: {details}")
+        return False, details
