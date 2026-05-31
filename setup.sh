@@ -116,10 +116,11 @@ export npm_config_target_arch=arm
 export npm_config_platform=linux
 
 log "Installiere npm-Abhängigkeiten (kann einige Minuten dauern, bitte Geduld)..."
-# npm ci mit RAM-schonenden Parametern ausführen (npm direkt aufrufen, Node.js-Optionen über NODE_OPTIONS übergeben)
+# npm install statt npm ci ausführen (da in git clone manchmal keine package-lock.json enthalten ist)
 cd "$INSTALL_DIR"
 export NODE_OPTIONS="--max-old-space-size=400"
-npm ci --no-audit --no-fund --prefer-offline
+npm install --no-audit --no-fund --prefer-offline
+
 
 
 # Restore originale Swap-Größe um die SD-Karte des Pi langfristig zu schonen
