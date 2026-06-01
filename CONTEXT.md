@@ -61,6 +61,28 @@ Der systeminterne Kommunikationskanal zur entkoppelten Weiterleitung von Zustand
 _Avoid_: Event-Bus, Message-Broker
 
 
+## Entwicklungs- und Refactoring-Richtlinien (Hexagonal Architecture)
+
+Für alle zukünftigen Weiterentwicklungen, Anpassungen und Code-Änderungen am Bewässerungs-Daemon gelten die folgenden verbindlichen Richtlinien:
+
+### 1. Striktes Hexagonal-Layout (Ports & Adapters)
+* **Core (`src/daemon/core/`)**: Enthält die reine Geschäftslogik (z. B. `event_bus.py`, `watering_controller.py`). Hier dürfen **keine** externen Infrastruktur-Bibliotheken (wie `paho-mqtt` oder UI-Spezifika) direkt importiert oder referenziert werden.
+* **Adapters (`src/daemon/adapters/`)**: Kapselt alle Infrastruktur-Schnittstellen (SQLite-Datenbank, MQTT-Verbindungsseam, Koppel-Worker, Wetter-Dienst).
+* **UI (`src/daemon/ui/`)**: Enthält die gesamte Telegram-Präsentationsschicht (Clients, Menü-GUI und Wizard-Zustandsmaschinen).
+* **main.py als IoC-Wiring-Fassade**: Der Daemon-Einstiegspunkt (`src/daemon/main.py`) bleibt flach auf Root-Ebene erhalten, um die Abwärtskompatibilität zu den Pi-Systemd-Diensten zu sichern. `main.py` dient als Dependency-Injection-Schnittstelle, die alle Core-Komponenten und Adapter verdrahtet.
+
+### 2. Thread-Sicherheit & Deadlock-Vermeidung
+* In zustandsbehafteten Controllern (wie `WateringController`), die synchron Ereignisse über den Ereignis-Kanal feuern, auf die UI-Komponenten oder Listener im selben Thread reagieren und eventuell Statusabfragen zurück an den Controller senden, **muss zwingend ein Reentrant Lock (`threading.RLock`)** anstelle eines Standard-Locks (`threading.Lock`) verwendet werden. Dies verhindert synchrone Selbst-Deadlocks im selben Thread-Kontext.
+
+### 3. Absolute Pfadauflösung von lokalen Ressourcen
+* Da sich Dateipositionen durch Verzeichnisänderungen verschieben, müssen dynamische Pfade zu lokalen SQLite-Datenbanken (`garden.db`) oder Konfigurationsdateien (`.env`) absolut vom Repository-Root aufgelöst werden.
+* Nutze in Adaptern die genaue Ordnertiefe (z.B. `Path(__file__).resolve().parent.parent.parent.parent / "garden.db"` in `src/daemon/adapters/database.py`), damit die Datenbankdateien und Caches auch nach Refactorings abwärtskompatibel am Hauptverzeichnis verbleiben und Datenverluste vermieden werden.
+
+### 4. Test-Isolierung & Mock-Patching
+* Bei Tests darf nie eine echte Verbindung zu einem MQTT-Broker oder Telegram-Server aufgebaut werden. Nutze die integrierten Mock-Klassen wie `SimulatedMqttAdapter`.
+* Achte bei der Verwendung von `@patch` in den Tests darauf, dass die Pfadangabe dem genauen importierten Modulpfad entspricht (z. B. `@patch("daemon.adapters.database.log_watering")` statt `@patch("daemon.database.log_watering")`), um Import- und Mock-Fehler im Test-Runner zu vermeiden.
+
+
 
 
 
