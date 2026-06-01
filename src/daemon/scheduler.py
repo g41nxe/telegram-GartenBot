@@ -172,20 +172,38 @@ def _time_limit_callback():
         # Ventil schließen
         mqtt_client.close_valve()
         duration = active_cycle["duration"]
+        target_vol = active_cycle["target_volume"]
         vol_run = mqtt_client.get_active_volume()
         source = active_cycle["source"]
         
         active_cycle = None
         
-    database.log_watering(duration, source, "completed", f"Zeitlimit von {duration} Min erreicht ({vol_run}l geflossen).")
-    
-    msg = (
-        f"🏁 **Zeitlimit erreicht!**\n"
-        f"⏱️ Bewässerung nach {duration} Minuten planmäßig beendet.\n"
-        f"💧 Wassermenge: {vol_run} Liter geflossen."
-    )
+    if target_vol > 0 and vol_run < target_vol:
+        # Notfall-Abschaltung: Volumenlimit wurde innerhalb des Zeitfensters nicht erreicht
+        database.log_watering(
+            duration, source, "failed", 
+            f"Notfall-Abschaltung nach {duration} Min: Zielwassermenge von {target_vol}l nicht erreicht ({vol_run}l geflossen)."
+        )
+        msg = (
+            f"⚠️ **Notfall-Abschaltung ausgelöst!**\n"
+            f"⏱️ Abschaltung nach Ablauf von {duration} Minuten bei geflossenen {vol_run} Litern.\n"
+            f"💧 Zielwassermenge von {target_vol} Litern wurde nicht erreicht."
+        )
+        logger.warning(f"Notfall-Abschaltung nach Zeitlimit ausgelöst: {vol_run}l / {target_vol}l geflossen.")
+    else:
+        # Planmäßige Beendigung
+        database.log_watering(
+            duration, source, "completed", 
+            f"Zeitlimit von {duration} Min erreicht ({vol_run}l geflossen)."
+        )
+        msg = (
+            f"🏁 **Zeitlimit erreicht!**\n"
+            f"⏱️ Bewässerung nach {duration} Minuten planmäßig beendet.\n"
+            f"💧 Wassermenge: {vol_run} Liter geflossen."
+        )
+        logger.info("Bewässerungslauf über Zeitlimit planmäßig beendet.")
+        
     send_notification(msg)
-    logger.info("Bewässerungslauf über Zeitlimit beendet.")
 
 def _volume_check_loop(target_volume: int):
     """Hintergrund-Wächter für die Wassermenge (Volumenlimit)."""
@@ -264,6 +282,11 @@ def _scheduler_loop():
     logger.info("Scheduler-Hintergrund-Schleife gestartet.")
     
     time.sleep(5)
+    
+    # Einmalige Sicherheits-Schließung beim Systemstart bei offenem Ventil
+    if scheduler_running:
+        check_startup_safety()
+        
     last_weather_update = 0.0
     
     while scheduler_running:
@@ -304,6 +327,22 @@ def _scheduler_loop():
         now = datetime.now()
         seconds_to_sleep = 60 - now.second
         time.sleep(seconds_to_sleep)
+
+def check_startup_safety() -> bool:
+    """Prüft beim Systemstart, ob das Ventil unüberwacht offen steht, und schließt es gegebenenfalls."""
+    global active_cycle
+    status = mqtt_client.get_valve_status()
+    if status.get("state") == "ON":
+        with active_cycle_lock:
+            if active_cycle is None:
+                logger.warning("Sicherheits-Schließung: Unerwartet geöffnetes Ventil beim Systemstart erkannt!")
+                mqtt_client.close_valve()
+                send_notification(
+                    "⚠️ **Unerwartet geöffnetes Ventil beim Systemstart erkannt!**\n"
+                    "Sicherheits-Schließung durchgeführt."
+                )
+                return True
+    return False
 
 def start_scheduler():
     """Startet den Hintergrund-Scheduler."""
