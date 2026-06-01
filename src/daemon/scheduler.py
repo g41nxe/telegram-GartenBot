@@ -1,29 +1,28 @@
 import time
 import logging
 import threading
-from datetime import datetime, timedelta
-from . import database, weather, mqtt_client, config
+from datetime import datetime
+from . import config
+from .adapters import database, weather
+from .core.event_bus import EventBus
+from .adapters.mqtt_client import _global_bus
+from .core.watering_controller import (
+    WateringCycleStarted,
+    WateringCycleCompleted,
+    WateringCycleFailed,
+    WateringCycleStopped
+)
 
 logger = logging.getLogger("garden_scheduler")
 
-# Globale Variablen zur Überwachung des aktiven Bewässerungszyklus
-active_cycle_lock = threading.Lock()
-active_cycle = None  
-# Struktur: {
-#   "start_time": datetime, 
-#   "end_time": datetime, 
-#   "duration": int, 
-#   "target_volume": int,
-#   "source": str, 
-#   "timer": threading.Timer,
-#   "volume_check_running": bool
-# }
+# Globale Steuerung des Controllers für abwärtskompatible Aufrufe
+controller = None
 
 # Steuerung des Scheduler-Hintergrundthreads
 scheduler_running = False
 scheduler_thread = None
 
-# Callback-Funktion für Telegram-Benachrichtigungen
+# Callback-Funktion für Telegram-Benachrichtigungen (Abwärtskompatibilität)
 notification_callback = None
 
 def register_notification_callback(callback_fn):
@@ -40,215 +39,86 @@ def send_notification(message: str):
             logger.error(f"Fehler beim Senden der Telegram-Benachrichtigung: {e}")
 
 def get_active_cycle():
-    """Gibt Details zum aktuell laufenden Bewässerungszyklus zurück."""
-    with active_cycle_lock:
-        if active_cycle:
-            return {
-                "source": active_cycle["source"],
-                "duration": active_cycle["duration"],
-                "target_volume": active_cycle["target_volume"],
-                "start_time": active_cycle["start_time"].isoformat(),
-                "end_time": active_cycle["end_time"].isoformat(),
-                "current_volume": mqtt_client.get_active_volume(),
-                "remaining_seconds": max(0, int((active_cycle["end_time"] - datetime.now()).total_seconds()))
-            }
-        return None
+    """Gibt Details zum aktuell laufenden Bewässerungszyklus zurück (Fassaden-Methode)."""
+    global controller
+    if controller:
+        return controller.get_active_cycle()
+    return None
 
 def start_watering(duration_minutes: int, target_volume_liters: int, source: str) -> tuple[bool, str]:
-    """
-    Startet die Bewässerung mit kombiniertem Zeit- und Volumen-Limit.
-    Sichert über Locks ab, dass nicht zwei Zyklen gleichzeitig laufen können.
-    """
-    global active_cycle
-    
-    # Sicherheitsprüfung der Dauer
-    if duration_minutes <= 0:
-        return False, "Ungültiges Zeitlimit."
-    if duration_minutes > config.SAFETY_TIMEOUT_MINUTES:
-        return False, f"Zeitlimit überschreitet das Sicherheitslimit ({config.SAFETY_TIMEOUT_MINUTES} Min)."
-    if target_volume_liters < 0:
-        return False, "Ungültiges Volumenlimit."
-
-    with active_cycle_lock:
-        if active_cycle is not None:
-            return False, "Es läuft bereits eine Bewässerung."
-            
-        # MQTT-Befehl zum Öffnen des Ventils
-        if not mqtt_client.open_valve():
-            return False, "Fehler beim Ansteuern des Ventils über MQTT."
-            
-        # 1. Zeit-Wächter (threading.Timer) initialisieren
-        duration_seconds = duration_minutes * 60
-        timer = threading.Timer(duration_seconds, _time_limit_callback)
-        
-        start_time = datetime.now()
-        end_time = start_time + timedelta(minutes=duration_minutes)
-        
-        active_cycle = {
-            "start_time": start_time,
-            "end_time": end_time,
-            "duration": duration_minutes,
-            "target_volume": target_volume_liters,
-            "source": source,
-            "timer": timer,
-            "volume_check_running": False
-        }
-        
-        # 2. Volumen-Wächter starten (falls Volumenlimit > 0)
-        if target_volume_liters > 0:
-            active_cycle["volume_check_running"] = True
-            volume_thread = threading.Thread(
-                target=_volume_check_loop, 
-                args=(target_volume_liters,), 
-                daemon=True
-            )
-            volume_thread.start()
-            
-        # Starten des Zeit-Timers
-        timer.start()
-        
-    # In DB protokollieren
-    limit_info = f"Zeitlimit: {duration_minutes} Min"
-    if target_volume_liters > 0:
-        limit_info += f" | Volumenlimit: {target_volume_liters} Liter"
-        
-    database.log_watering(duration_minutes, source, "completed", f"Bewässerung gestartet ({limit_info}).")
-    
-    msg = (
-        f"🟢 **Bewässerung gestartet!**\n"
-        f"⏱️ Zeitlimit: {duration_minutes} Minuten\n"
-        f"💧 Volumenlimit: {f'{target_volume_liters} Liter' if target_volume_liters > 0 else 'Keines'}\n"
-        f"⏳ Quelle: {'Zeitplan' if source == 'schedule' else 'Manuell'}"
-    )
-    send_notification(msg)
-    
-    logger.info(f"Kombinierter Guss gestartet ({duration_minutes} Min / {target_volume_liters}l, Quelle: {source}).")
-    return True, "Bewässerung gestartet."
+    """Startet die Bewässerung (Fassaden-Methode)."""
+    global controller
+    if controller:
+        return controller.start_watering(duration_minutes, target_volume_liters, source)
+    return False, "Domänen-Controller nicht initialisiert."
 
 def stop_watering() -> tuple[bool, str]:
-    """Stoppt die aktive Bewässerung sofort manuell."""
-    global active_cycle
-    
-    with active_cycle_lock:
-        if active_cycle is None:
-            mqtt_client.close_valve()
-            return False, "Kein aktiver Bewässerungszyklus gefunden."
-            
-        # Limits und Wächter abbrechen
-        active_cycle["timer"].cancel()
-        active_cycle["volume_check_running"] = False
-        
-        # Ventil schließen
-        mqtt_client.close_valve()
-        
-        duration_run = max(1, int((datetime.now() - active_cycle["start_time"]).total_seconds() / 60))
-        vol_run = mqtt_client.get_active_volume()
-        source = active_cycle["source"]
-        
-        active_cycle = None
-        
-    database.log_watering(duration_run, source, "stopped", f"Manuell vorzeitig gestoppt bei {vol_run} Litern.")
-    
-    msg = f"🔴 **Bewässerung vorzeitig gestoppt!**\n⏱️ Laufzeit: ca. {duration_run} Min\n💧 Geflossene Menge: {vol_run} Liter"
-    send_notification(msg)
-    
-    logger.info("Bewässerungszyklus manuell abgebrochen.")
-    return True, "Bewässerung gestoppt."
-
-# --- Wächter Callbacks ---
+    """Stoppt die aktive Bewässerung sofort (Fassaden-Methode)."""
+    global controller
+    if controller:
+        return controller.stop_watering()
+    return False, "Domänen-Controller nicht initialisiert."
 
 def _time_limit_callback():
-    """Callback für den Zeit-Wächter: Ausgelöst, wenn das Zeitlimit abläuft."""
-    global active_cycle
-    logger.info("Zeitlimit erreicht. Schließe Ventil...")
-    
-    with active_cycle_lock:
-        if active_cycle is None:
-            return
-            
-        # Volumen-Wächter stoppen
-        active_cycle["volume_check_running"] = False
-        
-        # Ventil schließen
-        mqtt_client.close_valve()
-        duration = active_cycle["duration"]
-        target_vol = active_cycle["target_volume"]
-        vol_run = mqtt_client.get_active_volume()
-        source = active_cycle["source"]
-        
-        active_cycle = None
-        
-    if target_vol > 0 and vol_run < target_vol:
-        # Notfall-Abschaltung: Volumenlimit wurde innerhalb des Zeitfensters nicht erreicht
-        database.log_watering(
-            duration, source, "failed", 
-            f"Notfall-Abschaltung nach {duration} Min: Zielwassermenge von {target_vol}l nicht erreicht ({vol_run}l geflossen)."
-        )
-        msg = (
-            f"⚠️ **Notfall-Abschaltung ausgelöst!**\n"
-            f"⏱️ Abschaltung nach Ablauf von {duration} Minuten bei geflossenen {vol_run} Litern.\n"
-            f"💧 Zielwassermenge von {target_vol} Litern wurde nicht erreicht."
-        )
-        logger.warning(f"Notfall-Abschaltung nach Zeitlimit ausgelöst: {vol_run}l / {target_vol}l geflossen.")
-    else:
-        # Planmäßige Beendigung
-        database.log_watering(
-            duration, source, "completed", 
-            f"Zeitlimit von {duration} Min erreicht ({vol_run}l geflossen)."
-        )
-        msg = (
-            f"🏁 **Zeitlimit erreicht!**\n"
-            f"⏱️ Bewässerung nach {duration} Minuten planmäßig beendet.\n"
-            f"💧 Wassermenge: {vol_run} Liter geflossen."
-        )
-        logger.info("Bewässerungslauf über Zeitlimit planmäßig beendet.")
-        
+    """Löst das Zeitlimit manuell über den Controller aus (Abwärtskompatibilität für Tests)."""
+    global controller
+    if controller:
+        controller._time_limit_callback()
+
+# --- Ereignis-Kanäle abfangen zur Abwärtskompatibilität von Push-Nachrichten ---
+
+def _on_event_started(event: WateringCycleStarted):
+    msg = (
+        f"🟢 **Bewässerung gestartet!**\n"
+        f"⏱️ Zeitlimit: {event.duration} Minuten\n"
+        f"💧 Volumenlimit: {f'{event.target_volume} Liter' if event.target_volume > 0 else 'Keines'}\n"
+        f"⏳ Quelle: {'Zeitplan' if event.source == 'schedule' else 'Manuell'}"
+    )
     send_notification(msg)
 
-def _volume_check_loop(target_volume: int):
-    """Hintergrund-Wächter für die Wassermenge (Volumenlimit)."""
-    global active_cycle
-    logger.info(f"Volumen-Wächter für {target_volume} Liter gestartet.")
-    
-    while True:
-        # Prüfen, ob der Loop abgebrochen werden soll
-        with active_cycle_lock:
-            if active_cycle is None or not active_cycle.get("volume_check_running", False):
-                break
-                
-        current_volume = mqtt_client.get_active_volume()
-        if current_volume >= target_volume:
-            logger.info(f"Volumenlimit von {target_volume}l erreicht ({current_volume}l). Schließe Ventil...")
+def _on_event_completed(event: WateringCycleCompleted):
+    if "Volumenlimit" in event.details:
+        # Extrahiere das Limit aus den Details oder nutze ein Fallback
+        target_volume = event.volume_run
+        msg = (
+            f"🏁 **Wassermenge erreicht!**\n"
+            f"💧 Bewässerung nach {int(target_volume)} Litern automatisch beendet.\n"
+            f"⏱️ Benötigte Zeit: ca. {event.duration_run} Minute(n)."
+        )
+    else:
+        msg = (
+            f"🏁 **Zeitlimit erreicht!**\n"
+            f"⏱️ Bewässerung nach {event.duration_run} Minuten planmäßig beendet.\n"
+            f"💧 Wassermenge: {event.volume_run} Liter geflossen."
+        )
+    send_notification(msg)
+
+def _on_event_failed(event: WateringCycleFailed):
+    # Extrahiere das target_volume aus den details
+    target_vol = 0
+    if "Zielwassermenge von" in event.details:
+        try:
+            parts = event.details.split("Zielwassermenge von ")
+            target_vol = int(parts[1].split("l")[0])
+        except Exception:
+            pass
             
-            with active_cycle_lock:
-                if active_cycle is None:
-                    break
-                
-                # Zeit-Wächter-Timer abbrechen
-                active_cycle["timer"].cancel()
-                active_cycle["volume_check_running"] = False
-                
-                # Ventil schließen
-                mqtt_client.close_valve()
-                
-                start_time = active_cycle["start_time"]
-                duration_run = max(1, int((datetime.now() - start_time).total_seconds() / 60))
-                source = active_cycle["source"]
-                
-                active_cycle = None
-                
-            database.log_watering(duration_run, source, "completed", f"Volumenlimit von {target_volume}l erreicht in {duration_run} Min.")
-            
-            msg = (
-                f"🏁 **Wassermenge erreicht!**\n"
-                f"💧 Bewässerung nach {target_volume} Litern automatisch beendet.\n"
-                f"⏱️ Benötigte Zeit: ca. {duration_run} Minute(n)."
-            )
-            send_notification(msg)
-            logger.info("Bewässerungslauf über Volumenlimit beendet.")
-            break
-            
-        time.sleep(2)  # Alle 2 Sekunden prüfen
+    msg = (
+        f"⚠️ **Notfall-Abschaltung ausgelöst!**\n"
+        f"⏱️ Abschaltung nach Ablauf von {event.duration_run} Minuten bei geflossenen {event.volume_run} Litern.\n"
+        f"💧 Zielwassermenge von {target_vol} Litern wurde nicht erreicht."
+    )
+    send_notification(msg)
+
+def _on_event_stopped(event: WateringCycleStopped):
+    msg = f"🔴 **Bewässerung vorzeitig gestoppt!**\n⏱️ Laufzeit: ca. {event.duration_run} Min\n💧 Geflossene Menge: {event.volume_run} Liter"
+    send_notification(msg)
+
+# Registriere die Event-Listener zur Benachrichtigung
+_global_bus.subscribe(WateringCycleStarted, _on_event_started)
+_global_bus.subscribe(WateringCycleCompleted, _on_event_completed)
+_global_bus.subscribe(WateringCycleFailed, _on_event_failed)
+_global_bus.subscribe(WateringCycleStopped, _on_event_stopped)
 
 # --- Scheduler-Schleife (Hintergrund-Thread) ---
 
@@ -330,18 +200,18 @@ def _scheduler_loop():
 
 def check_startup_safety() -> bool:
     """Prüft beim Systemstart, ob das Ventil unüberwacht offen steht, und schließt es gegebenenfalls."""
-    global active_cycle
+    global controller
+    from .adapters import mqtt_client
     status = mqtt_client.get_valve_status()
     if status.get("state") == "ON":
-        with active_cycle_lock:
-            if active_cycle is None:
-                logger.warning("Sicherheits-Schließung: Unerwartet geöffnetes Ventil beim Systemstart erkannt!")
-                mqtt_client.close_valve()
-                send_notification(
-                    "⚠️ **Unerwartet geöffnetes Ventil beim Systemstart erkannt!**\n"
-                    "Sicherheits-Schließung durchgeführt."
-                )
-                return True
+        if controller and controller.get_active_cycle() is None:
+            logger.warning("Sicherheits-Schließung: Unerwartet geöffnetes Ventil beim Systemstart erkannt!")
+            mqtt_client.close_valve()
+            send_notification(
+                "⚠️ **Unerwartet geöffnetes Ventil beim Systemstart erkannt!**\n"
+                "Sicherheits-Schließung durchgeführt."
+            )
+            return True
     return False
 
 def start_scheduler():

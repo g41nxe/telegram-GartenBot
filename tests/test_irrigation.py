@@ -9,7 +9,8 @@ import json
 # src-Ordner zum Python-Path hinzufügen, damit wir 'daemon' importieren können
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from daemon import config, database, weather, mqtt_client
+from daemon import config
+from daemon.adapters import database, weather, mqtt_client
 
 class TestGardenIrrigation(unittest.TestCase):
     
@@ -18,6 +19,16 @@ class TestGardenIrrigation(unittest.TestCase):
         """Initialisiert die Testdatenbank und erzwingt den Simulationsmodus."""
         database.init_db()
         mqtt_client.HAS_PAHO = False
+        # Guss-Steuerung & einheitlichen Client für Legacy-Tests initialisieren und verdrahten
+        from daemon import scheduler
+        from daemon.core.event_bus import EventBus
+        from daemon.core.watering_controller import WateringController
+        from daemon.adapters.database_adapter import DatabaseLoggerAdapter
+        
+        mqtt_client.start_client()
+        watering_ctrl = WateringController(mqtt_client._global_bus, mqtt_client.client_instance)
+        scheduler.controller = watering_ctrl
+        cls.db_adapter = DatabaseLoggerAdapter(mqtt_client._global_bus)
         
     def test_01_config_defaults(self):
         """Überprüft, ob Standard-Konfigurationswerte korrekt geladen werden."""

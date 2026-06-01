@@ -40,7 +40,7 @@ Write-Host "Ggf. werden Sie gleich nach dem SSH-Passwort des Pi gefragt." -Foreg
 Write-Host ""
 
 # Ausführung der Übertragung der notwendigen Ordner und Dateien (ohne .git, garden.db, etc. zur Vermeidung von Konflikten)
-$TransferItems = @("src", "tests", "docs", ".agents", "README.md", "CONTEXT.md", "setup.sh", "deploy.ps1", ".env", ".env.template")
+$TransferItems = @("src", "setup.sh", ".env")
 foreach ($Item in $TransferItems) {
     if (Test-Path $Item) {
         scp -r $Item "${PiUser}@${PiHost}:/home/${PiUser}/garden/"

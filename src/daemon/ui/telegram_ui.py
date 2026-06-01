@@ -1,84 +1,23 @@
 import json
 import logging
-import urllib.request
-import urllib.error
-import threading
-import time
 from datetime import datetime
-from . import config, database, scheduler, weather
+from .. import config, scheduler
+from ..adapters import database, weather
+from . import telegram_client
+from ..core.event_bus import EventBus
+from ..adapters.mqtt_client import _global_bus
 
-logger = logging.getLogger("garden_telegram")
+logger = logging.getLogger("garden_telegram_ui")
 
-# Liste der Chat-IDs, die sich erfolgreich authentifiziert haben, um Push-Benachrichtigungen zu erhalten
-active_chats = set()
-
-def send_message(chat_id: int, text: str, reply_markup: dict = None) -> bool:
-    """Sendet eine Textnachricht (mit optionaler Tastatur) über die Telegram-API."""
-    if not config.TELEGRAM_BOT_TOKEN:
-        logger.warning("Telegram Bot Token nicht konfiguriert. Nachricht wird nicht gesendet.")
-        return False
-        
-    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": chat_id,
-        "text": text,
-        "parse_mode": "Markdown"
-    }
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
-        
-    try:
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            return response.status == 200
-    except Exception as e:
-        logger.error(f"Fehler beim Senden der Telegram-Nachricht an {chat_id}: {e}")
-        return False
-
-def answer_callback_query(callback_query_id: str, text: str = None, show_alert: bool = False):
-    """Quittiert einen Inline-Button-Klick in Telegram, damit das 'Sanduhr'-Laden verschwindet."""
-    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/answerCallbackQuery"
-    payload = {
-        "callback_query_id": callback_query_id
-    }
-    if text:
-        payload["text"] = text
-    if show_alert:
-        payload["show_alert"] = True
-        
-    try:
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=10):
-            pass
-    except Exception as e:
-        logger.error(f"Fehler beim Quittieren der Callback-Query: {e}")
-
-def broadcast_notification(message: str):
-    """Sendet eine Push-Meldung an alle bekannten autorisierten Benutzer."""
-    # Füge standardmäßig die erlaubten User-IDs zu den aktiven Chats hinzu
-    for user_id in config.TELEGRAM_ALLOWED_USER_IDS:
-        active_chats.add(user_id)
-        
-    for chat_id in active_chats:
-        send_message(chat_id, message)
+# Zustandsbasierter Zeitplan-Assistent (Wizard) und manuelle Bewässerung
+wizard_states = {}  # { chat_id: { "step": int/str, "name": str, ... } }
+manual_states = {}  # { chat_id: { "step": int/str, "duration": int, "volume": int } }
 
 # --- Hauptmenüs (Tastaturen) ---
 
 def get_main_keyboard() -> dict:
-    """Erstellt die permanente Haupttastatur unten im Chat.
-    
-    Der '🔧 Ventil koppeln'-Button wird nur angezeigt, solange das Ventil
-    noch nicht gekoppelt ist (Ventil-Kopplung noch nicht durchgeführt).
-    """
-    from . import mqtt_client
+    """Erstellt die permanente Haupttastatur unten im Chat."""
+    from ..adapters import mqtt_client
     valve_paired = mqtt_client.get_valve_status()["last_update"] is not None
 
     rows = [
@@ -92,35 +31,6 @@ def get_main_keyboard() -> dict:
         "keyboard": rows,
         "resize_keyboard": True
     }
-
-# Zustandsbasierter Zeitplan-Assistent (Wizard) und manuelle Bewässerung
-wizard_states = {}  # { chat_id: { "step": int/str, "name": str, "hour": int, "minute": int, "duration": int, "volume": int, "days": list } }
-manual_states = {}  # { chat_id: { "step": int/str, "duration": int, "volume": int } }
-
-def edit_message_text(chat_id: int, message_id: int, text: str, reply_markup: dict = None) -> bool:
-    """Editiert den Text einer bestehenden Nachricht."""
-    if not config.TELEGRAM_BOT_TOKEN:
-        return False
-    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/editMessageText"
-    payload = {
-        "chat_id": chat_id,
-        "message_id": message_id,
-        "text": text,
-        "parse_mode": "Markdown"
-    }
-    if reply_markup:
-        payload["reply_markup"] = reply_markup
-    try:
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
-        )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            return response.status == 200
-    except Exception as e:
-        logger.error(f"Fehler beim Editieren der Nachricht {message_id} für {chat_id}: {e}")
-        return False
 
 def get_schedules_keyboard() -> dict:
     """Erstellt ein Inline-Keyboard zum Starten des geführten Zeitplan-Assistenten."""
@@ -241,13 +151,7 @@ def format_days_german(days_list: list) -> str:
     if "everyday" in days_list:
         return "Täglich"
     day_mapping = {
-        "Mon": "Mo",
-        "Tue": "Di",
-        "Wed": "Mi",
-        "Thu": "Do",
-        "Fri": "Fr",
-        "Sat": "Sa",
-        "Sun": "So"
+        "Mon": "Mo", "Tue": "Di", "Wed": "Mi", "Thu": "Do", "Fri": "Fr", "Sat": "Sa", "Sun": "So"
     }
     ordered_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     present_days = [day_mapping[d] for d in ordered_days if d in days_list]
@@ -272,50 +176,32 @@ def get_duration_keyboard() -> dict:
     }
 
 def _get_wmo_description(code: int) -> str:
-    """Übersetzt den WMO-Wettercode in eine deutsche qualitative Beschreibung mit passendem Emoji."""
     mapping = {
-        0: "☀️ Sonnig / Klar",
-        1: "🌤️ Leicht bewölkt",
-        2: "⛅ Teilweise bewölkt",
-        3: "☁️ Bedeckt / Bewölkt",
-        45: "🌫️ Nebelig",
-        48: "🌫️ Raureifnebel",
-        51: "🌧️ Leichter Nieselregen",
-        53: "🌧️ Mäßiger Nieselregen",
-        55: "🌧️ Starker Nieselregen",
-        61: "🌧️ Leichter Regen",
-        63: "🌧️ Mäßiger Regen",
-        65: "🌧️ Starker Regen",
-        80: "🌧️ Leichte Regenschauer",
-        81: "🌧️ Mäßige Regenschauer",
-        82: "🌧️ Starke Regenschauer",
-        95: "⚡ Gewitter"
+        0: "☀️ Sonnig / Klar", 1: "🌤️ Leicht bewölkt", 2: "⛅ Teilweise bewölkt", 3: "☁️ Bedeckt / Bewölkt",
+        45: "🌫️ Nebelig", 48: "🌫️ Raureifnebel", 51: "🌧️ Leichter Nieselregen", 53: "🌧️ Mäßiger Nieselregen",
+        55: "🌧️ Starker Nieselregen", 61: "🌧️ Leichter Regen", 63: "🌧️ Mäßiger Regen", 65: "🌧️ Starker Regen",
+        80: "🌧️ Leichte Regenschauer", 81: "🌧️ Mäßige Regenschauer", 82: "🌧️ Starke Regenschauer", 95: "⚡ Gewitter"
     }
     return mapping.get(code, "🌡️ Unbekannt")
 
 # --- Befehlsverarbeitung ---
 
-# --- Ventil-Kopplung ---
-
 def _start_pairing(chat_id: int):
-    """Startet die Ventil-Kopplung im Hintergrund und informiert den Nutzer."""
-    from . import pairing
-    send_message(
+    from ..adapters import pairing
+    telegram_client.send_message(
         chat_id,
         "🔧 *Ventil-Kopplung gestartet*\n\n"
         "Bitte drücke jetzt den *Reset-Knopf* am Sonoff Hydro ONE für "
         "*5 Sekunden*, bis die LED schnell blinkt.\n\n"
         "⏱️ Das System wartet bis zu 90 Sekunden auf das Ventil."
     )
-    pairing.start_pairing(chat_id, send_message)
-
+    pairing.start_pairing(chat_id, telegram_client.send_message)
 
 def handle_setup(chat_id: int):
-    """Verarbeitet den /setup-Befehl zur Ventil-Kopplung."""
-    from . import mqtt_client, pairing
+    from ..adapters import mqtt_client, pairing
 
     if pairing.is_pairing_active():
-        send_message(
+        telegram_client.send_message(
             chat_id,
             "⏳ Eine Ventil-Kopplung läuft bereits im Hintergrund. Bitte warten."
         )
@@ -324,8 +210,7 @@ def handle_setup(chat_id: int):
     valve_paired = mqtt_client.get_valve_status()["last_update"] is not None
 
     if valve_paired:
-        # Bestätigung anfordern – könnte ein Gerätetausch sein
-        send_message(
+        telegram_client.send_message(
             chat_id,
             "⚠️ *Ein Ventil ist bereits aktiv.*\n\n"
             "Möchtest du trotzdem eine neue Ventil-Kopplung starten?\n"
@@ -342,17 +227,13 @@ def handle_setup(chat_id: int):
 
     _start_pairing(chat_id)
 
-
 def handle_status(chat_id: int):
-    """Erstellt und sendet die Statusübersicht."""
-    # 1. Ventil-Status
-    from . import mqtt_client
+    from ..adapters import mqtt_client
     status = mqtt_client.get_valve_status()
     
     state_icon = "🟢 OFFEN" if status["state"] == "ON" else "🔴 GESCHLOSSEN"
     battery_icon = "🔋" if status["battery"] > 20 else "🪫"
     
-    # 2. Verbindungsstatus ermitteln
     if not mqtt_client.HAS_PAHO:
         broker_status = "⚡ Simulationsmodus (Lokaler Test)"
     else:
@@ -368,7 +249,6 @@ def handle_status(chat_id: int):
         except Exception:
             valve_connected = "🟢 Gekoppelt / Aktiv"
             
-    # 3. Aktive Bewässerung
     active = scheduler.get_active_cycle()
     active_text = ""
     if active:
@@ -378,7 +258,6 @@ def handle_status(chat_id: int):
             f"   - Restzeit: {int(active['remaining_seconds']/60)} Min ({active['remaining_seconds'] % 60} Sek)\n"
         )
         
-    # 4. Wetterdaten
     last_weather = database.get_last_weather()
     weather_text = "   - Keine Daten vorhanden"
     if last_weather:
@@ -399,7 +278,6 @@ def handle_status(chat_id: int):
             f"   - **Erwartet nächste 24h:** {last_weather['rain_next_24h_mm']} mm"
         )
         
-    # 5. Historie
     history = database.get_recent_history(3)
     history_lines = []
     for h in history:
@@ -422,10 +300,9 @@ def handle_status(chat_id: int):
         f"📜 **Letzte Zyklen:**\n{history_text}"
     )
     
-    send_message(chat_id, msg, get_main_keyboard())
+    telegram_client.send_message(chat_id, msg, get_main_keyboard())
 
 def handle_schedules(chat_id: int):
-    """Listet alle aktiven Zeitpläne auf."""
     schedules = database.get_schedules()
     if not schedules:
         msg = (
@@ -438,7 +315,7 @@ def handle_schedules(chat_id: int):
             "**Beispiel:**\n"
             "`/add Abend-Guss, 20:15, Mon,Wed,Fri, 15, 50`"
         )
-        send_message(chat_id, msg, get_schedules_keyboard())
+        telegram_client.send_message(chat_id, msg, get_schedules_keyboard())
         return
         
     lines = []
@@ -457,12 +334,10 @@ def handle_schedules(chat_id: int):
         )
         
     msg = "📅 **Aktuelle Zeitsteuerung (Zeitpläne):**\n\n" + "\n".join(lines)
-    send_message(chat_id, msg, get_schedules_keyboard())
+    telegram_client.send_message(chat_id, msg, get_schedules_keyboard())
 
 def handle_add_schedule(chat_id: int, text: str):
-    """Fügt einen Zeitplan hinzu. Syntax: /add Name, Uhrzeit, Tage, Dauer, [Menge_Liter]"""
     try:
-        # Extrahiere Argumente nach /add
         args = text.split(" ", 1)[1]
         parts = [p.strip() for p in args.split(",")]
         
@@ -473,17 +348,16 @@ def handle_add_schedule(chat_id: int, text: str):
         duration = int(duration_raw)
         volume = int(parts[4]) if len(parts) > 4 else 0
         
-        # Validierung der Uhrzeit
         datetime.strptime(time_str, "%H:%M")
         
         db_id = database.add_schedule(name, time_str, days, duration, volume)
         if db_id > 0:
-            send_message(chat_id, f"📅 Zeitplan **'{name}'** erfolgreich mit ID {db_id} angelegt!")
+            telegram_client.send_message(chat_id, f"📅 Zeitplan **'{name}'** erfolgreich mit ID {db_id} angelegt!")
             handle_schedules(chat_id)
         else:
-            send_message(chat_id, "❌ Fehler beim Speichern des Zeitplans in der Datenbank.")
+            telegram_client.send_message(chat_id, "❌ Fehler beim Speichern des Zeitplans in der Datenbank.")
     except Exception:
-        send_message(
+        telegram_client.send_message(
             chat_id,
             "❌ **Ungültiges Format.**\n\n"
             "Nutzen Sie folgendes Format:\n"
@@ -492,19 +366,17 @@ def handle_add_schedule(chat_id: int, text: str):
         )
 
 def handle_delete_schedule(chat_id: int, text: str):
-    """Löscht einen Zeitplan über ID."""
     try:
         sched_id = int(text.split(" ")[1])
         if database.delete_schedule(sched_id):
-            send_message(chat_id, f"🗑️ Zeitplan ID {sched_id} erfolgreich gelöscht.")
+            telegram_client.send_message(chat_id, f"🗑️ Zeitplan ID {sched_id} erfolgreich gelöscht.")
             handle_schedules(chat_id)
         else:
-            send_message(chat_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.")
+            telegram_client.send_message(chat_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.")
     except Exception:
-        send_message(chat_id, "❌ **Ungültiges Format.** Nutzen Sie: `/delete <ID>` (z.B. `/delete 2`)")
+        telegram_client.send_message(chat_id, "❌ **Ungültiges Format.** Nutzen Sie: `/delete <ID>` (z.B. `/delete 2`)")
 
 def handle_toggle_schedule(chat_id: int, text: str):
-    """Schaltet einen Zeitplan aktiv/inaktiv."""
     try:
         sched_id = int(text.split(" ")[1])
         schedules = database.get_schedules()
@@ -517,41 +389,33 @@ def handle_toggle_schedule(chat_id: int, text: str):
                 target["days"], target["duration_minutes"], target.get("target_volume_liters", 0), new_active
             )
             status_text = "AKTIVIERT" if new_active == 1 else "DEAKTIVIERT"
-            send_message(chat_id, f"📅 Zeitplan **'{target['name']}'** wurde {status_text}.")
+            telegram_client.send_message(chat_id, f"📅 Zeitplan **'{target['name']}'** wurde {status_text}.")
             handle_schedules(chat_id)
         else:
-            send_message(chat_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.")
+            telegram_client.send_message(chat_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.")
     except Exception:
-        send_message(chat_id, "❌ **Ungültiges Format.** Nutzen Sie: `/toggle <ID>` (z.B. `/toggle 1`)")
+        telegram_client.send_message(chat_id, "❌ **Ungültiges Format.** Nutzen Sie: `/toggle <ID>` (z.B. `/toggle 1`)")
 
-# --- Polling Schleife (Hintergrund-Thread) ---
+# --- Interface-Schicht-Update Callback ---
 
 def _process_message(msg_obj: dict):
-    """Verarbeitet eine autorisierte Chat-Nachricht."""
     chat_id = msg_obj["chat"]["id"]
     text = msg_obj.get("text", "").strip()
     
-    # Push-Verbindung merken
-    active_chats.add(chat_id)
-    
-    # --- Intercept messages for Wizards if they are active ---
     if chat_id in wizard_states:
         state = wizard_states[chat_id]
         step = state.get("step")
         
-        # Check if the user wants to cancel using a command or menu option
         if text.startswith("/") or text in ["📊 Status anzeigen", "📅 Zeitsteuerung", "📅 Zeitpläne", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             del wizard_states[chat_id]
-            # fall through to process command normally
         else:
             if step == 1:
-                # Name entered
                 if not text:
-                    send_message(chat_id, "❌ Der Name darf nicht leer sein. Bitte gib einen Namen ein:")
+                    telegram_client.send_message(chat_id, "❌ Der Name darf nicht leer sein. Bitte gib einen Namen ein:")
                     return
                 state["name"] = text
                 state["step"] = 2
-                send_message(
+                telegram_client.send_message(
                     chat_id,
                     f"🆕 **Neuen Zeitplan '{text}' (Schritt 2/6)**\n\nZu welcher **Stunde** soll die Bewässerung starten?",
                     get_hour_keyboard()
@@ -564,13 +428,13 @@ def _process_message(msg_obj: dict):
                         raise ValueError
                     state["duration"] = dur
                     state["step"] = 5
-                    send_message(
+                    telegram_client.send_message(
                         chat_id,
                         f"🆕 **Neuen Zeitplan '{state['name']}' (Schritt 5/6)**\n\nWie viel Wasser soll **maximal** fließen? (Volumenlimit)",
                         get_volume_wizard_keyboard("wiz")
                     )
                 except ValueError:
-                    send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:")
+                    telegram_client.send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:")
                 return
             elif step == "custom_volume":
                 try:
@@ -580,23 +444,21 @@ def _process_message(msg_obj: dict):
                     state["volume"] = vol
                     state["step"] = 6
                     state["days"] = []
-                    send_message(
+                    telegram_client.send_message(
                         chat_id,
                         f"🆕 **Neuen Zeitplan '{state['name']}' (Schritt 6/6)**\n\nWähle die **Wochentage** aus, an denen bewässert werden soll:\n\n*Ausgewählt: Keine*",
                         get_days_wizard_keyboard([])
                     )
                 except ValueError:
-                    send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl größer als 0 Liter ein:")
+                    telegram_client.send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl größer als 0 Liter ein:")
                 return
             
     if chat_id in manual_states:
         state = manual_states[chat_id]
         step = state.get("step")
         
-        # Check if the user wants to cancel using a command or menu option
         if text.startswith("/") or text in ["📊 Status anzeigen", "📅 Zeitsteuerung", "📅 Zeitpläne", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             del manual_states[chat_id]
-            # fall through to process command normally
         else:
             if step == "man_custom_duration":
                 try:
@@ -605,13 +467,13 @@ def _process_message(msg_obj: dict):
                         raise ValueError
                     state["duration"] = dur
                     state["step"] = 2
-                    send_message(
+                    telegram_client.send_message(
                         chat_id,
                         "🟢 **Manuelle Bewässerung starten (Schritt 2/2)**\n\nWie viel Wasser soll **maximal** fließen? (Volumenlimit)",
                         get_volume_wizard_keyboard("man")
                     )
                 except ValueError:
-                    send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:")
+                    telegram_client.send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:")
                 return
             elif step == "man_custom_volume":
                 try:
@@ -624,13 +486,13 @@ def _process_message(msg_obj: dict):
                     
                     success, response = scheduler.start_watering(dur, vol, "manual")
                     if not success:
-                        send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
+                        telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
                 except ValueError:
-                    send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl größer als 0 Liter ein:")
+                    telegram_client.send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl größer als 0 Liter ein:")
                 return
                 
     if text.startswith("/start"):
-        send_message(
+        telegram_client.send_message(
             chat_id,
             "👋 **Willkommen bei der Gartenbewässerung-Steuerung!**\n\n"
             "Ich bin Ihr lokaler Assistent. Nutzen Sie die Buttons unten oder "
@@ -644,9 +506,8 @@ def _process_message(msg_obj: dict):
     elif text == "🔧 Ventil koppeln" or text.startswith("/setup"):
         handle_setup(chat_id)
     elif text == "🟢 Bewässern starten":
-        # Launch manual wizard
         manual_states[chat_id] = {"step": 1}
-        send_message(
+        telegram_client.send_message(
             chat_id,
             "🟢 **Manuelle Bewässerung starten (Schritt 1/2)**\n\nWie lange soll **maximal** bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
             get_duration_wizard_keyboard("man")
@@ -654,7 +515,7 @@ def _process_message(msg_obj: dict):
     elif text == "🔴 Sofort Stopp" or text.startswith("/stop"):
         success, response = scheduler.stop_watering()
         if not success:
-            send_message(chat_id, f"ℹ️ {response}")
+            telegram_client.send_message(chat_id, f"ℹ️ {response}")
     elif text.startswith("/add"):
         handle_add_schedule(chat_id, text)
     elif text.startswith("/delete"):
@@ -662,34 +523,32 @@ def _process_message(msg_obj: dict):
     elif text.startswith("/toggle"):
         handle_toggle_schedule(chat_id, text)
     else:
-        send_message(
+        telegram_client.send_message(
             chat_id,
             "❓ **Unbekannter Befehl.**\n\n"
             "Verwenden Sie die Buttons oder `/status` für eine Übersicht."
         )
 
 def _process_callback_query(cb_obj: dict):
-    """Verarbeitet Klicks auf Inline-Buttons."""
     cb_id = cb_obj["id"]
     chat_id = cb_obj["message"]["chat"]["id"]
     message_id = cb_obj["message"]["message_id"]
     data = cb_obj["data"]
     
     if data == "cancel":
-        answer_callback_query(cb_id, "Abgebrochen")
-        send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
+        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
+        telegram_client.send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
     elif data.startswith("water_"):
         duration = int(data.split("_")[1])
-        answer_callback_query(cb_id, "Starte Bewässerung...")
+        telegram_client.answer_callback_query(cb_id, "Starte Bewässerung...")
         success, response = scheduler.start_watering(duration, 0, "manual")
         if not success:
-            send_message(chat_id, f"❌ Fehler: {response}", get_main_keyboard())
+            telegram_client.send_message(chat_id, f"❌ Fehler: {response}", get_main_keyboard())
             
-    # --- Assistent (Guided Wizard) Callbacks ---
     elif data == "wiz_start":
-        answer_callback_query(cb_id, "Zeitplan-Assistent gestartet")
+        telegram_client.answer_callback_query(cb_id, "Zeitplan-Assistent gestartet")
         wizard_states[chat_id] = {"step": 1}
-        send_message(
+        telegram_client.send_message(
             chat_id,
             "🆕 **Neuen Zeitplan anlegen (Schritt 1/6)**\n\nBitte gib einen **Namen** für den Zeitplan ein (z. B. *Rasen morgens* oder *Hochbeet*):",
             {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
@@ -701,8 +560,8 @@ def _process_callback_query(cb_obj: dict):
             state = wizard_states[chat_id]
             state["hour"] = hour
             state["step"] = 3
-            answer_callback_query(cb_id, f"Stunde: {hour:02d}")
-            edit_message_text(
+            telegram_client.answer_callback_query(cb_id, f"Stunde: {hour:02d}")
+            telegram_client.edit_message_text(
                 chat_id, message_id,
                 f"🆕 **Neuen Zeitplan '{state['name']}' um {hour:02d}:?? (Schritt 3/6)**\n\nZu welcher **Minute** soll die Bewässerung starten?",
                 get_minute_keyboard()
@@ -714,8 +573,8 @@ def _process_callback_query(cb_obj: dict):
             state = wizard_states[chat_id]
             state["minute"] = minute
             state["step"] = 4
-            answer_callback_query(cb_id, f"Minute: {minute:02d}")
-            edit_message_text(
+            telegram_client.answer_callback_query(cb_id, f"Minute: {minute:02d}")
+            telegram_client.edit_message_text(
                 chat_id, message_id,
                 f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{minute:02d} (Schritt 4/6)**\n\nWie lange soll **maximal** bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
                 get_duration_wizard_keyboard("wiz")
@@ -725,10 +584,10 @@ def _process_callback_query(cb_obj: dict):
         dur_str = data.split("_")[2]
         if chat_id in wizard_states:
             state = wizard_states[chat_id]
-            answer_callback_query(cb_id)
+            telegram_client.answer_callback_query(cb_id)
             if dur_str == "custom":
                 state["step"] = "custom_duration"
-                edit_message_text(
+                telegram_client.edit_message_text(
                     chat_id, message_id,
                     f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 4/6)**\n\nBitte gib die gewünschte Dauer in Minuten über die Tastatur ein (Zahl von 1 bis 25):",
                     {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
@@ -737,7 +596,7 @@ def _process_callback_query(cb_obj: dict):
                 dur = int(dur_str)
                 state["duration"] = dur
                 state["step"] = 5
-                edit_message_text(
+                telegram_client.edit_message_text(
                     chat_id, message_id,
                     f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 5/6)**\n\nWie viel Wasser soll **maximal** fließen? (Volumenlimit)\n\n*Ausgewählte Dauer: {dur} Min.*",
                     get_volume_wizard_keyboard("wiz")
@@ -747,10 +606,10 @@ def _process_callback_query(cb_obj: dict):
         vol_str = data.split("_")[2]
         if chat_id in wizard_states:
             state = wizard_states[chat_id]
-            answer_callback_query(cb_id)
+            telegram_client.answer_callback_query(cb_id)
             if vol_str == "custom":
                 state["step"] = "custom_volume"
-                edit_message_text(
+                telegram_client.edit_message_text(
                     chat_id, message_id,
                     f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 5/6)**\n\nBitte gib die gewünschte Wassermenge in Litern über die Tastatur ein (Zahl > 0):",
                     {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
@@ -760,7 +619,7 @@ def _process_callback_query(cb_obj: dict):
                 state["volume"] = vol
                 state["step"] = 6
                 state["days"] = []
-                edit_message_text(
+                telegram_client.edit_message_text(
                     chat_id, message_id,
                     f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 6/6)**\n\nWähle die **Wochentage** aus, an denen bewässert werden soll:\n\n*Ausgewählt: Keine*",
                     get_days_wizard_keyboard([])
@@ -770,7 +629,7 @@ def _process_callback_query(cb_obj: dict):
         day = data.split("_")[2]
         if chat_id in wizard_states:
             state = wizard_states[chat_id]
-            answer_callback_query(cb_id)
+            telegram_client.answer_callback_query(cb_id)
             days = state.get("days", [])
             
             if day == "everyday":
@@ -789,7 +648,7 @@ def _process_callback_query(cb_obj: dict):
                     
             state["days"] = days
             days_str = format_days_german(days)
-            edit_message_text(
+            telegram_client.edit_message_text(
                 chat_id, message_id,
                 f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 6/6)**\n\nWähle die **Wochentage** aus, an denen bewässert werden soll:\n\n*Ausgewählt: {days_str}*",
                 get_days_wizard_keyboard(days)
@@ -800,13 +659,13 @@ def _process_callback_query(cb_obj: dict):
             state = wizard_states[chat_id]
             days = state.get("days", [])
             if not days:
-                answer_callback_query(cb_id, "⚠️ Wähle mind. einen Tag!", show_alert=True)
+                telegram_client.answer_callback_query(cb_id, "⚠️ Wähle mind. einen Tag!", show_alert=True)
                 return
             
             state["step"] = 7
-            answer_callback_query(cb_id)
+            telegram_client.answer_callback_query(cb_id)
             days_str = format_days_german(days)
-            edit_message_text(
+            telegram_client.edit_message_text(
                 chat_id, message_id,
                 f"📝 **Zusammenfassung & Bestätigung**\n\n"
                 f"Bitte überprüfe die Angaben für den neuen Zeitplan:\n\n"
@@ -829,7 +688,7 @@ def _process_callback_query(cb_obj: dict):
     elif data == "wiz_confirm_save":
         if chat_id in wizard_states:
             state = wizard_states[chat_id]
-            answer_callback_query(cb_id, "Zeitplan erfolgreich gespeichert!")
+            telegram_client.answer_callback_query(cb_id, "Zeitplan erfolgreich gespeichert!")
             
             name = state["name"]
             time_str = f"{state['hour']:02d}:{state['minute']:02d}"
@@ -841,24 +700,23 @@ def _process_callback_query(cb_obj: dict):
             del wizard_states[chat_id]
             
             if db_id > 0:
-                send_message(chat_id, f"📅 Zeitplan **'{name}'** erfolgreich angelegt!", get_main_keyboard())
+                telegram_client.send_message(chat_id, f"📅 Zeitplan **'{name}'** erfolgreich angelegt!", get_main_keyboard())
                 handle_schedules(chat_id)
             else:
-                send_message(chat_id, "❌ Fehler beim Speichern des Zeitplans in der Datenbank.", get_main_keyboard())
+                telegram_client.send_message(chat_id, "❌ Fehler beim Speichern des Zeitplans in der Datenbank.", get_main_keyboard())
                 
     elif data == "wiz_cancel":
         if chat_id in wizard_states:
             del wizard_states[chat_id]
-        answer_callback_query(cb_id, "Abgebrochen")
-        send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
+        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
+        telegram_client.send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
         
-    # --- Manuelle Bewässerung (Guided Manual) Callbacks ---
     elif data.startswith("man_dur_"):
         dur_str = data.split("_")[2]
-        answer_callback_query(cb_id)
+        telegram_client.answer_callback_query(cb_id)
         if dur_str == "custom":
             manual_states[chat_id] = {"step": "man_custom_duration"}
-            edit_message_text(
+            telegram_client.edit_message_text(
                 chat_id, message_id,
                 "🟢 **Manuelle Bewässerung starten (Schritt 1/2)**\n\nBitte gib die gewünschte Dauer in Minuten über die Tastatur ein (Zahl von 1 bis 25):",
                 {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]}
@@ -866,7 +724,7 @@ def _process_callback_query(cb_obj: dict):
         else:
             dur = int(dur_str)
             manual_states[chat_id] = {"step": 2, "duration": dur}
-            edit_message_text(
+            telegram_client.edit_message_text(
                 chat_id, message_id,
                 f"🟢 **Manuelle Bewässerung starten (Schritt 2/2)**\n\nWie viel Wasser soll **maximal** fließen? (Volumenlimit)\n\n*Ausgewählte Dauer: {dur} Min.*",
                 get_volume_wizard_keyboard("man")
@@ -876,10 +734,10 @@ def _process_callback_query(cb_obj: dict):
         vol_str = data.split("_")[2]
         if chat_id in manual_states:
             state = manual_states[chat_id]
-            answer_callback_query(cb_id)
+            telegram_client.answer_callback_query(cb_id)
             if vol_str == "custom":
                 state["step"] = "man_custom_volume"
-                edit_message_text(
+                telegram_client.edit_message_text(
                     chat_id, message_id,
                     "🟢 **Manuelle Bewässerung starten (Schritt 2/2)**\n\nBitte gib die gewünschte Wassermenge in Litern über die Tastatur ein (Zahl > 0):",
                     {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]}
@@ -891,89 +749,30 @@ def _process_callback_query(cb_obj: dict):
                 
                 success, response = scheduler.start_watering(dur, vol, "manual")
                 if not success:
-                    send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
+                    telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
                 else:
-                    edit_message_text(chat_id, message_id, f"🟢 **Befehl gesendet:** Bewässerung gestartet ({dur} Min / {vol}l).")
+                    telegram_client.edit_message_text(chat_id, message_id, f"🟢 **Befehl gesendet:** Bewässerung gestartet ({dur} Min / {vol}l).")
                     
     elif data == "man_cancel":
         if chat_id in manual_states:
             del manual_states[chat_id]
-        answer_callback_query(cb_id, "Abgebrochen")
-        send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
+        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
+        telegram_client.send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
 
-    # --- Ventil-Kopplung Callbacks ---
     elif data == "setup_confirm":
-        answer_callback_query(cb_id, "Ventil-Kopplung wird gestartet...")
+        telegram_client.answer_callback_query(cb_id, "Ventil-Kopplung wird gestartet...")
         _start_pairing(chat_id)
 
     elif data == "setup_cancel":
-        answer_callback_query(cb_id, "Abgebrochen")
-        send_message(chat_id, "❌ Ventil-Kopplung abgebrochen.", get_main_keyboard())
+        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
+        telegram_client.send_message(chat_id, "❌ Ventil-Kopplung abgebrochen.", get_main_keyboard())
 
     else:
-        answer_callback_query(cb_id)
+        telegram_client.answer_callback_query(cb_id)
 
-def _polling_loop():
-    """Hintergrund-Long-Polling-Schleife zur Abfrage neuer Nachrichten."""
-    logger.info("Telegram-Polling gestartet.")
-    offset = 0
-    
-    while True:
-        if not config.TELEGRAM_BOT_TOKEN:
-            logger.error("Kein Telegram Bot Token konfiguriert. Polling ausgesetzt.")
-            time.sleep(10)
-            continue
-            
-        url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/getUpdates?offset={offset}&timeout=30"
-        
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'GardenIrrigationDaemon/1.0'})
-            with urllib.request.urlopen(req, timeout=35) as response:
-                result = json.loads(response.read().decode("utf-8"))
-                
-            if not result.get("ok"):
-                logger.error(f"Fehlerantwort von Telegram-API: {result}")
-                time.sleep(5)
-                continue
-                
-            updates = result.get("result", [])
-            for update in updates:
-                offset = update["update_id"] + 1
-                
-                # Prüfe Absender (Security Whitelist)
-                msg_obj = update.get("message")
-                cb_obj = update.get("callback_query")
-                
-                sender_id = None
-                if msg_obj:
-                    sender_id = msg_obj["from"]["id"]
-                elif cb_obj:
-                    sender_id = cb_obj["from"]["id"]
-                    
-                if sender_id not in config.TELEGRAM_ALLOWED_USER_IDS:
-                    logger.warning(f"Unautorisierter Zugriff von User-ID {sender_id} blockiert!")
-                    # Sende unhöflichen Einbrechern keine Nachricht zurück zur Absicherung
-                    continue
-                    
-                # Event verarbeiten
-                if msg_obj:
-                    _process_message(msg_obj)
-                elif cb_obj:
-                    _process_callback_query(cb_obj)
-                    
-        except urllib.error.URLError as e:
-            # Häufig bei kurzzeitigen Internetunterbrechungen auf Pi
-            logger.debug(f"Verbindungsfehler im Telegram-Polling: {e}")
-            time.sleep(5)
-        except Exception as e:
-            logger.error(f"Unerwarteter Fehler im Telegram-Polling: {e}")
-            time.sleep(5)
-
-def start_bot():
-    """Initialisiert und startet den Telegram-Bot."""
-    # Scheduler mit Push-Benachrichtigung verbinden
-    scheduler.register_notification_callback(broadcast_notification)
-    
-    t = threading.Thread(target=_polling_loop, daemon=True)
-    t.start()
-    logger.info("Telegram-Bot-Dienst im Hintergrund gestartet.")
+def on_telegram_update(msg_obj: dict, cb_obj: dict):
+    """Routing-Callback, das vom TelegramClient aufgerufen wird."""
+    if msg_obj:
+        _process_message(msg_obj)
+    elif cb_obj:
+        _process_callback_query(cb_obj)

@@ -2,7 +2,9 @@ import json
 import logging
 import threading
 import time
-from . import config
+from .. import config
+from . import mqtt_client
+from .mqtt_client import _global_bus, DeviceJoinedEvent
 
 logger = logging.getLogger("garden_pairing")
 
@@ -13,11 +15,9 @@ REMINDER_AT    = 45    # Sekunden bis Erinnerungsnachricht
 _pairing_active = False
 _pairing_lock   = threading.Lock()
 
-
 def is_pairing_active() -> bool:
     """Gibt zurück, ob gerade eine Ventil-Kopplung läuft."""
     return _pairing_active
-
 
 def start_pairing(chat_id: int, notify_fn) -> bool:
     """
@@ -41,61 +41,30 @@ def start_pairing(chat_id: int, notify_fn) -> bool:
     t.start()
     return True
 
-
 def _pairing_worker(chat_id: int, notify_fn):
-    """Hintergrund-Thread: führt die vollständige Ventil-Kopplung durch."""
+    """Hintergrund-Thread: führt die vollständige Ventil-Kopplung über das einheitliche MqttClient-Seam durch."""
     global _pairing_active
-
-    try:
-        import paho.mqtt.client as mqtt
-    except ImportError:
-        notify_fn(chat_id,
-            "❌ MQTT-Bibliothek (paho-mqtt) nicht installiert.\n"
-            "Ventil-Kopplung nicht möglich."
-        )
-        _pairing_active = False
-        return
 
     found_event   = threading.Event()
     ieee_address  = [None]
 
-    # ── MQTT-Callbacks ────────────────────────────────────────────────────────
+    # Event-Listener für Beigetretene Geräte
+    def on_device_joined(event: DeviceJoinedEvent):
+        ieee_address[0] = event.ieee_address
+        found_event.set()
+        logger.info(f"Ventil-Kopplung: Gerät beigetreten – {event.ieee_address}")
 
-    def on_connect(client, userdata, flags, rc):
-        if rc == 0:
-            client.subscribe("zigbee2mqtt/bridge/event")
-            client.subscribe("zigbee2mqtt/bridge/response/device/rename")
-            # Koppelmodus im Mittelweg-Dienst aktivieren
-            client.publish(
-                "zigbee2mqtt/bridge/request/permit_join",
-                json.dumps({"value": True})
-            )
-            logger.info("Ventil-Kopplung: Koppelmodus aktiviert.")
-        else:
-            logger.error(f"Ventil-Kopplung: MQTT-Verbindungsfehler (rc={rc})")
-
-    def on_message(client, userdata, msg):
-        try:
-            payload = json.loads(msg.payload.decode("utf-8"))
-            if msg.topic == "zigbee2mqtt/bridge/event":
-                if payload.get("type") == "device_joined":
-                    ieee = payload.get("data", {}).get("ieee_address")
-                    if ieee:
-                        ieee_address[0] = ieee
-                        found_event.set()
-                        logger.info(f"Ventil-Kopplung: Gerät beigetreten – {ieee}")
-        except Exception as e:
-            logger.error(f"Ventil-Kopplung: Fehler beim Verarbeiten der MQTT-Nachricht: {e}")
-
-    # ── Kurzlebige MQTT-Verbindung nur für die Kopplung ──────────────────────
-
-    client = mqtt.Client()
-    client.on_connect = on_connect
-    client.on_message = on_message
+    # Registriere den Listener auf dem Ereignis-Kanal
+    _global_bus.subscribe(DeviceJoinedEvent, on_device_joined)
 
     try:
-        client.connect(config.MQTT_BROKER_HOST, config.MQTT_BROKER_PORT, keepalive=60)
-        client.loop_start()
+        # Koppelmodus im Mittelweg-Dienst aktivieren über den Haupt-Client
+        permit_join_payload = json.dumps({"value": True})
+        mqtt_client.client_instance.publish(
+            "zigbee2mqtt/bridge/request/permit_join",
+            permit_join_payload
+        )
+        logger.info("Ventil-Kopplung: Koppelmodus aktiviert.")
 
         # Auf Beitrittssignal warten (max. PAIRING_TIMEOUT Sekunden)
         reminded = False
@@ -125,7 +94,7 @@ def _pairing_worker(chat_id: int, notify_fn):
         # ── Timeout ───────────────────────────────────────────────────────────
 
         if not found_event.is_set():
-            client.publish(
+            mqtt_client.client_instance.publish(
                 "zigbee2mqtt/bridge/request/permit_join",
                 json.dumps({"value": False})
             )
@@ -143,14 +112,14 @@ def _pairing_worker(chat_id: int, notify_fn):
 
         ieee = ieee_address[0]
         logger.info(f"Ventil-Kopplung: Benenne {ieee} → {VALVE_NAME}")
-        client.publish(
+        mqtt_client.client_instance.publish(
             "zigbee2mqtt/bridge/request/device/rename",
             json.dumps({"from": ieee, "to": VALVE_NAME})
         )
         time.sleep(2)
 
         # Koppelmodus deaktivieren
-        client.publish(
+        mqtt_client.client_instance.publish(
             "zigbee2mqtt/bridge/request/permit_join",
             json.dumps({"value": False})
         )
@@ -169,9 +138,4 @@ def _pairing_worker(chat_id: int, notify_fn):
         logger.error(f"Ventil-Kopplung: Unerwarteter Fehler: {e}")
         notify_fn(chat_id, f"❌ Fehler bei der Ventil-Kopplung: {e}")
     finally:
-        try:
-            client.loop_stop()
-            client.disconnect()
-        except Exception:
-            pass
         _pairing_active = False

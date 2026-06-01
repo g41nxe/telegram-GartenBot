@@ -3,7 +3,8 @@ import logging
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta
-from . import config, database
+from .. import config
+from . import database
 
 logger = logging.getLogger("garden_weather")
 
