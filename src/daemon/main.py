@@ -1,7 +1,9 @@
 import time
 import logging
 import sys
-from . import config, database, mqtt_client, scheduler, telegram_bot
+from . import config, scheduler
+from .adapters import database, mqtt_client
+from .ui import telegram_bot
 
 # Zentrales Logging konfigurieren
 logging.basicConfig(
@@ -26,16 +28,28 @@ def main():
         logger.error(f"Kritischer Fehler bei der Datenbankinitialisierung: {e}")
         sys.exit(1)
         
-    # 2. MQTT-Client starten
+    # 2. Ereignis-Kanal & Guss-Steuerung initialisieren und verdrahten (IoC)
+    logger.info("Initialisiere Ereignis-Kanal & Guss-Steuerung...")
+    from .core.watering_controller import WateringController
+    from .adapters.database_adapter import DatabaseLoggerAdapter
+    
+    # Erzeuge Guss-Steuerung und weise sie dem Scheduler zu (Fassaden-Kopplung)
+    watering_ctrl = WateringController(mqtt_client._global_bus, mqtt_client.client_instance)
+    scheduler.controller = watering_ctrl
+    
+    # Initialisiere den DB-Logger Adapter zur Event-Archivierung
+    db_adapter = DatabaseLoggerAdapter(mqtt_client._global_bus)
+        
+    # 3. MQTT-Client starten
     logger.info("Initialisiere MQTT-Dienst...")
     if not mqtt_client.start_client():
         logger.warning("MQTT-Dienst konnte nicht gestartet werden. Prüfen Sie Ihren Broker.")
         
-    # 3. Zeitpläne/Scheduler starten
+    # 4. Zeitpläne/Scheduler starten
     logger.info("Initialisiere Bewässerungs-Scheduler...")
     scheduler.start_scheduler()
     
-    # 4. Telegram-Bot starten
+    # 5. Telegram-Bot starten
     logger.info("Initialisiere Telegram-Bot...")
     if not config.TELEGRAM_BOT_TOKEN:
         logger.warning(

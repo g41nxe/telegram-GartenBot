@@ -6,7 +6,7 @@ from datetime import datetime
 logger = logging.getLogger("garden_database")
 
 # Pfad zur SQLite-Datenbankdatei (im Projekt-Root)
-DB_PATH = Path(__file__).resolve().parent.parent.parent / "garden.db"
+DB_PATH = Path(__file__).resolve().parent.parent.parent.parent / "garden.db"
 
 def get_connection():
     """Erstellt eine Verbindung zur SQLite-Datenbank."""
