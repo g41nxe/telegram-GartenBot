@@ -194,6 +194,103 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertFalse(should_skip)
         self.assertIn("Regen liegt unter Grenzwert", details)
 
+    def test_08_first_to_hit_time_limit_with_unreached_volume(self):
+        """Testet, ob das Zeitlimit bei nicht erreichtem Volumenlimit eine Notfall-Abschaltung auslöst."""
+        from daemon import scheduler
+        
+        # Sicherstellen, dass kein Zyklus aktiv ist
+        scheduler.stop_watering()
+        
+        # Starte eine Bewässerung mit 10 Minuten Zeitlimit und 5 Litern Volumenlimit
+        success, msg = scheduler.start_watering(duration_minutes=10, target_volume_liters=5, source="test")
+        self.assertTrue(success)
+        self.assertEqual(mqtt_client.get_valve_status()["state"], "ON")
+        
+        # Mocking des Telegram-Callbacks, um die Push-Nachricht zu überprüfen
+        mock_notification = MagicMock()
+        scheduler.register_notification_callback(mock_notification)
+        
+        # Simuliere, dass das Volumenlimit vor Ablauf der Zeit nicht erreicht wurde (z.B. nur 3 Liter)
+        mqtt_client.active_cycle_volume = 3.0
+        
+        # Manuelles Auslösen des Timeouts
+        scheduler._time_limit_callback()
+        
+        # Überprüfen, ob das Ventil geschlossen wurde
+        self.assertEqual(mqtt_client.get_valve_status()["state"], "OFF")
+        self.assertIsNone(scheduler.get_active_cycle())
+        
+        # Überprüfen, ob die Historie als "failed" weggeschrieben wurde
+        history = database.get_recent_history(1)
+        self.assertGreater(len(history), 0)
+        self.assertEqual(history[0]["status"], "failed")
+        self.assertIn("Notfall-Abschaltung", history[0]["details"])
+        self.assertIn("3.0l geflossen", history[0]["details"])
+        
+        # Benachrichtigung auf Notfall-Text prüfen
+        mock_notification.assert_called_once()
+        notification_text = mock_notification.call_args[0][0]
+        self.assertIn("Notfall-Abschaltung", notification_text)
+        self.assertIn("Zielwassermenge", notification_text)
+        self.assertIn("3.0 Liter", notification_text)
+
+    def test_09_mqtt_time_gap_capping(self):
+        """Testet, ob ein Zeit-Gap von >= 60 Sek in der MQTT-Durchfluss-Integration auf 60 Sek gedeckelt wird."""
+        from datetime import datetime, timedelta
+        
+        # Client starten und Ventil auf ON setzen
+        mqtt_client.start_client()
+        mqtt_client.valve_status["state"] = "ON"
+        mqtt_client.active_cycle_volume = 10.0
+        
+        # Mocking der letzten Update-Zeit auf 75 Sekunden in der Vergangenheit
+        mqtt_client.last_flow_update_time = datetime.now() - timedelta(seconds=75)
+        
+        # Mock-Nachricht mit flow_rate = 6.0 L/min (0.1 l/s)
+        class MockMsg:
+            def __init__(self, payload):
+                self.payload = payload
+        
+        payload = json.dumps({
+            "state": "ON",
+            "flow_rate": 6.0,
+            "battery": 95,
+            "linkquality": 120
+        }).encode("utf-8")
+        msg = MockMsg(payload)
+        
+        # on_message direkt triggern
+        mqtt_client.on_message(None, None, msg)
+        
+        # Durch die Deckelung auf max. 60 Sek:
+        # Zuwachs = 6.0 L/min * (60.0 / 60.0) = 6.0 Liter
+        # Erwartetes Gesamtvolumen = 10.0 + 6.0 = 16.0 Liter
+        self.assertAlmostEqual(mqtt_client.get_active_volume(), 16.0, places=1)
+
+    def test_10_startup_safety_shutdown(self):
+        """Testet die Sicherheits-Schließung beim Systemstart bei unerwartet offenem Ventil."""
+        from daemon import scheduler
+        
+        # Sicherstellen, dass kein Zyklus aktiv ist
+        scheduler.stop_watering()
+        self.assertIsNone(scheduler.get_active_cycle())
+        
+        # Mocking des Ventil-Zustands auf ON
+        mqtt_client.valve_status["state"] = "ON"
+        
+        # Mocking der Telegram-Push-Meldung
+        mock_notification = MagicMock()
+        scheduler.register_notification_callback(mock_notification)
+        
+        # Führe den Sicherheitscheck aus
+        triggered = scheduler.check_startup_safety()
+        
+        # Assertions
+        self.assertTrue(triggered)
+        self.assertEqual(mqtt_client.get_valve_status()["state"], "OFF")
+        mock_notification.assert_called_once()
+        self.assertIn("Sicherheits-Schließung", mock_notification.call_args[0][0])
+
 
 if __name__ == "__main__":
     unittest.main()
