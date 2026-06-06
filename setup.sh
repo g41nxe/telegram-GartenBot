@@ -58,13 +58,13 @@ ARCH=$(uname -m)
 if [ "$ARCH" = "armv6l" ]; then
     log "ARMv6-Architektur erkannt (z.B. Raspberry Pi Zero W / Pi 1)."
     log "Nodesource unterstützt ARMv6 nicht offiziell. Verwende inoffizielle Build-Quellen..."
-    if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -d'.' -f1)" != "v20" ]; then
-        log "Lade inoffizielles Node.js v20.9.0-Build für ARMv6 herunter..."
+    if ! command -v node >/dev/null 2>&1 || [ "$(node -v | cut -d'.' -f1)" != "v20" ] || [ "$(node -v | cut -d'.' -f2)" -lt 11 ]; then
+        log "Lade inoffizielles Node.js v20.11.1-Build für ARMv6 herunter..."
         cd /tmp
-        wget -q https://unofficial-builds.nodejs.org/download/release/v20.9.0/node-v20.9.0-linux-armv6l.tar.xz
+        wget -q https://unofficial-builds.nodejs.org/download/release/v20.11.1/node-v20.11.1-linux-armv6l.tar.xz
         log "Entpacke Node.js nach /usr/local..."
-        sudo tar -xJf node-v20.9.0-linux-armv6l.tar.xz -C /usr/local --strip-components=1
-        rm node-v20.9.0-linux-armv6l.tar.xz
+        sudo tar -xJf node-v20.11.1-linux-armv6l.tar.xz -C /usr/local --strip-components=1
+        rm node-v20.11.1-linux-armv6l.tar.xz
     else
         log "Eine kompatible Node.js-Version ($(node -v)) ist bereits installiert."
     fi
@@ -95,12 +95,23 @@ INSTALL_DIR="/opt/zigbee2mqtt"
 sudo mkdir -p "$INSTALL_DIR"
 sudo chown -R "$CURRENT_USER" "$INSTALL_DIR"
 
-if [ -d "$INSTALL_DIR/.git" ]; then
+ARCHIVE_PATH="$(dirname "$0")/zigbee2mqtt.tar.gz"
+if [ ! -f "$ARCHIVE_PATH" ]; then
+    ARCHIVE_PATH="$CURRENT_HOME/garden/zigbee2mqtt.tar.gz"
+fi
+
+if [ -f "$ARCHIVE_PATH" ]; then
+    log "Vorkompiliertes Zigbee2MQTT-Archiv gefunden ($ARCHIVE_PATH). Entpacke..."
+    tar -xzf "$ARCHIVE_PATH" -C "$INSTALL_DIR"
+    rm "$ARCHIVE_PATH"
+    ok "Zigbee2MQTT aus Archiv entpackt"
+elif [ -d "$INSTALL_DIR/.git" ]; then
     warn "Zigbee2MQTT bereits vorhanden – überspringe Download."
 else
     log "Lade Zigbee2MQTT herunter..."
     git clone --depth 1 https://github.com/Koenkk/zigbee2mqtt.git "$INSTALL_DIR" >/dev/null 2>&1
 fi
+
 
 log "Optimiere Swap-Speicher für RAM-schonende NPM-Installation (Erstelle 1024MB temporären Swap)..."
 # Prüfen, ob wir die dphys-swapfile Konfiguration anpassen können
@@ -125,8 +136,13 @@ cd "$INSTALL_DIR"
 export NODE_OPTIONS="--max-old-space-size=400"
 npm install --omit=dev --ignore-scripts --no-audit --no-fund --prefer-offline
 
-log "Kompiliere TypeScript-Quellcode für Zigbee2MQTT..."
-npm run build
+if [ -d "$INSTALL_DIR/dist" ]; then
+    ok "Kompilierter TypeScript-Code (dist) bereits vorhanden – überspringe tsc-Kompilierung auf dem Pi!"
+else
+    log "Kompiliere TypeScript-Quellcode für Zigbee2MQTT..."
+    npm run build
+fi
+
 
 
 # Restore originale Swap-Größe um die SD-Karte des Pi langfristig zu schonen
