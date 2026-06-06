@@ -1,4 +1,4 @@
-﻿# PowerShell-Skript zur automatischen Übertragung des Gartenbewässerungs-Services auf den Pi
+# PowerShell-Skript zur automatischen Übertragung des Gartenbewässerungs-Services auf den Pi
 Clear-Host
 
 Write-Host "==========================================================" -ForegroundColor Green
@@ -35,11 +35,11 @@ if ([string]::IsNullOrEmpty($PiUser)) {
 
 
 # 1. Lokaler Build und Archivierung von Zigbee2MQTT
-if (Test-Path "temp_z2m") {
+if (Test-Path "vendor/zigbee2mqtt") {
     Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
     Write-Host "   Kompiliere Zigbee2MQTT lokal auf dem Host..." -ForegroundColor Cyan
     Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
-    Push-Location temp_z2m
+    Push-Location vendor/zigbee2mqtt
     try {
         npm run build
         if ($LASTEXITCODE -ne 0) {
@@ -58,7 +58,7 @@ if (Test-Path "temp_z2m") {
     if (Test-Path "zigbee2mqtt.tar.gz") {
         Remove-Item "zigbee2mqtt.tar.gz" -Force
     }
-    tar -czf zigbee2mqtt.tar.gz --exclude=node_modules --exclude=.git --exclude=*.tar.gz -C temp_z2m .
+    tar -czf zigbee2mqtt.tar.gz --exclude=node_modules --exclude=.git --exclude=*.tar.gz -C vendor/zigbee2mqtt .
     if (Test-Path "zigbee2mqtt.tar.gz") {
         $ArchiveSize = [int]((Get-Item "zigbee2mqtt.tar.gz").Length / 1MB)
         Write-Host "Archiv erfolgreich erstellt (Größe: $ArchiveSize MB)." -ForegroundColor Green
