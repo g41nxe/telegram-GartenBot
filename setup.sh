@@ -163,12 +163,27 @@ ok "Mittelweg-Dienst installiert"
 log "[4/6] Konfiguriere Mittelweg-Dienst..."
 
 mkdir -p "$INSTALL_DIR/data"
+
+# Prüfen, ob bereits ein adapter-Eintrag existiert, um diesen bei der Migration (z.B. ezsp -> ember) nicht zu überschreiben
+ADAPTER_LINE=""
+if [ -f "$INSTALL_DIR/data/configuration.yaml" ]; then
+    EXISTING_ADAPTER=$(grep -E "^\s*adapter:" "$INSTALL_DIR/data/configuration.yaml" | head -n 1)
+    if [ -n "$EXISTING_ADAPTER" ]; then
+        # Entferne Leerzeichen und Wagenrückläufe, extrahiere den Wert nach dem Doppelpunkt
+        ADAPTER_VAL=$(echo "$EXISTING_ADAPTER" | tr -d '\r' | cut -d':' -f2 | tr -d ' ')
+        if [ -n "$ADAPTER_VAL" ]; then
+            ADAPTER_LINE="  adapter: $ADAPTER_VAL"
+        fi
+    fi
+fi
+
 cat > "$INSTALL_DIR/data/configuration.yaml" <<EOF
 # Zigbee2MQTT Konfiguration
 # Automatisch erstellt von setup.sh – nicht manuell bearbeiten.
 
 serial:
   port: ${ZIGBEE_PORT}
+${ADAPTER_LINE}
 
 permit_join: false
 

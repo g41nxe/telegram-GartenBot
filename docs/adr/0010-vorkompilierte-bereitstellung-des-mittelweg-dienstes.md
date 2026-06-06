@@ -42,6 +42,10 @@ Da Zigbee2MQTT als lokaler Quellcode im Repository unter `vendor/zigbee2mqtt` ve
 * **Konsequenz:** Die Bibliothek `debounce@^3.0.0` ist ein reines ES-Modul. Beim Starten von Zigbee2MQTT scheiterte der Import mit der Fehlermeldung `ERR_REQUIRE_ESM`.
 * **Lösung:** In `vendor/zigbee2mqtt/package.json` wurde das Paket `debounce` von Version `^3.0.0` auf die CommonJS-kompatible Version `^1.2.1` downgegradet. Nach Ausführung von `npm install` im Vendoring-Verzeichnis wurde die `package-lock.json` aktualisiert, wodurch der Dienst auch auf älteren Node.js-Runtimes fehlerfrei startet.
 
+### Kompatibilitätspfad für Coordinator-Firmware Upgrades
+* **Problem:** Wenn die Firmware des Funk-Koordinators (ZBDongle-E) von der veralteten EZSP v8 auf v7.4 (EZSP v13+) aktualisiert wird, führt das direkte Starten mit dem Standard-Treiber `adapter: ember` zu einem Backup-Formatkonflikt (`Current backup file is from an unsupported EZSP version`), was das gesamte Zigbee-Netzwerk unbrauchbar machen kann.
+* **Lösung:** Bei einem Firmware-Upgrade muss Zigbee2MQTT beim ersten Start explizit mit `adapter: ezsp` gestartet werden. Nach erfolgreicher Konvertierung des Backups kann und sollte für den Normalbetrieb auf `adapter: ember` gewechselt werden (bzw. der adapter-Typ aus der Konfiguration gelöscht werden, da `ember` in Zigbee2MQTT v2.x der Standard-Treiber für diese Chipsätze ist).
+
 ## Konsequenzen
 
 * **Vorteile:**

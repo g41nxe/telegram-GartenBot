@@ -73,7 +73,7 @@ Write-Host "Ggf. werden Sie gleich nach dem SSH-Passwort des Pi gefragt." -Foreg
 Write-Host ""
 
 # Ausführung der Übertragung der notwendigen Ordner und Dateien (ohne .git, garden.db, etc. zur Vermeidung von Konflikten)
-$TransferItems = @("src", "setup.sh", ".env")
+$TransferItems = @("src", "setup.sh", ".env", "migrate_zigbee_adapter.sh")
 if (Test-Path "zigbee2mqtt.tar.gz") {
     $TransferItems += "zigbee2mqtt.tar.gz"
 }
