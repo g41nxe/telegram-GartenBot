@@ -63,9 +63,26 @@ graph TD
 ## 🚀 Installation & Bereitstellung auf dem Pi Zero W
 
 ### Voraussetzungen
-1. **Funk-Koordinator** (Sonoff Zigbee 3.0 USB Dongle Plus) am Pi eingesteckt
-2. **Sonoff Hydro ONE Ventil** griffbereit (wird während des Setups gekoppelt)
-3. `.env`-Datei mit deinen Zugangsdaten (aus `.env.template` erstellen):
+
+#### 1. Hardware
+*   **Steuerzentrale**: Raspberry Pi Zero W (oder neuer)
+*   **Funk-Koordinator**: Sonoff Zigbee 3.0 USB Dongle Plus (am Pi eingesteckt)
+*   **Ventil**: Sonoff Hydro ONE Smart-Wasserlaufventil (griffbereit für die Kopplung)
+
+#### 2. System- & Software-Bibliotheken (auf dem Raspberry Pi)
+Das automatische Installationsskript `setup.sh` richtet diese Versionen und Pakete selbstständig ein:
+
+| Komponente / Bibliothek | Benötigte Version | Installationsquelle | Zweck |
+|---|---|---|---|
+| **Python** | `>= 3.9` | Vorinstalliert im OS | Ausführung des Bewässerungs-Daemons |
+| **paho-mqtt** | `python3-paho-mqtt` (`~1.6`) | `apt` Paket | MQTT-Kommunikation in Python |
+| **Mosquitto** | `mosquitto` & `mosquitto-clients` | `apt` Paket | Lokaler MQTT-Message-Broker |
+| **Node.js** | `>= v20.10.0` (installiert wird `v20.11.1`) | Inoffizieller ARMv6-Build | Laufzeitumgebung für Zigbee2MQTT |
+| **Zigbee2MQTT** | `v2.10.1` | Git / lokaler Build | Mittelweg-Dienst für Zigbee-Kommunikation |
+| **System-Tools** | `git`, `curl` | `apt` Paket | Git-Repository und Download-Utilities |
+
+#### 3. Konfigurationsdatei
+Erstelle eine `.env`-Datei aus der Vorlage `.env.template` im Projektverzeichnis:
    ```bash
    cp .env.template .env
    nano .env
