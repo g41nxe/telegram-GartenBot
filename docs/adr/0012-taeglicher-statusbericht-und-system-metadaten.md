@@ -37,6 +37,9 @@ Um diesen Bericht zuverlässig zu versenden, müssen wir:
 7. **Aktive Abfrage (Status-Update) beim Abruf:**
    Da das Ventil batteriebetrieben ist und schläft, triggern wir bei jeder `/status`-Abfrage, bei manuellem `/report` und vor dem automatischen Statusbericht um 08:00 Uhr eine MQTT-Abfrage (`{"state": "", "battery": ""}`) auf dem Topic `garden_valve/get`. Um dem Ventil Zeit zu geben, die Anfrage bei seinem nächsten periodischen Aufwachen (Poll) zu verarbeiten, wartet der Telegram-Bot bei `/status`/`/report` für 1,5 Sekunden und der automatische Scheduler für 5 Sekunden vor der Generierung der Nachricht.
 
+8. **Passives Verbindungs-Monitoring und Statistik:**
+   Um die Batterie des Ventils maximal zu schonen, protokollieren wir eintreffende Status-Meldungen passiv in der Tabelle `device_status_log`. Hierbei werden `battery` und `linkquality` (LQI) bei jedem Signal aufgezeichnet. Im täglichen Statusbericht aggregieren wir diese Daten für die vergangenen 24 Stunden, um die Gesamtzahl der empfangenen Signale, die durchschnittliche Signalqualität und die längste aufgetretene Funkstille (maximale Funklücke) im Textformat darzustellen.
+
 ## Konsequenzen
 
 - **Datenintegrität und Ausfallsicherheit:** Das System sendet den Tagesbericht zuverlässig und absolut dopplungsfrei, selbst bei häufigen Service-Restarts oder Stromausfällen.

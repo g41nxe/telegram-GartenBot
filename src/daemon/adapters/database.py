@@ -66,6 +66,16 @@ def init_db():
             )
         """)
         
+        # Tabelle für Verbindungsstatistiken (Passives Status-Logging)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS device_status_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                battery INTEGER,
+                linkquality INTEGER
+            )
+        """)
+        
         # Schema-Migration check (falls Spalten in einer bestehenden Datenbank fehlen)
         try:
             cursor.execute("SELECT current_temp FROM weather_history LIMIT 1")
@@ -86,6 +96,19 @@ def init_db():
             logger.info("Migriere Datenbank: Füge watered_volume Spalte zu watering_history hinzu...")
             cursor.execute("ALTER TABLE watering_history ADD COLUMN watered_volume REAL DEFAULT 0.0")
             
+        try:
+            cursor.execute("SELECT id FROM device_status_log LIMIT 1")
+        except sqlite3.OperationalError:
+            logger.info("Migriere Datenbank: Erstelle Tabelle device_status_log...")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS device_status_log (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    battery INTEGER,
+                    linkquality INTEGER
+                )
+            """)
+
         conn.commit()
         logger.info("Datenbank erfolgreich initialisiert.")
     except Exception as e:
@@ -288,5 +311,87 @@ def get_watering_stats_last_24h() -> tuple[int, int, float]:
     except Exception as e:
         logger.error(f"Fehler beim Laden der Bewässerungsstatistik: {e}")
         return 0, 0, 0.0
+    finally:
+        conn.close()
+
+def log_device_status(battery: int, linkquality: int):
+    """Loggt den aktuellen Batteriestand und die Signalqualität für statistische Auswertungen."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        timestamp = datetime.now().isoformat()
+        cursor.execute(
+            "INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)",
+            (timestamp, battery, linkquality)
+        )
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Fehler beim Protokollieren des Gerätestatus: {e}")
+    finally:
+        conn.close()
+
+def get_device_status_stats_last_24h() -> dict:
+    """Errechnet Signalstärkestatistiken der letzten 24 Stunden."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        from datetime import datetime, timedelta
+        time_limit = (datetime.now() - timedelta(hours=24)).isoformat()
+        
+        cursor.execute("""
+            SELECT timestamp, linkquality 
+            FROM device_status_log 
+            WHERE timestamp >= ? 
+            ORDER BY timestamp ASC
+        """, (time_limit,))
+        rows = cursor.fetchall()
+        
+        if not rows:
+            return {
+                "count": 0,
+                "avg_lqi": 0.0,
+                "max_gap_hours": 0.0
+            }
+            
+        count = len(rows)
+        lqis = [r["linkquality"] for r in rows]
+        avg_lqi = sum(lqis) / count
+        
+        # Berechne maximale Funklücke
+        max_gap_seconds = 0.0
+        prev_time = datetime.fromisoformat(rows[0]["timestamp"])
+        
+        # Vergleiche mit dem Startzeitpunkt (vor 24h)
+        start_time = datetime.now() - timedelta(hours=24)
+        gap_start = (prev_time - start_time).total_seconds()
+        if gap_start > max_gap_seconds:
+            max_gap_seconds = gap_start
+            
+        for r in rows[1:]:
+            curr_time = datetime.fromisoformat(r["timestamp"])
+            gap = (curr_time - prev_time).total_seconds()
+            if gap > max_gap_seconds:
+                max_gap_seconds = gap
+            prev_time = curr_time
+            
+        # Vergleiche mit dem jetzigen Zeitpunkt
+        gap_end = (datetime.now() - prev_time).total_seconds()
+        if gap_end > max_gap_seconds:
+            max_gap_seconds = gap_end
+            
+        max_gap_hours = max_gap_seconds / 3600.0
+        
+        return {
+            "count": count,
+            "avg_lqi": round(avg_lqi, 1),
+            "max_gap_hours": round(max_gap_hours, 1)
+        }
+    except Exception as e:
+        logger.error(f"Fehler beim Berechnen der Gerätestatus-Statistik: {e}")
+        return {
+            "count": 0,
+            "avg_lqi": 0.0,
+            "max_gap_hours": 0.0
+        }
     finally:
         conn.close()
