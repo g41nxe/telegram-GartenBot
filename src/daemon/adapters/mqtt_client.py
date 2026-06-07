@@ -13,11 +13,12 @@ logger = logging.getLogger("garden_mqtt")
 
 class ValveStatusReported(Event):
     """Event, das gefeuert wird, wenn ein neuer Ventil-Zustand empfangen wird."""
-    def __init__(self, state: str, flow_rate: float, battery: int, linkquality: int):
+    def __init__(self, state: str, flow_rate: float, battery: int, linkquality: int, valve_abnormal_state: str = "normal"):
         self.state = state
         self.flow_rate = flow_rate
         self.battery = battery
         self.linkquality = linkquality
+        self.valve_abnormal_state = valve_abnormal_state
 
 class DeviceJoinedEvent(Event):
     """Event, das gefeuert wird, wenn ein neues Zigbee-Gerät beigetreten ist."""
@@ -31,6 +32,7 @@ valve_status = {
     "battery": 100,
     "flow_rate": 0.0,
     "linkquality": 0,
+    "valve_abnormal_state": "normal",
     "last_update": None
 }
 
@@ -72,6 +74,7 @@ def on_message(client, userdata, msg):
         valve_status["battery"] = data.get("battery", valve_status["battery"])
         valve_status["flow_rate"] = flow_rate
         valve_status["linkquality"] = data.get("linkquality", valve_status["linkquality"])
+        valve_status["valve_abnormal_state"] = data.get("valve_abnormal_state", valve_status.get("valve_abnormal_state", "normal"))
         valve_status["last_update"] = now.isoformat()
         
     except Exception as e:
@@ -202,9 +205,10 @@ class PahoMqttAdapter(MqttClient):
                 flow_rate = float(data.get("flow_rate", valve_status["flow_rate"]))
                 battery = int(data.get("battery", valve_status["battery"]))
                 linkquality = int(data.get("linkquality", valve_status["linkquality"]))
+                valve_abnormal_state = data.get("valve_abnormal_state", valve_status.get("valve_abnormal_state", "normal"))
                 
                 # Ereignis publizieren
-                self.event_bus.publish(ValveStatusReported(state, flow_rate, battery, linkquality))
+                self.event_bus.publish(ValveStatusReported(state, flow_rate, battery, linkquality, valve_abnormal_state))
                 
             elif msg.topic == "zigbee2mqtt/bridge/event":
                 if data.get("type") == "device_joined":
@@ -240,7 +244,9 @@ class SimulatedMqttAdapter(MqttClient):
         valve_status["battery"] = 95
         valve_status["flow_rate"] = 0.0
         valve_status["linkquality"] = 140
-        valve_status["last_update"] = datetime.now().isoformat()
+        valve_status["valve_abnormal_state"] = "normal"
+        valve_update_time = datetime.now()
+        valve_status["last_update"] = valve_update_time.isoformat()
 
     def connect(self) -> bool:
         self._connected = True
@@ -277,7 +283,7 @@ class SimulatedMqttAdapter(MqttClient):
                     last_flow_update_time = None
                     
                 self.event_bus.publish(ValveStatusReported(
-                    new_state, flow, valve_status["battery"], valve_status["linkquality"]
+                    new_state, flow, valve_status["battery"], valve_status["linkquality"], valve_status["valve_abnormal_state"]
                 ))
                 logger.info(f"SimulatedMqttAdapter: Ventil-State geändert -> {new_state}")
                 
@@ -328,7 +334,7 @@ class SimulatedMqttAdapter(MqttClient):
                             active_cycle_volume += 5.0 * (min(elapsed, 60.0) / 60.0)
                     last_flow_update_time = now
                     self.event_bus.publish(ValveStatusReported(
-                        "ON", 5.0, valve_status["battery"], valve_status["linkquality"]
+                        "ON", 5.0, valve_status["battery"], valve_status["linkquality"], valve_status["valve_abnormal_state"]
                     ))
                 time.sleep(1)
             except Exception:
@@ -380,3 +386,9 @@ def close_valve() -> bool:
 def is_broker_connected() -> bool:
     _init_client()
     return client_instance.is_connected()
+
+def request_valve_status() -> bool:
+    """Sendet eine get-Abfrage über MQTT, um aktuelle Werte (Zustand, Batterie) vom Ventil anzufordern."""
+    _init_client()
+    return client_instance.publish(f"{config.MQTT_VALVE_TOPIC}/get", json.dumps({"state": "", "battery": ""}))
+

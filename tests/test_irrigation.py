@@ -302,6 +302,74 @@ class TestGardenIrrigation(unittest.TestCase):
         mock_notification.assert_called_once()
         self.assertIn("Sicherheits-Schließung", mock_notification.call_args[0][0])
 
+    def test_11_database_metadata_and_stats(self):
+        """Testet get/set_metadata und get_watering_stats_last_24h in der Datenbank."""
+        # Test 1: Metadaten
+        database.set_metadata("test_key", "test_value")
+        self.assertEqual(database.get_metadata("test_key"), "test_value")
+        self.assertEqual(database.get_metadata("non_existent_key", "default_val"), "default_val")
+
+        # Test 2: Guss-Statistiken der letzten 24h
+        # Zunächst löschen wir die watering_history für saubere Testbedingungen
+        conn = database.get_connection()
+        conn.execute("DELETE FROM watering_history")
+        conn.commit()
+        conn.close()
+
+        # Logge erfolgreiche und fehlgeschlagene Läufe der letzten 24h
+        database.log_watering(10, "schedule", "completed", "Erfolgreicher Lauf", watered_volume=12.5)
+        database.log_watering(5, "manual", "stopped", "Vorzeitig gestoppt", watered_volume=3.2)
+        database.log_watering(15, "schedule", "failed", "Fehlgeschlagener Lauf", watered_volume=0.0)
+
+        # Logge einen Lauf, der älter als 24h ist (sollte ignoriert werden)
+        from datetime import datetime, timedelta
+        conn = database.get_connection()
+        old_time = (datetime.now() - timedelta(hours=25)).isoformat()
+        conn.execute(
+            "INSERT INTO watering_history (timestamp, duration_minutes, source, status, details, watered_volume) VALUES (?, ?, ?, ?, ?, ?)",
+            (old_time, 20, "schedule", "completed", "Alter Lauf", 50.0)
+        )
+        conn.commit()
+        conn.close()
+
+        success_count, failed_count, total_volume = database.get_watering_stats_last_24h()
+        # Vorzeitig gestoppt und completed gelten als erfolgreich; failed als fehlgeschlagen.
+        self.assertEqual(success_count, 2)
+        self.assertEqual(failed_count, 1)
+        self.assertEqual(total_volume, 15.7)
+
+    def test_12_daily_report_generation(self):
+        """Testet die Generierung des Tagesberichts und das Erkennen von Warnungen."""
+        from datetime import datetime, timedelta
+        from daemon import scheduler
+        
+        # Mocke Wetterdaten
+        with patch("daemon.adapters.weather.get_weather_data") as mock_weather_data:
+            mock_weather_data.return_value = (1.5, 2.0, 21.0, 3) # Bedeckt
+            
+            # 1. Fall: Normaler Zustand (Keine Warnungen)
+            mqtt_client.valve_status["battery"] = 90
+            mqtt_client.valve_status["valve_abnormal_state"] = "normal"
+            mqtt_client.valve_status["last_update"] = datetime.now().isoformat()
+            
+            report = scheduler.generate_daily_report("2026-06-07")
+            self.assertIn("Statusbericht vom 07.06.2026", report)
+            self.assertIn("Erfolgreiche Zyklen", report)
+            self.assertIn("Temperatur: 21.0 °C", report)
+            self.assertNotIn("System-Warnungen", report)
+            
+            # 2. Fall: Batterie schwach, Offline und abnormaler Zustand (Warnungen)
+            mqtt_client.valve_status["battery"] = 15 # Unter 20%
+            mqtt_client.valve_status["valve_abnormal_state"] = "water_shortage"
+            # Letztes Signal vor 25 Stunden
+            mqtt_client.valve_status["last_update"] = (datetime.now() - timedelta(hours=25)).isoformat()
+            
+            report_warn = scheduler.generate_daily_report("2026-06-07")
+            self.assertIn("System-Warnungen", report_warn)
+            self.assertIn("Niedriger Batteriestand", report_warn)
+            self.assertIn("Verbindung verloren", report_warn)
+            self.assertIn("Ventil-Anomalie erkannt", report_warn)
+
 
 if __name__ == "__main__":
     unittest.main()
