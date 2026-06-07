@@ -129,6 +129,10 @@ class TestGardenIrrigation(unittest.TestCase):
         precipitation[10] = 1.5  # In der Vergangenheit
         precipitation[30] = 2.5  # In der Zukunft (Summe = 4.0 mm)
         
+        # Stündliche Regenwahrscheinlichkeit
+        precip_probability = [10] * 48
+        precip_probability[30] = 75  # Maximalwert im Zukunftsfenster
+        
         # Erstelle eine Mock-Stundenliste
         from datetime import datetime
         now = datetime.now()
@@ -149,7 +153,8 @@ class TestGardenIrrigation(unittest.TestCase):
             },
             "hourly": {
                 "time": times,
-                "precipitation": precipitation
+                "precipitation": precipitation,
+                "precipitation_probability": precip_probability
             },
             "daily": {
                 "time": [
@@ -158,8 +163,7 @@ class TestGardenIrrigation(unittest.TestCase):
                     (now + timedelta(days=1)).strftime("%Y-%m-%d")
                 ],
                 "temperature_2m_max": [20.0, 26.5, 25.0],
-                "temperature_2m_min": [10.0, 15.5, 14.0],
-                "precipitation_probability_max": [30, 75, 20]
+                "temperature_2m_min": [10.0, 15.5, 14.0]
             }
         }).encode("utf-8")
         mock_urlopen.return_value.__enter__.return_value = mock_response
