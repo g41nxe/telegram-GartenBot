@@ -390,6 +390,24 @@ class TestGardenIrrigation(unittest.TestCase):
             self.assertIn("Verbindung verloren", report_warn)
             self.assertIn("Ventil-Anomalie erkannt", report_warn)
 
+            # 3. Fall: Broker disconnected, Mittelweg-Dienst offline
+            mqtt_client.HAS_PAHO = True
+            
+            with patch("daemon.adapters.mqtt_client.is_broker_connected", return_value=False), \
+                 patch("daemon.adapters.mqtt_client.get_bridge_status", return_value="offline"):
+                report_serv_offline = scheduler.generate_daily_report("2026-06-07")
+                self.assertIn("System-Warnungen", report_serv_offline)
+                self.assertIn("MQTT-Broker ist offline", report_serv_offline)
+                
+            with patch("daemon.adapters.mqtt_client.is_broker_connected", return_value=True), \
+                 patch("daemon.adapters.mqtt_client.get_bridge_status", return_value="offline"):
+                report_z2m_offline = scheduler.generate_daily_report("2026-06-07")
+                self.assertIn("System-Warnungen", report_z2m_offline)
+                self.assertIn("Mittelweg-Dienst (Zigbee2MQTT) ist offline", report_z2m_offline)
+                
+            # Zurücksetzen für nachfolgende Tests
+            mqtt_client.HAS_PAHO = False
+
     def test_13_device_status_stats(self):
         """Testet das passive Loggen des Gerätestatus und die Berechnung der LQI- und Funklücken-Statistik."""
         # 1. Datenbank-Tabelle leeren
@@ -427,6 +445,27 @@ class TestGardenIrrigation(unittest.TestCase):
         
         # Längste Lücke zwischen Meldung 2 (vor 12h) und Meldung 3 (vor 2h) -> 10 Stunden
         self.assertAlmostEqual(stats["max_gap_hours"], 10.0, places=1)
+
+    def test_14_mqtt_bridge_status_parsing(self):
+        """Testet das Empfangen und Verarbeiten des Bridge-Status in on_message."""
+        # Initialer Zustand
+        mqtt_client.bridge_status = "offline"
+        
+        # Simuliere eingehende Nachricht
+        class MockMsg:
+            def __init__(self, topic, payload):
+                self.topic = topic
+                self.payload = payload
+                
+        # Send online payload
+        msg_online = MockMsg("zigbee2mqtt/bridge/state", b"online")
+        mqtt_client.on_message(None, None, msg_online)
+        self.assertEqual(mqtt_client.get_bridge_status(), "online")
+        
+        # Send offline payload
+        msg_offline = MockMsg("zigbee2mqtt/bridge/state", b"offline")
+        mqtt_client.on_message(None, None, msg_offline)
+        self.assertEqual(mqtt_client.get_bridge_status(), "offline")
 
 
 if __name__ == "__main__":

@@ -38,14 +38,22 @@ valve_status = {
 
 active_cycle_volume = 0.0
 last_flow_update_time = None
+bridge_status = "offline"
 
 # --- Abwärtskompatibles on_message ---
 
 def on_message(client, userdata, msg):
     """Callback bei eingehender MQTT-Nachricht (global und abwärtskompatibel)."""
-    global valve_status, active_cycle_volume, last_flow_update_time
+    global valve_status, active_cycle_volume, last_flow_update_time, bridge_status
     try:
         payload = msg.payload.decode("utf-8")
+        
+        # Bridge-Status-Nachrichten sind reiner Text (kein JSON)
+        if hasattr(msg, "topic") and msg.topic == "zigbee2mqtt/bridge/state":
+            bridge_status = payload.strip().lower()
+            logger.info(f"Mittelweg-Dienst Status empfangen: {bridge_status}")
+            return
+            
         data = json.loads(payload)
         
         state = data.get("state", valve_status["state"])
@@ -105,6 +113,9 @@ class MqttClient:
     def get_valve_status(self) -> Dict[str, Any]:
         return valve_status
 
+    def get_bridge_status(self) -> str:
+        return bridge_status
+
 # --- Production Adapter (Paho-MQTT) ---
 
 try:
@@ -138,6 +149,7 @@ class PahoMqttAdapter(MqttClient):
             return False
 
     def disconnect(self):
+        global bridge_status
         if self._client:
             try:
                 self._client.loop_stop()
@@ -145,6 +157,7 @@ class PahoMqttAdapter(MqttClient):
             except Exception as e:
                 logger.error(f"Fehler beim Stoppen des MQTT-Clients: {e}")
             self._connected = False
+            bridge_status = "offline"
 
     def publish(self, topic: str, payload: str, retain: bool = False) -> bool:
         if not self._client or not self._connected:
@@ -181,6 +194,7 @@ class PahoMqttAdapter(MqttClient):
             # Bridge-Events für Kopplung abonnieren
             self.subscribe("zigbee2mqtt/bridge/event")
             self.subscribe("zigbee2mqtt/bridge/response/device/rename")
+            self.subscribe("zigbee2mqtt/bridge/state")
             
             # Hardware-Timeout senden
             self._configure_safety_timeout()
@@ -249,16 +263,20 @@ class SimulatedMqttAdapter(MqttClient):
         valve_status["last_update"] = valve_update_time.isoformat()
 
     def connect(self) -> bool:
+        global bridge_status
         self._connected = True
         self._sim_running = True
+        bridge_status = "online"
         self._sim_thread = threading.Thread(target=self._simulation_loop, daemon=True)
         self._sim_thread.start()
         logger.info("SimulatedMqttAdapter: Erfolgreich gestartet (Simulationsmodus).")
         return True
 
     def disconnect(self):
+        global bridge_status
         self._sim_running = False
         self._connected = False
+        bridge_status = "offline"
 
     def publish(self, topic: str, payload: str, retain: bool = False) -> bool:
         global active_cycle_volume, last_flow_update_time
@@ -391,4 +409,8 @@ def request_valve_status() -> bool:
     """Sendet eine get-Abfrage über MQTT, um aktuelle Werte (Zustand, Batterie) vom Ventil anzufordern."""
     _init_client()
     return client_instance.publish(f"{config.MQTT_VALVE_TOPIC}/get", json.dumps({"state": "", "battery": ""}))
+
+def get_bridge_status() -> str:
+    _init_client()
+    return client_instance.get_bridge_status()
 

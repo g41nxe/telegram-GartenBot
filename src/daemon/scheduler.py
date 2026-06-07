@@ -72,6 +72,13 @@ def generate_daily_report(today_str: str) -> str:
     status = mqtt_client.get_valve_status()
     warnings = []
     
+    # Hintergrund-Dienstewarnung
+    if mqtt_client.HAS_PAHO:
+        if not mqtt_client.is_broker_connected():
+            warnings.append("🚨 **System-Dienst gestört:** MQTT-Broker ist offline")
+        elif mqtt_client.get_bridge_status() != "online":
+            warnings.append("🚨 **System-Dienst gestört:** Mittelweg-Dienst (Zigbee2MQTT) ist offline")
+            
     # Batteriewarnung
     battery = status.get("battery", 100)
     if battery <= config.BATTERY_WARNING_THRESHOLD:
