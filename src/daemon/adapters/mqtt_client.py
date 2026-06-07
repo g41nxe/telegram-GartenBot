@@ -48,9 +48,17 @@ def on_message(client, userdata, msg):
     try:
         payload = msg.payload.decode("utf-8")
         
-        # Bridge-Status-Nachrichten sind reiner Text (kein JSON)
+        # Bridge-Status-Nachrichten: Kann reiner Text (alt) oder ein JSON-Objekt {"state": "online"} (neu) sein
         if hasattr(msg, "topic") and msg.topic == "zigbee2mqtt/bridge/state":
-            bridge_status = payload.strip().lower()
+            raw_payload = payload.strip()
+            if raw_payload.startswith("{") and raw_payload.endswith("}"):
+                try:
+                    state_json = json.loads(raw_payload)
+                    bridge_status = state_json.get("state", "offline").lower()
+                except Exception:
+                    bridge_status = "offline"
+            else:
+                bridge_status = raw_payload.lower()
             logger.info(f"Mittelweg-Dienst Status empfangen: {bridge_status}")
             return
             
