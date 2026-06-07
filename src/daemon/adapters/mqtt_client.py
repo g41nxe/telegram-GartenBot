@@ -181,6 +181,10 @@ class PahoMqttAdapter(MqttClient):
             
             # Hardware-Timeout senden
             self._configure_safety_timeout()
+            
+            # Aktuellen Zustand des Ventils abfragen, um Pairing-Status zu laden
+            self.publish(f"{config.MQTT_VALVE_TOPIC}/get", json.dumps({"state": ""}))
+            logger.info("Zustandsabfrage an das Ventil gesendet.")
         else:
             self._connected = False
             logger.error(f"PahoMqttAdapter: Verbindungsfehler (rc={rc})")
