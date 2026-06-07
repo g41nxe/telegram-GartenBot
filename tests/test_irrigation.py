@@ -370,6 +370,44 @@ class TestGardenIrrigation(unittest.TestCase):
             self.assertIn("Verbindung verloren", report_warn)
             self.assertIn("Ventil-Anomalie erkannt", report_warn)
 
+    def test_13_device_status_stats(self):
+        """Testet das passive Loggen des Gerätestatus und die Berechnung der LQI- und Funklücken-Statistik."""
+        # 1. Datenbank-Tabelle leeren
+        conn = database.get_connection()
+        conn.execute("DELETE FROM device_status_log")
+        conn.commit()
+        conn.close()
+
+        # 2. Logge Status-Meldungen zu verschiedenen Zeitpunkten
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        
+        conn = database.get_connection()
+        
+        # Meldung 1: Vor 20 Stunden, LQI = 150
+        time1 = (now - timedelta(hours=20)).isoformat()
+        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time1, 95, 150))
+        
+        # Meldung 2: Vor 12 Stunden, LQI = 120
+        time2 = (now - timedelta(hours=12)).isoformat()
+        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time2, 94, 120))
+        
+        # Meldung 3: Vor 2 Stunden, LQI = 130
+        time3 = (now - timedelta(hours=2)).isoformat()
+        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time3, 93, 130))
+        
+        conn.commit()
+        conn.close()
+
+        # 3. Statistik abrufen
+        stats = database.get_device_status_stats_last_24h()
+        
+        self.assertEqual(stats["count"], 3)
+        self.assertEqual(stats["avg_lqi"], 133.3)  # (150 + 120 + 130) / 3 = 133.333...
+        
+        # Längste Lücke zwischen Meldung 2 (vor 12h) und Meldung 3 (vor 2h) -> 10 Stunden
+        self.assertAlmostEqual(stats["max_gap_hours"], 10.0, places=1)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -90,6 +90,27 @@ def generate_daily_report(today_str: str) -> str:
     if abnormal_state != "normal":
         warnings.append(f"🚨 **Ventil-Anomalie erkannt:** {abnormal_state}")
         
+    # 4. Verbindungsstatistik der letzten 24 Stunden (Passives Monitoring)
+    conn_stats = database.get_device_status_stats_last_24h()
+    
+    if conn_stats["count"] == 0:
+        lqi_desc = "Keine Verbindung"
+    elif conn_stats["avg_lqi"] >= 180:
+        lqi_desc = "Sehr gut"
+    elif conn_stats["avg_lqi"] >= 120:
+        lqi_desc = "Gut"
+    elif conn_stats["avg_lqi"] >= 60:
+        lqi_desc = "Ausreichend"
+    else:
+        lqi_desc = "Kritisch"
+        
+    conn_info = (
+        f"📡 **Verbindung (letzte 24h):**\n"
+        f"   - Signalmeldungen: {conn_stats['count']}\n"
+        f"   - Signalstärke: Ø {conn_stats['avg_lqi']} LQI ({lqi_desc})\n"
+        f"   - Längste Funkstille: {conn_stats['max_gap_hours']} Std.\n"
+    )
+        
     # Nachricht zusammensetzen
     warning_text = ""
     if warnings:
@@ -111,7 +132,8 @@ def generate_daily_report(today_str: str) -> str:
         f"🌤️ **Wetter:**\n"
         f"   - Temperatur: {temp} °C | {weather_desc}\n"
         f"   - Regen (letzte 24h): {rain_last} mm\n"
-        f"   - Vorhersage (nächste 24h): {rain_next} mm\n"
+        f"   - Vorhersage (nächste 24h): {rain_next} mm\n\n"
+        f"{conn_info}"
         f"{warning_text}"
     )
     return msg
