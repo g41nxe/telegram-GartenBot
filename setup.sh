@@ -166,6 +166,7 @@ mkdir -p "$INSTALL_DIR/data"
 
 # Prüfen, ob bereits ein adapter-Eintrag existiert, um diesen bei der Migration (z.B. ezsp -> ember) nicht zu überschreiben
 ADAPTER_LINE=""
+DEVICES_SECTION=""
 if [ -f "$INSTALL_DIR/data/configuration.yaml" ]; then
     EXISTING_ADAPTER=$(grep -E "^\s*adapter:" "$INSTALL_DIR/data/configuration.yaml" | head -n 1)
     if [ -n "$EXISTING_ADAPTER" ]; then
@@ -174,6 +175,10 @@ if [ -f "$INSTALL_DIR/data/configuration.yaml" ]; then
         if [ -n "$ADAPTER_VAL" ]; then
             ADAPTER_LINE="  adapter: $ADAPTER_VAL"
         fi
+    fi
+    # Extrahiere die gekoppelten Geräte (devices-Sektion), um sie bei Neu-Generierung zu erhalten
+    if grep -q "^devices:" "$INSTALL_DIR/data/configuration.yaml"; then
+        DEVICES_SECTION=$(sed -n '/^devices:/,$p' "$INSTALL_DIR/data/configuration.yaml")
     fi
 fi
 
@@ -195,6 +200,8 @@ frontend:
   port: 8080
 
 homeassistant: false
+
+${DEVICES_SECTION}
 EOF
 
 ok "Mittelweg-Dienst konfiguriert"
