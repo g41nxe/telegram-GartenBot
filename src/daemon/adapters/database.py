@@ -54,7 +54,10 @@ def init_db():
                 rain_last_24h_mm REAL NOT NULL,
                 rain_next_24h_mm REAL NOT NULL,
                 current_temp REAL DEFAULT 0.0,
-                weather_code INTEGER DEFAULT 0
+                weather_code INTEGER DEFAULT 0,
+                temp_min REAL DEFAULT 0.0,
+                temp_max REAL DEFAULT 0.0,
+                rain_probability INTEGER DEFAULT 0
             )
         """)
 
@@ -83,6 +86,14 @@ def init_db():
             logger.info("Migriere Datenbank: Füge Wetter-Spalten zu weather_history hinzu...")
             cursor.execute("ALTER TABLE weather_history ADD COLUMN current_temp REAL DEFAULT 0.0")
             cursor.execute("ALTER TABLE weather_history ADD COLUMN weather_code INTEGER DEFAULT 0")
+            
+        try:
+            cursor.execute("SELECT temp_min FROM weather_history LIMIT 1")
+        except sqlite3.OperationalError:
+            logger.info("Migriere Datenbank: Füge temp_min, temp_max, rain_probability Spalten zu weather_history hinzu...")
+            cursor.execute("ALTER TABLE weather_history ADD COLUMN temp_min REAL DEFAULT 0.0")
+            cursor.execute("ALTER TABLE weather_history ADD COLUMN temp_max REAL DEFAULT 0.0")
+            cursor.execute("ALTER TABLE weather_history ADD COLUMN rain_probability INTEGER DEFAULT 0")
             
         try:
             cursor.execute("SELECT target_volume_liters FROM schedules LIMIT 1")
@@ -212,15 +223,16 @@ def get_recent_history(limit: int = 5):
 
 # --- Operationen für Wetterhistorie ---
 
-def log_weather(rain_last_24h: float, rain_next_24h: float, current_temp: float = 0.0, weather_code: int = 0):
+def log_weather(rain_last_24h: float, rain_next_24h: float, current_temp: float = 0.0, weather_code: int = 0,
+                temp_min: float = 0.0, temp_max: float = 0.0, rain_probability: int = 0):
     """Speichert den abgerufenen Wetterstatus."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
         timestamp = datetime.now().isoformat()
         cursor.execute(
-            "INSERT INTO weather_history (timestamp, rain_last_24h_mm, rain_next_24h_mm, current_temp, weather_code) VALUES (?, ?, ?, ?, ?)",
-            (timestamp, rain_last_24h, rain_next_24h, current_temp, weather_code)
+            "INSERT INTO weather_history (timestamp, rain_last_24h_mm, rain_next_24h_mm, current_temp, weather_code, temp_min, temp_max, rain_probability) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (timestamp, rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_probability)
         )
         conn.commit()
     except Exception as e:

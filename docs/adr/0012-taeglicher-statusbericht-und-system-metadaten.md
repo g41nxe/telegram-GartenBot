@@ -40,8 +40,12 @@ Um diesen Bericht zuverlässig zu versenden, müssen wir:
 8. **Passives Verbindungs-Monitoring und Statistik:**
    Um die Batterie des Ventils maximal zu schonen, protokollieren wir eintreffende Status-Meldungen passiv in der Tabelle `device_status_log`. Hierbei werden `battery` und `linkquality` (LQI) bei jedem Signal aufgezeichnet. Im täglichen Statusbericht aggregieren wir diese Daten für die vergangenen 24 Stunden, um die Gesamtzahl der empfangenen Signale, die durchschnittliche Signalqualität und die längste aufgetretene Funkstille (maximale Funklücke) im Textformat darzustellen.
 
+9. **Erweitertes Wetter-Reporting:**
+   Die Open-Meteo-Wetterabfrage wird um tägliche Daten erweitert (`temperature_2m_max`, `temperature_2m_min`, `precipitation_probability_max`). Diese zusätzlichen Daten (minimale/maximale Tagestemperatur und die maximale Regenwahrscheinlichkeit des aktuellen Tages) werden in der Tabelle `weather_history` gespeichert (`temp_min`, `temp_max`, `rain_probability`) und sowohl im täglichen Statusbericht als auch in der interaktiven Status-Abfrage übersichtlich dargestellt.
+
 ## Konsequenzen
 
 - **Datenintegrität und Ausfallsicherheit:** Das System sendet den Tagesbericht zuverlässig und absolut dopplungsfrei, selbst bei häufigen Service-Restarts oder Stromausfällen.
 - **Transparente Ventil-Diagnose:** Der Anwender erhält proaktiv Warnungen bei schleichendem Batterieverfall oder physischen Geräte-Blockaden.
 - **Erweitertes Reporting:** Die persistente Speicherung des Wasservolumens in der Guss-Historie ermöglicht eine exakte Erfassung des Gesamtverbrauchs.
+- **Detailliertere Wetterprognosen:** Der Anwender erhält eine genauere Übersicht über die erwartete Temperaturspanne und die Regenwahrscheinlichkeit, was manuelle Bewässerungsentscheidungen zusätzlich erleichtert.
