@@ -15,12 +15,12 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
     und Regenwahrscheinlichkeit aus der Open-Meteo API ab.
     Gibt ein Tuple (regen_letzte_24h_mm, regen_naechste_24h_mm, temp_c, wetter_code, temp_min, temp_max, rain_prob) zurück.
     """
-    # Open-Meteo-Abfrage: past_days=1 (letzte 24h), forecast_days=2 (kommende 24h) sowie aktuelle & tägliche Vorhersage
+    # Open-Meteo-Abfrage: past_days=1 (letzte 24h), forecast_days=2 (kommende 24h) sowie aktuelle & tägliche/stündliche Vorhersage
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={lat}&longitude={lon}&current=temperature_2m,weather_code"
-        f"&hourly=precipitation&timezone=auto&past_days=1&forecast_days=2"
-        f"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max"
+        f"&hourly=precipitation,precipitation_probability&timezone=auto&past_days=1&forecast_days=2"
+        f"&daily=temperature_2m_max,temperature_2m_min"
     )
     
     try:
@@ -38,7 +38,6 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         daily_times = daily.get("time", [])
         temp_maxs = daily.get("temperature_2m_max", [])
         temp_mins = daily.get("temperature_2m_min", [])
-        precip_probs = daily.get("precipitation_probability_max", [])
         
         today_date_str = datetime.now().strftime("%Y-%m-%d")
         daily_idx = -1
@@ -47,22 +46,21 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
                 daily_idx = idx
                 break
                 
-        if daily_idx != -1 and daily_idx < len(temp_maxs) and daily_idx < len(temp_mins) and daily_idx < len(precip_probs):
+        if daily_idx != -1 and daily_idx < len(temp_maxs) and daily_idx < len(temp_mins):
             temp_max = float(temp_maxs[daily_idx])
             temp_min = float(temp_mins[daily_idx])
-            rain_prob = int(precip_probs[daily_idx])
         else:
             temp_max = current_temp + 5.0
             temp_min = current_temp - 5.0
-            rain_prob = 0
             
         hourly = data.get("hourly", {})
         times = hourly.get("time", [])
         precip = hourly.get("precipitation", [])
+        precip_probs = hourly.get("precipitation_probability", [])
         
         if not times or not precip:
             logger.warning("Keine stündlichen Niederschlagsdaten in der API-Antwort gefunden.")
-            return 0.0, 0.0, current_temp, weather_code, temp_min, temp_max, rain_prob
+            return 0.0, 0.0, current_temp, weather_code, temp_min, temp_max, 0
             
         # Finde den Index für die aktuelle Stunde
         current_time_str = datetime.now().strftime("%Y-%m-%dT%H:00")
@@ -87,6 +85,17 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         end_forecast_idx = min(len(precip), current_idx + 24)
         rain_next_24h = sum(precip[current_idx:end_forecast_idx])
         
+        # Berechne die maximale Regenwahrscheinlichkeit für die nächsten 24 Stunden
+        if precip_probs and current_idx < len(precip_probs):
+            end_prob_idx = min(len(precip_probs), current_idx + 24)
+            rain_prob = max(precip_probs[current_idx:end_prob_idx])
+            try:
+                rain_prob = int(rain_prob)
+            except (TypeError, ValueError):
+                rain_prob = 0
+        else:
+            rain_prob = 0
+            
         # Werte runden
         rain_last_24h = round(rain_last_24h, 2)
         rain_next_24h = round(rain_next_24h, 2)
