@@ -28,7 +28,12 @@ def main():
         logger.error(f"Kritischer Fehler bei der Datenbankinitialisierung: {e}")
         sys.exit(1)
         
-    # 2. Ereignis-Kanal & Guss-Steuerung initialisieren und verdrahten (IoC)
+    # 2. MQTT-Client starten
+    logger.info("Initialisiere MQTT-Dienst...")
+    if not mqtt_client.start_client():
+        logger.warning("MQTT-Dienst konnte nicht gestartet werden. Prüfen Sie Ihren Broker.")
+        
+    # 3. Ereignis-Kanal & Guss-Steuerung initialisieren und verdrahten (IoC)
     logger.info("Initialisiere Ereignis-Kanal & Guss-Steuerung...")
     from .core.watering_controller import WateringController
     from .adapters.database_adapter import DatabaseLoggerAdapter
@@ -39,11 +44,6 @@ def main():
     
     # Initialisiere den DB-Logger Adapter zur Event-Archivierung
     db_adapter = DatabaseLoggerAdapter(mqtt_client._global_bus)
-        
-    # 3. MQTT-Client starten
-    logger.info("Initialisiere MQTT-Dienst...")
-    if not mqtt_client.start_client():
-        logger.warning("MQTT-Dienst konnte nicht gestartet werden. Prüfen Sie Ihren Broker.")
         
     # 4. Zeitpläne/Scheduler starten
     logger.info("Initialisiere Bewässerungs-Scheduler...")
