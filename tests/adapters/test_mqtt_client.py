@@ -50,7 +50,7 @@ class TestMqttClient(unittest.TestCase):
         client.connect()
         
         # Trigger pairing
-        client.publish("zigbee2mqtt/bridge/request/permit_join", '{"value": true}')
+        client.publish("zigbee2mqtt/bridge/request/permit_join", '{"time": 90}')
         
         # Wait a moment for simulated asynchronous device joined trigger
         time.sleep(0.2)

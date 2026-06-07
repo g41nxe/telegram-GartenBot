@@ -280,7 +280,21 @@ class SimulatedMqttAdapter(MqttClient):
                 logger.info(f"SimulatedMqttAdapter: Ventil-State geändert -> {new_state}")
                 
             if topic == "zigbee2mqtt/bridge/request/permit_join":
-                if data.get("value") is True:
+                is_permit = False
+                if isinstance(data, dict):
+                    if data.get("value") is True or data.get("time", 0) > 0:
+                        is_permit = True
+                elif isinstance(data, (int, float)):
+                    if data > 0:
+                        is_permit = True
+                elif isinstance(data, str):
+                    try:
+                        if int(data) > 0:
+                            is_permit = True
+                    except ValueError:
+                        pass
+                
+                if is_permit:
                     logger.info("SimulatedMqttAdapter: Koppelmodus aktiviert. Simuliere Gerät nach 100ms...")
                     # Simuliere Koppelungsbeitritt nach einer minimalen Verzögerung asynchronous
                     threading.Thread(target=self._simulate_device_joined, daemon=True).start()
