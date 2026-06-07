@@ -41,7 +41,10 @@ Um diesen Bericht zuverlässig zu versenden, müssen wir:
    Um die Batterie des Ventils maximal zu schonen, protokollieren wir eintreffende Status-Meldungen passiv in der Tabelle `device_status_log`. Hierbei werden `battery` und `linkquality` (LQI) bei jedem Signal aufgezeichnet. Im täglichen Statusbericht aggregieren wir diese Daten für die vergangenen 24 Stunden, um die Gesamtzahl der empfangenen Signale, die durchschnittliche Signalqualität und die längste aufgetretene Funkstille (maximale Funklücke) im Textformat darzustellen.
 
 9. **Erweitertes Wetter-Reporting:**
-   Die Open-Meteo-Wetterabfrage wird um tägliche Daten erweitert (`temperature_2m_max`, `temperature_2m_min`, `precipitation_probability_max`). Diese zusätzlichen Daten (minimale/maximale Tagestemperatur und die maximale Regenwahrscheinlichkeit des aktuellen Tages) werden in der Tabelle `weather_history` gespeichert (`temp_min`, `temp_max`, `rain_probability`) und sowohl im täglichen Statusbericht als auch in der interaktiven Status-Abfrage übersichtlich dargestellt.
+   Die Open-Meteo-Wetterabfrage wird um tägliche und stündliche Daten erweitert. Die minimale/maximale Tagestemperatur des Kalendertages sowie die maximale Regenwahrscheinlichkeit des gleitenden 24-Stunden-Zukunftsfensters werden in der Tabelle `weather_history` gespeichert (`temp_min`, `temp_max`, `rain_probability`) und sowohl im täglichen Statusbericht als auch in der interaktiven Status-Abfrage übersichtlich dargestellt. Die Umstellung der Regenwahrscheinlichkeit auf das stündliche 24-Stunden-Zukunftsfenster verhindert irreführende Angaben an Abenden, wenn bereits tagsüber Regen gefallen ist.
+
+10. **Konsolidierte System-Dienste-Anzeige:**
+    Um das Benutzerinterface des Telegram-Bots übersichtlich zu halten, werden die Verfügbarkeitszustände des MQTT-Brokers und der Zigbee2MQTT-Bridge (Mittelweg-Dienst) zu einer einzigen Statuszeile `🔌 System-Dienste` zusammengefasst. Fällt ein Dienst aus, wird dies als System-Warnung (`🚨`) im täglichen Bericht aufgeführt und der Ventil-Status auf `🔴 Offline (Dienste gestört)` gesetzt.
 
 ## Konsequenzen
 
@@ -49,3 +52,4 @@ Um diesen Bericht zuverlässig zu versenden, müssen wir:
 - **Transparente Ventil-Diagnose:** Der Anwender erhält proaktiv Warnungen bei schleichendem Batterieverfall oder physischen Geräte-Blockaden.
 - **Erweitertes Reporting:** Die persistente Speicherung des Wasservolumens in der Guss-Historie ermöglicht eine exakte Erfassung des Gesamtverbrauchs.
 - **Detailliertere Wetterprognosen:** Der Anwender erhält eine genauere Übersicht über die erwartete Temperaturspanne und die Regenwahrscheinlichkeit, was manuelle Bewässerungsentscheidungen zusätzlich erleichtert.
+- **Vereinfachtes und klares Interface:** Durch die Konsolidierung der Dienste sieht der Anwender im Normalfall nur ein einfaches grünes Signal und wird im Fehlerfall sofort über den genauen betroffenen Dienst informiert.
