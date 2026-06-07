@@ -150,17 +150,30 @@ class TestGardenIrrigation(unittest.TestCase):
             "hourly": {
                 "time": times,
                 "precipitation": precipitation
+            },
+            "daily": {
+                "time": [
+                    (now - timedelta(days=1)).strftime("%Y-%m-%d"),
+                    now.strftime("%Y-%m-%d"),
+                    (now + timedelta(days=1)).strftime("%Y-%m-%d")
+                ],
+                "temperature_2m_max": [20.0, 26.5, 25.0],
+                "temperature_2m_min": [10.0, 15.5, 14.0],
+                "precipitation_probability_max": [30, 75, 20]
             }
         }).encode("utf-8")
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
         # Führe Abfrage aus
-        rain_last, rain_next, temp, code = weather.get_weather_data(52.5, 13.5)
+        rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob = weather.get_weather_data(52.5, 13.5)
         
         self.assertEqual(rain_last, 1.5)
         self.assertEqual(rain_next, 2.5)
         self.assertEqual(temp, 22.5)
         self.assertEqual(code, 3)
+        self.assertEqual(temp_min, 15.5)
+        self.assertEqual(temp_max, 26.5)
+        self.assertEqual(rain_prob, 75)
 
         # Skip-Logik testen
         should_skip, details = weather.should_skip_watering()
@@ -175,14 +188,17 @@ class TestGardenIrrigation(unittest.TestCase):
         mock_urlopen.side_effect = URLError("Mocked network timeout")
 
         # Fallback 1: Datenbank enthält bereits einen Wettereintrag
-        database.log_weather(1.0, 2.5, 18.0, 1) # Gesamt = 3.5 mm (> 3.0)
+        database.log_weather(1.0, 2.5, 18.0, 1, 12.0, 24.0, 60) # Gesamt = 3.5 mm (> 3.0)
 
         # Abfrage ausführen
-        rain_last, rain_next, temp, code = weather.get_weather_data(52.5, 13.5)
+        rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob = weather.get_weather_data(52.5, 13.5)
         self.assertEqual(rain_last, 1.0)
         self.assertEqual(rain_next, 2.5)
         self.assertEqual(temp, 18.0)
         self.assertEqual(code, 1)
+        self.assertEqual(temp_min, 12.0)
+        self.assertEqual(temp_max, 24.0)
+        self.assertEqual(rain_prob, 60)
 
         should_skip, details = weather.should_skip_watering()
         self.assertTrue(should_skip)
@@ -195,11 +211,14 @@ class TestGardenIrrigation(unittest.TestCase):
         conn.close()
 
         # Abfrage ohne DB-Einträge ausführen
-        rain_last, rain_next, temp, code = weather.get_weather_data(52.5, 13.5)
+        rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob = weather.get_weather_data(52.5, 13.5)
         self.assertEqual(rain_last, 0.0)
         self.assertEqual(rain_next, 0.0)
         self.assertEqual(temp, 0.0)
         self.assertEqual(code, 0)
+        self.assertEqual(temp_min, 0.0)
+        self.assertEqual(temp_max, 0.0)
+        self.assertEqual(rain_prob, 0)
 
         should_skip, details = weather.should_skip_watering()
         self.assertFalse(should_skip)
@@ -345,7 +364,7 @@ class TestGardenIrrigation(unittest.TestCase):
         
         # Mocke Wetterdaten
         with patch("daemon.adapters.weather.get_weather_data") as mock_weather_data:
-            mock_weather_data.return_value = (1.5, 2.0, 21.0, 3) # Bedeckt
+            mock_weather_data.return_value = (1.5, 2.0, 21.0, 3, 12.5, 25.0, 80) # Bedeckt
             
             # 1. Fall: Normaler Zustand (Keine Warnungen)
             mqtt_client.valve_status["battery"] = 90
@@ -355,7 +374,8 @@ class TestGardenIrrigation(unittest.TestCase):
             report = scheduler.generate_daily_report("2026-06-07")
             self.assertIn("Statusbericht vom 07.06.2026", report)
             self.assertIn("Erfolgreiche Zyklen", report)
-            self.assertIn("Temperatur: 21.0 °C", report)
+            self.assertIn("Temperatur: 21.0 °C (Min: 12.5 °C / Max: 25.0 °C) | ☁️ Bedeckt / Bewölkt", report)
+            self.assertIn("Regenwahrscheinlichkeit: 80%", report)
             self.assertNotIn("System-Warnungen", report)
             
             # 2. Fall: Batterie schwach, Offline und abnormaler Zustand (Warnungen)

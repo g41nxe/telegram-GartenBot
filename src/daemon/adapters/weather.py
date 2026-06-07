@@ -8,17 +8,19 @@ from . import database
 
 logger = logging.getLogger("garden_weather")
 
-def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int]:
+def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, float, float, int]:
     """
     Ruft stündliche Niederschlagsdaten der letzten 24h, der nächsten 24h,
-    die aktuelle Temperatur und den aktuellen Wettercode aus der Open-Meteo API ab.
-    Gibt ein Tuple (regen_letzte_24h_mm, regen_naechste_24h_mm, temp_c, wetter_code) zurück.
+    die aktuelle Temperatur und den aktuellen Wettercode sowie tägliche Min/Max Temperaturen
+    und Regenwahrscheinlichkeit aus der Open-Meteo API ab.
+    Gibt ein Tuple (regen_letzte_24h_mm, regen_naechste_24h_mm, temp_c, wetter_code, temp_min, temp_max, rain_prob) zurück.
     """
-    # Open-Meteo-Abfrage: past_days=1 (letzte 24h), forecast_days=2 (kommende 24h) sowie aktuelle Temperatur & Wettercode
+    # Open-Meteo-Abfrage: past_days=1 (letzte 24h), forecast_days=2 (kommende 24h) sowie aktuelle & tägliche Vorhersage
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={lat}&longitude={lon}&current=temperature_2m,weather_code"
         f"&hourly=precipitation&timezone=auto&past_days=1&forecast_days=2"
+        f"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max"
     )
     
     try:
@@ -31,13 +33,36 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int]:
         current_temp = float(current.get("temperature_2m", 0.0))
         weather_code = int(current.get("weather_code", 0))
         
+        # Tägliche Vorhersage für heute extrahieren
+        daily = data.get("daily", {})
+        daily_times = daily.get("time", [])
+        temp_maxs = daily.get("temperature_2m_max", [])
+        temp_mins = daily.get("temperature_2m_min", [])
+        precip_probs = daily.get("precipitation_probability_max", [])
+        
+        today_date_str = datetime.now().strftime("%Y-%m-%d")
+        daily_idx = -1
+        for idx, t_str in enumerate(daily_times):
+            if t_str == today_date_str:
+                daily_idx = idx
+                break
+                
+        if daily_idx != -1 and daily_idx < len(temp_maxs) and daily_idx < len(temp_mins) and daily_idx < len(precip_probs):
+            temp_max = float(temp_maxs[daily_idx])
+            temp_min = float(temp_mins[daily_idx])
+            rain_prob = int(precip_probs[daily_idx])
+        else:
+            temp_max = current_temp + 5.0
+            temp_min = current_temp - 5.0
+            rain_prob = 0
+            
         hourly = data.get("hourly", {})
         times = hourly.get("time", [])
         precip = hourly.get("precipitation", [])
         
         if not times or not precip:
             logger.warning("Keine stündlichen Niederschlagsdaten in der API-Antwort gefunden.")
-            return 0.0, 0.0, current_temp, weather_code
+            return 0.0, 0.0, current_temp, weather_code, temp_min, temp_max, rain_prob
             
         # Finde den Index für die aktuelle Stunde
         current_time_str = datetime.now().strftime("%Y-%m-%dT%H:00")
@@ -62,19 +87,22 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int]:
         end_forecast_idx = min(len(precip), current_idx + 24)
         rain_next_24h = sum(precip[current_idx:end_forecast_idx])
         
-        # Werte runden auf 2 Dezimalstellen
+        # Werte runden
         rain_last_24h = round(rain_last_24h, 2)
         rain_next_24h = round(rain_next_24h, 2)
+        temp_min = round(temp_min, 1)
+        temp_max = round(temp_max, 1)
         
         logger.info(
-            f"Wetterdaten geladen - Temp: {current_temp}°C, Code: {weather_code}, "
+            f"Wetterdaten geladen - Temp: {current_temp}°C (Min: {temp_min}°C/Max: {temp_max}°C), "
+            f"Code: {weather_code}, Regenwahrscheinlichkeit: {rain_prob}%, "
             f"Regen 24h: {rain_last_24h}mm, Vorhersage: {rain_next_24h}mm"
         )
         
         # In lokaler Datenbank für spätere Anzeige archivieren
-        database.log_weather(rain_last_24h, rain_next_24h, current_temp, weather_code)
+        database.log_weather(rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_prob)
         
-        return rain_last_24h, rain_next_24h, current_temp, weather_code
+        return rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_prob
         
     except urllib.error.URLError as e:
         logger.error(f"Netzwerkfehler beim Abruf der Wetterdaten: {e}")
@@ -89,10 +117,13 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int]:
             last_stored["rain_last_24h_mm"], 
             last_stored["rain_next_24h_mm"],
             last_stored.get("current_temp", 0.0),
-            last_stored.get("weather_code", 0)
+            last_stored.get("weather_code", 0),
+            last_stored.get("temp_min", last_stored.get("current_temp", 0.0) - 5.0),
+            last_stored.get("temp_max", last_stored.get("current_temp", 0.0) + 5.0),
+            last_stored.get("rain_probability", 0)
         )
         
-    return 0.0, 0.0, 0.0, 0
+    return 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0
 
 def should_skip_watering() -> tuple[bool, str]:
     """
@@ -100,7 +131,7 @@ def should_skip_watering() -> tuple[bool, str]:
     erwartetem Regen (nächste 24h) den konfigurierten Schwellenwert überschreitet.
     Gibt ein Tuple (should_skip, details_text) zurück.
     """
-    rain_last, rain_next, _, _ = get_weather_data(config.LATITUDE, config.LONGITUDE)
+    rain_last, rain_next, _, _, _, _, _ = get_weather_data(config.LATITUDE, config.LONGITUDE)
     total_rain = rain_last + rain_next
     
     if total_rain >= config.RAIN_THRESHOLD_MM:

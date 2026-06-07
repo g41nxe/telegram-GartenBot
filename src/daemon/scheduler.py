@@ -42,8 +42,13 @@ def _get_wmo_description(code: int) -> str:
     mapping = {
         0: "☀️ Sonnig / Klar", 1: "🌤️ Leicht bewölkt", 2: "⛅ Teilweise bewölkt", 3: "☁️ Bedeckt / Bewölkt",
         45: "🌫️ Nebelig", 48: "🌫️ Raureifnebel", 51: "🌧️ Leichter Nieselregen", 53: "🌧️ Mäßiger Nieselregen",
-        55: "🌧️ Starker Nieselregen", 61: "🌧️ Leichter Regen", 63: "🌧️ Mäßiger Regen", 65: "🌧️ Starker Regen",
-        80: "🌧️ Leichte Regenschauer", 81: "🌧️ Mäßige Regenschauer", 82: "🌧️ Starke Regenschauer", 95: "⚡ Gewitter"
+        55: "🌧️ Starker Nieselregen", 56: "🌧️ Leichter gefrierender Nieselregen", 57: "🌧️ Dichter gefrierender Nieselregen",
+        61: "🌧️ Leichter Regen", 63: "🌧️ Mäßiger Regen", 65: "🌧️ Starker Regen",
+        66: "🌧️ Leichter gefrierender Regen", 67: "🌧️ Starker gefrierender Regen",
+        71: "❄️ Leichter Schneefall", 73: "❄️ Mäßiger Schneefall", 75: "❄️ Starker Schneefall",
+        77: "❄️ Schneegriesel", 80: "🌧️ Leichte Regenschauer", 81: "🌧️ Mäßige Regenschauer", 82: "🌧️ Starke Regenschauer",
+        85: "❄️ Leichte Schneeschauer", 86: "❄️ Starke Schneeschauer", 95: "⚡ Gewitter",
+        96: "⚡ Gewitter mit leichtem Hagel", 99: "⚡ Gewitter mit starkem Hagel"
     }
     return mapping.get(code, "🌡️ Unbekannt")
 
@@ -56,11 +61,11 @@ def generate_daily_report(today_str: str) -> str:
     
     # 2. Wetterdaten abrufen
     try:
-        rain_last, rain_next, temp, weather_code = weather.get_weather_data(config.LATITUDE, config.LONGITUDE)
+        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob = weather.get_weather_data(config.LATITUDE, config.LONGITUDE)
         weather_desc = _get_wmo_description(weather_code)
     except Exception as e:
         logger.error(f"Fehler beim Abrufen der Wetterdaten für Statusbericht: {e}")
-        rain_last, rain_next, temp, weather_code = 0.0, 0.0, 0.0, 0
+        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0
         weather_desc = "Unbekannt"
         
     # 3. Ventil-Status und Warnungen prüfen
@@ -130,7 +135,8 @@ def generate_daily_report(today_str: str) -> str:
         f"   - Fehlgeschlagene Zyklen: {failed_count}\n"
         f"   - Gesamtvolumen: {total_volume} Liter\n\n"
         f"🌤️ **Wetter:**\n"
-        f"   - Temperatur: {temp} °C | {weather_desc}\n"
+        f"   - Temperatur: {temp} °C (Min: {temp_min} °C / Max: {temp_max} °C) | {weather_desc}\n"
+        f"   - Regenwahrscheinlichkeit: {rain_prob}%\n"
         f"   - Regen (letzte 24h): {rain_last} mm\n"
         f"   - Vorhersage (nächste 24h): {rain_next} mm\n\n"
         f"{conn_info}"
