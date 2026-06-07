@@ -217,15 +217,13 @@ class PahoMqttAdapter(MqttClient):
 
     def _configure_safety_timeout(self):
         set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-        safety_seconds = config.SAFETY_TIMEOUT_MINUTES * 60
         payload = {
-            "inching_control": {
-                "inch_mode": "ON",
-                "inch_time": safety_seconds
+            "manual_default_settings": {
+                "fail_safe": config.SAFETY_TIMEOUT_MINUTES
             }
         }
         self.publish(set_topic, json.dumps(payload), retain=True)
-        logger.info(f"Hardware-Sicherheits-Timeout ({config.SAFETY_TIMEOUT_MINUTES} Min) gesendet.")
+        logger.info(f"Hardware-Sicherheits-Timeout ({config.SAFETY_TIMEOUT_MINUTES} Min) via manual_default_settings.fail_safe gesendet.")
 
 # --- Simulated Adapter (Simulation/Mock Mode) ---
 
