@@ -184,6 +184,24 @@ def _get_wmo_description(code: int) -> str:
     }
     return mapping.get(code, "🌡️ Unbekannt")
 
+def _get_lqi_description(lqi_val) -> str:
+    """Übersetzt den LQI-Wert (0-255) in eine menschenlesbare Beschreibung."""
+    try:
+        lqi = int(lqi_val)
+    except (TypeError, ValueError):
+        lqi = 0
+        
+    if lqi >= 180:
+        return f"🟢 Sehr gut ({lqi} LQI)"
+    elif lqi >= 120:
+        return f"🟢 Gut ({lqi} LQI)"
+    elif lqi >= 60:
+        return f"🟡 Ausreichend ({lqi} LQI)"
+    elif lqi > 0:
+        return f"🔴 Kritisch ({lqi} LQI)"
+    else:
+        return "🔴 Keine Verbindung (0 LQI)"
+
 # --- Befehlsverarbeitung ---
 
 def _start_pairing(chat_id: int):
@@ -293,7 +311,7 @@ def handle_status(chat_id: int):
         f"📶 **Ventil-Verbindung:** {valve_connected}\n\n"
         f"💧 **Ventil-Zustand:** {state_icon}\n"
         f"{battery_icon} **Batterie:** {status['battery']}%\n"
-        f"📡 **Signalqualität:** {status['linkquality']} LQI\n"
+        f"📡 **Signalqualität:** {_get_lqi_description(status['linkquality'])}\n"
         f"{active_text}\n"
         f"🌤️ **Wetter:**\n"
         f"{weather_text}\n\n"
