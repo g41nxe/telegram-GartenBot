@@ -247,6 +247,12 @@ def handle_setup(chat_id: int):
 
 def handle_status(chat_id: int):
     from ..adapters import mqtt_client
+    import time
+    
+    # Fordere vorab aktuelle Werte vom Ventil an und warte kurz (Option B)
+    mqtt_client.request_valve_status()
+    time.sleep(1.5)
+    
     status = mqtt_client.get_valve_status()
     
     state_icon = "🟢 OFFEN" if status["state"] == "ON" else "🔴 GESCHLOSSEN"
@@ -519,6 +525,17 @@ def _process_message(msg_obj: dict):
         )
     elif text == "📊 Status anzeigen" or text.startswith("/status"):
         handle_status(chat_id)
+    elif text.startswith("/report") or text.startswith("/statusbericht"):
+        from ..adapters import mqtt_client
+        import time
+        
+        # Vorab aktuelle Werte vom Ventil anfordern und kurz warten
+        mqtt_client.request_valve_status()
+        time.sleep(1.5)
+        
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        report_text = scheduler.generate_daily_report(today_str)
+        telegram_client.send_message(chat_id, report_text, get_main_keyboard())
     elif text == "📅 Zeitsteuerung" or text == "📅 Zeitpläne" or text.startswith("/zeitplan"):
         handle_schedules(chat_id)
     elif text == "🔧 Ventil koppeln" or text.startswith("/setup"):
