@@ -461,14 +461,24 @@ class TestGardenIrrigation(unittest.TestCase):
                 self.topic = topic
                 self.payload = payload
                 
-        # Send online payload
+        # Send online payload (altes Format)
         msg_online = MockMsg("zigbee2mqtt/bridge/state", b"online")
         mqtt_client.on_message(None, None, msg_online)
         self.assertEqual(mqtt_client.get_bridge_status(), "online")
         
-        # Send offline payload
+        # Send offline payload (altes Format)
         msg_offline = MockMsg("zigbee2mqtt/bridge/state", b"offline")
         mqtt_client.on_message(None, None, msg_offline)
+        self.assertEqual(mqtt_client.get_bridge_status(), "offline")
+
+        # Send online JSON payload (neues Format)
+        msg_online_json = MockMsg("zigbee2mqtt/bridge/state", b'{"state":"online"}')
+        mqtt_client.on_message(None, None, msg_online_json)
+        self.assertEqual(mqtt_client.get_bridge_status(), "online")
+        
+        # Send offline JSON payload (neues Format)
+        msg_offline_json = MockMsg("zigbee2mqtt/bridge/state", b'{"state":"offline"}')
+        mqtt_client.on_message(None, None, msg_offline_json)
         self.assertEqual(mqtt_client.get_bridge_status(), "offline")
 
 

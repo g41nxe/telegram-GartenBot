@@ -45,6 +45,7 @@ Um diesen Bericht zuverlässig zu versenden, müssen wir:
 
 10. **Konsolidierte System-Dienste-Anzeige:**
     Um das Benutzerinterface des Telegram-Bots übersichtlich zu halten, werden die Verfügbarkeitszustände des MQTT-Brokers und der Zigbee2MQTT-Bridge (Mittelweg-Dienst) zu einer einzigen Statuszeile `🔌 System-Dienste` zusammengefasst. Fällt ein Dienst aus, wird dies als System-Warnung (`🚨`) im täglichen Bericht aufgeführt und der Ventil-Status auf `🔴 Offline (Dienste gestört)` gesetzt.
+    *Hinweis zur Kompatibilität:* Der Daemon verarbeitet hierbei sowohl das ältere Klartext-Statusformat (`online`/`offline`) als auch das moderne JSON-Format (`{"state": "online"}`) der Zigbee2MQTT-Bridge automatisch.
 
 ## Konsequenzen
 

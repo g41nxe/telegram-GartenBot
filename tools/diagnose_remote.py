@@ -55,6 +55,7 @@ def listen_mqtt():
     
     def on_connect(client, userdata, flags, rc):
         client.subscribe("zigbee2mqtt/garden_valve")
+        client.subscribe("zigbee2mqtt/bridge/state")
         # Trigger get command
         client.publish("zigbee2mqtt/garden_valve/get", json.dumps({"state": "", "battery": ""}))
         
@@ -62,7 +63,19 @@ def listen_mqtt():
         try:
             payload = msg.payload.decode("utf-8")
             received.append(payload)
-            print("  [Empfangen]:", payload)
+            if msg.topic == "zigbee2mqtt/bridge/state":
+                raw_payload = payload.strip()
+                if raw_payload.startswith("{") and raw_payload.endswith("}"):
+                    try:
+                        state_json = json.loads(raw_payload)
+                        status = state_json.get("state", "offline")
+                    except Exception:
+                        status = "error/invalid JSON"
+                else:
+                    status = raw_payload
+                print(f"  [Mittelweg-Dienst Status]: {status} (Raw: {raw_payload})")
+            else:
+                print(f"  [Empfangen von {msg.topic}]:", payload)
         except Exception as e:
             print("  Fehler beim Decodieren:", e)
             
