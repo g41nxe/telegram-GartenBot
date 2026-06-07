@@ -261,7 +261,7 @@ class SimulatedMqttAdapter(MqttClient):
         
         try:
             data = json.loads(payload)
-            if "state" in data:
+            if isinstance(data, dict) and "state" in data:
                 new_state = data["state"]
                 valve_status["state"] = new_state
                 valve_status["last_update"] = datetime.now().isoformat()
