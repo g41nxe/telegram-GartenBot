@@ -263,20 +263,33 @@ def handle_status(chat_id: int):
     state_icon = "🟢 OFFEN" if status["state"] == "ON" else "🔴 GESCHLOSSEN"
     battery_icon = "🔋" if status["battery"] > 20 else "🪫"
     
+    broker_connected = mqtt_client.is_broker_connected()
+    bridge_online = mqtt_client.get_bridge_status() == "online"
+    
     if not mqtt_client.HAS_PAHO:
-        broker_status = "⚡ Simulationsmodus (Lokaler Test)"
-    else:
-        broker_status = "🟢 Aktiv (Verbunden)" if mqtt_client.is_broker_connected() else "🔴 Inaktiv (Kein Dongle / Keine Verbindung)"
-        
-    if status["last_update"] is None:
-        valve_connected = "🔴 Nicht gekoppelt / Offline"
-    else:
-        try:
-            last_up = datetime.fromisoformat(status["last_update"])
-            time_str = last_up.strftime("%d.%m. %H:%M:%S Uhr")
-            valve_connected = f"🟢 Gekoppelt (Letztes Signal: {time_str})"
-        except Exception:
+        services_status = "⚡ Simulationsmodus (Lokaler Test)"
+        if status["last_update"] is None:
+            valve_connected = "🔴 Nicht gekoppelt / Offline"
+        else:
             valve_connected = "🟢 Gekoppelt / Aktiv"
+    else:
+        if not broker_connected:
+            services_status = "🔴 Inaktiv (MQTT-Broker nicht erreichbar)"
+            valve_connected = "🔴 Offline (Dienste gestört)"
+        elif not bridge_online:
+            services_status = "🔴 Inaktiv (Mittelweg-Dienst offline)"
+            valve_connected = "🔴 Offline (Dienste gestört)"
+        else:
+            services_status = "🟢 Aktiv"
+            if status["last_update"] is None:
+                valve_connected = "🔴 Nicht gekoppelt / Offline"
+            else:
+                try:
+                    last_up = datetime.fromisoformat(status["last_update"])
+                    time_str = last_up.strftime("%d.%m. %H:%M:%S Uhr")
+                    valve_connected = f"🟢 Gekoppelt (Letztes Signal: {time_str})"
+                except Exception:
+                    valve_connected = "🟢 Gekoppelt / Aktiv"
             
     active = scheduler.get_active_cycle()
     active_text = ""
@@ -327,7 +340,7 @@ def handle_status(chat_id: int):
     
     msg = (
         f"📊 **System-Status Gartenbewässerung**\n\n"
-        f"🔌 **MQTT-Broker:** {broker_status}\n"
+        f"🔌 **System-Dienste:** {services_status}\n"
         f"📶 **Ventil-Verbindung:** {valve_connected}\n\n"
         f"💧 **Ventil-Zustand:** {state_icon}\n"
         f"{battery_icon} **Batterie:** {status['battery']}%\n"
