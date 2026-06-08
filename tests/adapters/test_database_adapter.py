@@ -33,7 +33,7 @@ class TestDatabaseAdapter(unittest.TestCase):
         # 2. Test completed event routing
         bus.publish(WateringCycleCompleted(duration_run=12, volume_run=40.0, source="schedule", details="Target reached"))
         mock_log_watering.assert_called_once_with(
-            12, "schedule", "completed", "Target reached"
+            12, "schedule", "completed", "Target reached", watered_volume=40.0
         )
         
         # Reset mock
@@ -42,7 +42,7 @@ class TestDatabaseAdapter(unittest.TestCase):
         # 3. Test failed event routing
         bus.publish(WateringCycleFailed(duration_run=15, volume_run=3.5, source="manual", details="Emergency shutdown"))
         mock_log_watering.assert_called_once_with(
-            15, "manual", "failed", "Emergency shutdown"
+            15, "manual", "failed", "Emergency shutdown", watered_volume=3.5
         )
 
         # Reset mock
@@ -51,7 +51,7 @@ class TestDatabaseAdapter(unittest.TestCase):
         # 4. Test stopped event routing
         bus.publish(WateringCycleStopped(duration_run=5, volume_run=10.0, source="manual", details="Stopped by user"))
         mock_log_watering.assert_called_once_with(
-            5, "manual", "stopped", "Stopped by user"
+            5, "manual", "stopped", "Stopped by user", watered_volume=10.0
         )
 
 if __name__ == "__main__":

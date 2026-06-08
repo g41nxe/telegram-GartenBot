@@ -7,6 +7,7 @@ from ..core.watering_controller import (
     WateringCycleFailed,
     WateringCycleStopped
 )
+from .mqtt_client import ValveStatusReported
 
 logger = logging.getLogger("garden_database_adapter")
 
@@ -20,6 +21,7 @@ class DatabaseLoggerAdapter:
         self.event_bus.subscribe(WateringCycleCompleted, self._on_cycle_completed)
         self.event_bus.subscribe(WateringCycleFailed, self._on_cycle_failed)
         self.event_bus.subscribe(WateringCycleStopped, self._on_cycle_stopped)
+        self.event_bus.subscribe(ValveStatusReported, self._on_valve_status_reported)
 
     def _on_cycle_started(self, event: WateringCycleStarted):
         limit_info = f"Zeitlimit: {event.duration} Min"
@@ -30,10 +32,15 @@ class DatabaseLoggerAdapter:
         database.log_watering(event.duration, event.source, "completed", details)
 
     def _on_cycle_completed(self, event: WateringCycleCompleted):
-        database.log_watering(event.duration_run, event.source, "completed", event.details)
+        database.log_watering(event.duration_run, event.source, "completed", event.details, watered_volume=event.volume_run)
 
     def _on_cycle_failed(self, event: WateringCycleFailed):
-        database.log_watering(event.duration_run, event.source, "failed", event.details)
+        database.log_watering(event.duration_run, event.source, "failed", event.details, watered_volume=event.volume_run)
 
     def _on_cycle_stopped(self, event: WateringCycleStopped):
-        database.log_watering(event.duration_run, event.source, "stopped", event.details)
+        database.log_watering(event.duration_run, event.source, "stopped", event.details, watered_volume=event.volume_run)
+
+    def _on_valve_status_reported(self, event: ValveStatusReported):
+        database.log_device_status(event.battery, event.linkquality)
+
+

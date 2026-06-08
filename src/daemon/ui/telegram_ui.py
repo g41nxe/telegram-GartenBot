@@ -179,10 +179,33 @@ def _get_wmo_description(code: int) -> str:
     mapping = {
         0: "☀️ Sonnig / Klar", 1: "🌤️ Leicht bewölkt", 2: "⛅ Teilweise bewölkt", 3: "☁️ Bedeckt / Bewölkt",
         45: "🌫️ Nebelig", 48: "🌫️ Raureifnebel", 51: "🌧️ Leichter Nieselregen", 53: "🌧️ Mäßiger Nieselregen",
-        55: "🌧️ Starker Nieselregen", 61: "🌧️ Leichter Regen", 63: "🌧️ Mäßiger Regen", 65: "🌧️ Starker Regen",
-        80: "🌧️ Leichte Regenschauer", 81: "🌧️ Mäßige Regenschauer", 82: "🌧️ Starke Regenschauer", 95: "⚡ Gewitter"
+        55: "🌧️ Starker Nieselregen", 56: "🌧️ Leichter gefrierender Nieselregen", 57: "🌧️ Dichter gefrierender Nieselregen",
+        61: "🌧️ Leichter Regen", 63: "🌧️ Mäßiger Regen", 65: "🌧️ Starker Regen",
+        66: "🌧️ Leichter gefrierender Regen", 67: "🌧️ Starker gefrierender Regen",
+        71: "❄️ Leichter Schneefall", 73: "❄️ Mäßiger Schneefall", 75: "❄️ Starker Schneefall",
+        77: "❄️ Schneegriesel", 80: "🌧️ Leichte Regenschauer", 81: "🌧️ Mäßige Regenschauer", 82: "🌧️ Starke Regenschauer",
+        85: "❄️ Leichte Schneeschauer", 86: "❄️ Starke Schneeschauer", 95: "⚡ Gewitter",
+        96: "⚡ Gewitter mit leichtem Hagel", 99: "⚡ Gewitter mit starkem Hagel"
     }
     return mapping.get(code, "🌡️ Unbekannt")
+
+def _get_lqi_description(lqi_val) -> str:
+    """Übersetzt den LQI-Wert (0-255) in eine menschenlesbare Beschreibung."""
+    try:
+        lqi = int(lqi_val)
+    except (TypeError, ValueError):
+        lqi = 0
+        
+    if lqi >= 180:
+        return f"🟢 Sehr gut ({lqi} LQI)"
+    elif lqi >= 120:
+        return f"🟢 Gut ({lqi} LQI)"
+    elif lqi >= 60:
+        return f"🟡 Ausreichend ({lqi} LQI)"
+    elif lqi > 0:
+        return f"🔴 Kritisch ({lqi} LQI)"
+    else:
+        return "🔴 Keine Verbindung (0 LQI)"
 
 # --- Befehlsverarbeitung ---
 
@@ -229,25 +252,44 @@ def handle_setup(chat_id: int):
 
 def handle_status(chat_id: int):
     from ..adapters import mqtt_client
+    import time
+    
+    # Fordere vorab aktuelle Werte vom Ventil an und warte kurz (Option B)
+    mqtt_client.request_valve_status()
+    time.sleep(1.5)
+    
     status = mqtt_client.get_valve_status()
     
     state_icon = "🟢 OFFEN" if status["state"] == "ON" else "🔴 GESCHLOSSEN"
     battery_icon = "🔋" if status["battery"] > 20 else "🪫"
     
+    broker_connected = mqtt_client.is_broker_connected()
+    bridge_online = mqtt_client.get_bridge_status() == "online"
+    
     if not mqtt_client.HAS_PAHO:
-        broker_status = "⚡ Simulationsmodus (Lokaler Test)"
-    else:
-        broker_status = "🟢 Aktiv (Verbunden)" if mqtt_client.is_broker_connected() else "🔴 Inaktiv (Kein Dongle / Keine Verbindung)"
-        
-    if status["last_update"] is None:
-        valve_connected = "🔴 Nicht gekoppelt / Offline"
-    else:
-        try:
-            last_up = datetime.fromisoformat(status["last_update"])
-            time_str = last_up.strftime("%d.%m. %H:%M:%S Uhr")
-            valve_connected = f"🟢 Gekoppelt (Letztes Signal: {time_str})"
-        except Exception:
+        services_status = "⚡ Simulationsmodus (Lokaler Test)"
+        if status["last_update"] is None:
+            valve_connected = "🔴 Nicht gekoppelt / Offline"
+        else:
             valve_connected = "🟢 Gekoppelt / Aktiv"
+    else:
+        if not broker_connected:
+            services_status = "🔴 Inaktiv (MQTT-Broker nicht erreichbar)"
+            valve_connected = "🔴 Offline (Dienste gestört)"
+        elif not bridge_online:
+            services_status = "🔴 Inaktiv (Mittelweg-Dienst offline)"
+            valve_connected = "🔴 Offline (Dienste gestört)"
+        else:
+            services_status = "🟢 Aktiv"
+            if status["last_update"] is None:
+                valve_connected = "🔴 Nicht gekoppelt / Offline"
+            else:
+                try:
+                    last_up = datetime.fromisoformat(status["last_update"])
+                    time_str = last_up.strftime("%d.%m. %H:%M:%S Uhr")
+                    valve_connected = f"🟢 Gekoppelt (Letztes Signal: {time_str})"
+                except Exception:
+                    valve_connected = "🟢 Gekoppelt / Aktiv"
             
     active = scheduler.get_active_cycle()
     active_text = ""
@@ -271,8 +313,17 @@ def handle_status(chat_id: int):
         code = last_weather.get("weather_code", 0)
         desc = _get_wmo_description(code)
         
+        temp_min = last_weather.get("temp_min")
+        temp_max = last_weather.get("temp_max")
+        rain_prob = last_weather.get("rain_probability")
+        
+        if temp_min is None: temp_min = temp - 5.0
+        if temp_max is None: temp_max = temp + 5.0
+        if rain_prob is None: rain_prob = 0
+        
         weather_text = (
-            f"   - **Aktuell:** {temp} °C | {desc}\n"
+            f"   - **Aktuell:** {temp} °C (Min: {temp_min} °C / Max: {temp_max} °C) | {desc}\n"
+            f"   - **Regenwahrscheinlichkeit:** {rain_prob}%\n"
             f"   - **Stand:** {time_str}\n"
             f"   - **Regen letzte 24h:** {last_weather['rain_last_24h_mm']} mm\n"
             f"   - **Erwartet nächste 24h:** {last_weather['rain_next_24h_mm']} mm"
@@ -289,11 +340,11 @@ def handle_status(chat_id: int):
     
     msg = (
         f"📊 **System-Status Gartenbewässerung**\n\n"
-        f"🔌 **MQTT-Broker:** {broker_status}\n"
+        f"🔌 **System-Dienste:** {services_status}\n"
         f"📶 **Ventil-Verbindung:** {valve_connected}\n\n"
         f"💧 **Ventil-Zustand:** {state_icon}\n"
         f"{battery_icon} **Batterie:** {status['battery']}%\n"
-        f"📡 **Signalqualität:** {status['linkquality']} LQI\n"
+        f"📡 **Signalqualität:** {_get_lqi_description(status['linkquality'])}\n"
         f"{active_text}\n"
         f"🌤️ **Wetter:**\n"
         f"{weather_text}\n\n"
@@ -501,6 +552,17 @@ def _process_message(msg_obj: dict):
         )
     elif text == "📊 Status anzeigen" or text.startswith("/status"):
         handle_status(chat_id)
+    elif text.startswith("/report") or text.startswith("/statusbericht"):
+        from ..adapters import mqtt_client
+        import time
+        
+        # Vorab aktuelle Werte vom Ventil anfordern und kurz warten
+        mqtt_client.request_valve_status()
+        time.sleep(1.5)
+        
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        report_text = scheduler.generate_daily_report(today_str)
+        telegram_client.send_message(chat_id, report_text, get_main_keyboard())
     elif text == "📅 Zeitsteuerung" or text == "📅 Zeitpläne" or text.startswith("/zeitplan"):
         handle_schedules(chat_id)
     elif text == "🔧 Ventil koppeln" or text.startswith("/setup"):
