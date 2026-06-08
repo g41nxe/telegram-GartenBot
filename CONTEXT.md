@@ -37,8 +37,8 @@ Die primäre, gesicherte Benutzeroberfläche, über welche der Benutzer mit dem 
 _Avoid_: Cockpit, Web-App, Dashboard
 
 **Sicherheits-Timeout**:
-Die hardwareseitige Schutzfunktion (Auto-Close / Inching) des Ventils, die den Wasserfluss nach einer maximalen Schutzdauer (z. B. 30 Minuten) physisch stoppt, falls der reguläre Abschaltbefehl ausbleibt.
-_Avoid_: Software-Timer, Abschaltzeit
+Die hardwareseitige Schutzfunktion (Auto-Close / Fail-Safe) des Ventils, die den Wasserfluss nach einer maximalen Schutzdauer (z. B. 30 Minuten) physisch stoppt, falls der reguläre Abschaltbefehl ausbleibt. Beim Sonoff Hydro ONE wird dies über das Parameter-Feld `manual_default_settings.fail_safe` des Mittelweg-Dienstes gesteuert.
+_Avoid_: Software-Timer, Abschaltzeit, Inching
 
 **Wetterdaten-Stand**:
 Der im Telegram-Bot angezeigte Zeitstempel (Uhrzeit), welcher angibt, wann die Wetter- und Temperaturdaten zuletzt erfolgreich vom Wetter-Dienst abgerufen wurden.

@@ -59,7 +59,7 @@ def _pairing_worker(chat_id: int, notify_fn):
 
     try:
         # Koppelmodus im Mittelweg-Dienst aktivieren über den Haupt-Client
-        permit_join_payload = json.dumps({"value": True})
+        permit_join_payload = json.dumps({"time": PAIRING_TIMEOUT})
         mqtt_client.client_instance.publish(
             "zigbee2mqtt/bridge/request/permit_join",
             permit_join_payload
@@ -96,7 +96,7 @@ def _pairing_worker(chat_id: int, notify_fn):
         if not found_event.is_set():
             mqtt_client.client_instance.publish(
                 "zigbee2mqtt/bridge/request/permit_join",
-                json.dumps({"value": False})
+                json.dumps({"time": 0})
             )
             logger.warning("Ventil-Kopplung: Timeout – kein Gerät erkannt.")
             notify_fn(
@@ -121,7 +121,7 @@ def _pairing_worker(chat_id: int, notify_fn):
         # Koppelmodus deaktivieren
         mqtt_client.client_instance.publish(
             "zigbee2mqtt/bridge/request/permit_join",
-            json.dumps({"value": False})
+            json.dumps({"time": 0})
         )
         time.sleep(1)
 

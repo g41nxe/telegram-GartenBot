@@ -13,11 +13,12 @@ logger = logging.getLogger("garden_mqtt")
 
 class ValveStatusReported(Event):
     """Event, das gefeuert wird, wenn ein neuer Ventil-Zustand empfangen wird."""
-    def __init__(self, state: str, flow_rate: float, battery: int, linkquality: int):
+    def __init__(self, state: str, flow_rate: float, battery: int, linkquality: int, valve_abnormal_state: str = "normal"):
         self.state = state
         self.flow_rate = flow_rate
         self.battery = battery
         self.linkquality = linkquality
+        self.valve_abnormal_state = valve_abnormal_state
 
 class DeviceJoinedEvent(Event):
     """Event, das gefeuert wird, wenn ein neues Zigbee-Gerät beigetreten ist."""
@@ -31,19 +32,36 @@ valve_status = {
     "battery": 100,
     "flow_rate": 0.0,
     "linkquality": 0,
+    "valve_abnormal_state": "normal",
     "last_update": None
 }
 
 active_cycle_volume = 0.0
 last_flow_update_time = None
+bridge_status = "offline"
 
 # --- Abwärtskompatibles on_message ---
 
 def on_message(client, userdata, msg):
     """Callback bei eingehender MQTT-Nachricht (global und abwärtskompatibel)."""
-    global valve_status, active_cycle_volume, last_flow_update_time
+    global valve_status, active_cycle_volume, last_flow_update_time, bridge_status
     try:
         payload = msg.payload.decode("utf-8")
+        
+        # Bridge-Status-Nachrichten: Kann reiner Text (alt) oder ein JSON-Objekt {"state": "online"} (neu) sein
+        if hasattr(msg, "topic") and msg.topic == "zigbee2mqtt/bridge/state":
+            raw_payload = payload.strip()
+            if raw_payload.startswith("{") and raw_payload.endswith("}"):
+                try:
+                    state_json = json.loads(raw_payload)
+                    bridge_status = state_json.get("state", "offline").lower()
+                except Exception:
+                    bridge_status = "offline"
+            else:
+                bridge_status = raw_payload.lower()
+            logger.info(f"Mittelweg-Dienst Status empfangen: {bridge_status}")
+            return
+            
         data = json.loads(payload)
         
         state = data.get("state", valve_status["state"])
@@ -72,6 +90,7 @@ def on_message(client, userdata, msg):
         valve_status["battery"] = data.get("battery", valve_status["battery"])
         valve_status["flow_rate"] = flow_rate
         valve_status["linkquality"] = data.get("linkquality", valve_status["linkquality"])
+        valve_status["valve_abnormal_state"] = data.get("valve_abnormal_state", valve_status.get("valve_abnormal_state", "normal"))
         valve_status["last_update"] = now.isoformat()
         
     except Exception as e:
@@ -101,6 +120,9 @@ class MqttClient:
 
     def get_valve_status(self) -> Dict[str, Any]:
         return valve_status
+
+    def get_bridge_status(self) -> str:
+        return bridge_status
 
 # --- Production Adapter (Paho-MQTT) ---
 
@@ -135,6 +157,7 @@ class PahoMqttAdapter(MqttClient):
             return False
 
     def disconnect(self):
+        global bridge_status
         if self._client:
             try:
                 self._client.loop_stop()
@@ -142,6 +165,7 @@ class PahoMqttAdapter(MqttClient):
             except Exception as e:
                 logger.error(f"Fehler beim Stoppen des MQTT-Clients: {e}")
             self._connected = False
+            bridge_status = "offline"
 
     def publish(self, topic: str, payload: str, retain: bool = False) -> bool:
         if not self._client or not self._connected:
@@ -178,9 +202,14 @@ class PahoMqttAdapter(MqttClient):
             # Bridge-Events für Kopplung abonnieren
             self.subscribe("zigbee2mqtt/bridge/event")
             self.subscribe("zigbee2mqtt/bridge/response/device/rename")
+            self.subscribe("zigbee2mqtt/bridge/state")
             
             # Hardware-Timeout senden
             self._configure_safety_timeout()
+            
+            # Aktuellen Zustand des Ventils abfragen, um Pairing-Status zu laden
+            self.publish(f"{config.MQTT_VALVE_TOPIC}/get", json.dumps({"state": ""}))
+            logger.info("Zustandsabfrage an das Ventil gesendet.")
         else:
             self._connected = False
             logger.error(f"PahoMqttAdapter: Verbindungsfehler (rc={rc})")
@@ -198,9 +227,10 @@ class PahoMqttAdapter(MqttClient):
                 flow_rate = float(data.get("flow_rate", valve_status["flow_rate"]))
                 battery = int(data.get("battery", valve_status["battery"]))
                 linkquality = int(data.get("linkquality", valve_status["linkquality"]))
+                valve_abnormal_state = data.get("valve_abnormal_state", valve_status.get("valve_abnormal_state", "normal"))
                 
                 # Ereignis publizieren
-                self.event_bus.publish(ValveStatusReported(state, flow_rate, battery, linkquality))
+                self.event_bus.publish(ValveStatusReported(state, flow_rate, battery, linkquality, valve_abnormal_state))
                 
             elif msg.topic == "zigbee2mqtt/bridge/event":
                 if data.get("type") == "device_joined":
@@ -213,15 +243,13 @@ class PahoMqttAdapter(MqttClient):
 
     def _configure_safety_timeout(self):
         set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-        safety_seconds = config.SAFETY_TIMEOUT_MINUTES * 60
         payload = {
-            "inching_control": {
-                "inch_mode": "ON",
-                "inch_time": safety_seconds
+            "manual_default_settings": {
+                "fail_safe": config.SAFETY_TIMEOUT_MINUTES
             }
         }
         self.publish(set_topic, json.dumps(payload), retain=True)
-        logger.info(f"Hardware-Sicherheits-Timeout ({config.SAFETY_TIMEOUT_MINUTES} Min) gesendet.")
+        logger.info(f"Hardware-Sicherheits-Timeout ({config.SAFETY_TIMEOUT_MINUTES} Min) via manual_default_settings.fail_safe gesendet.")
 
 # --- Simulated Adapter (Simulation/Mock Mode) ---
 
@@ -238,19 +266,25 @@ class SimulatedMqttAdapter(MqttClient):
         valve_status["battery"] = 95
         valve_status["flow_rate"] = 0.0
         valve_status["linkquality"] = 140
-        valve_status["last_update"] = datetime.now().isoformat()
+        valve_status["valve_abnormal_state"] = "normal"
+        valve_update_time = datetime.now()
+        valve_status["last_update"] = valve_update_time.isoformat()
 
     def connect(self) -> bool:
+        global bridge_status
         self._connected = True
         self._sim_running = True
+        bridge_status = "online"
         self._sim_thread = threading.Thread(target=self._simulation_loop, daemon=True)
         self._sim_thread.start()
         logger.info("SimulatedMqttAdapter: Erfolgreich gestartet (Simulationsmodus).")
         return True
 
     def disconnect(self):
+        global bridge_status
         self._sim_running = False
         self._connected = False
+        bridge_status = "offline"
 
     def publish(self, topic: str, payload: str, retain: bool = False) -> bool:
         global active_cycle_volume, last_flow_update_time
@@ -259,7 +293,7 @@ class SimulatedMqttAdapter(MqttClient):
         
         try:
             data = json.loads(payload)
-            if "state" in data:
+            if isinstance(data, dict) and "state" in data:
                 new_state = data["state"]
                 valve_status["state"] = new_state
                 valve_status["last_update"] = datetime.now().isoformat()
@@ -275,12 +309,26 @@ class SimulatedMqttAdapter(MqttClient):
                     last_flow_update_time = None
                     
                 self.event_bus.publish(ValveStatusReported(
-                    new_state, flow, valve_status["battery"], valve_status["linkquality"]
+                    new_state, flow, valve_status["battery"], valve_status["linkquality"], valve_status["valve_abnormal_state"]
                 ))
                 logger.info(f"SimulatedMqttAdapter: Ventil-State geändert -> {new_state}")
                 
             if topic == "zigbee2mqtt/bridge/request/permit_join":
-                if data.get("value") is True:
+                is_permit = False
+                if isinstance(data, dict):
+                    if data.get("value") is True or data.get("time", 0) > 0:
+                        is_permit = True
+                elif isinstance(data, (int, float)):
+                    if data > 0:
+                        is_permit = True
+                elif isinstance(data, str):
+                    try:
+                        if int(data) > 0:
+                            is_permit = True
+                    except ValueError:
+                        pass
+                
+                if is_permit:
                     logger.info("SimulatedMqttAdapter: Koppelmodus aktiviert. Simuliere Gerät nach 100ms...")
                     # Simuliere Koppelungsbeitritt nach einer minimalen Verzögerung asynchronous
                     threading.Thread(target=self._simulate_device_joined, daemon=True).start()
@@ -312,7 +360,7 @@ class SimulatedMqttAdapter(MqttClient):
                             active_cycle_volume += 5.0 * (min(elapsed, 60.0) / 60.0)
                     last_flow_update_time = now
                     self.event_bus.publish(ValveStatusReported(
-                        "ON", 5.0, valve_status["battery"], valve_status["linkquality"]
+                        "ON", 5.0, valve_status["battery"], valve_status["linkquality"], valve_status["valve_abnormal_state"]
                     ))
                 time.sleep(1)
             except Exception:
@@ -364,3 +412,13 @@ def close_valve() -> bool:
 def is_broker_connected() -> bool:
     _init_client()
     return client_instance.is_connected()
+
+def request_valve_status() -> bool:
+    """Sendet eine get-Abfrage über MQTT, um aktuelle Werte (Zustand, Batterie) vom Ventil anzufordern."""
+    _init_client()
+    return client_instance.publish(f"{config.MQTT_VALVE_TOPIC}/get", json.dumps({"state": "", "battery": ""}))
+
+def get_bridge_status() -> str:
+    _init_client()
+    return client_instance.get_bridge_status()
+

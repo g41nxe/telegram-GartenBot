@@ -118,5 +118,8 @@ poetry.lock
 *.db
 *.sqlite3
 
+# Temporäre Archive für Deployment
+zigbee2mqtt.tar.gz
+
 # End of file
 

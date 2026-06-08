@@ -129,6 +129,10 @@ class TestGardenIrrigation(unittest.TestCase):
         precipitation[10] = 1.5  # In der Vergangenheit
         precipitation[30] = 2.5  # In der Zukunft (Summe = 4.0 mm)
         
+        # Stündliche Regenwahrscheinlichkeit
+        precip_probability = [10] * 48
+        precip_probability[30] = 75  # Maximalwert im Zukunftsfenster
+        
         # Erstelle eine Mock-Stundenliste
         from datetime import datetime
         now = datetime.now()
@@ -149,18 +153,31 @@ class TestGardenIrrigation(unittest.TestCase):
             },
             "hourly": {
                 "time": times,
-                "precipitation": precipitation
+                "precipitation": precipitation,
+                "precipitation_probability": precip_probability
+            },
+            "daily": {
+                "time": [
+                    (now - timedelta(days=1)).strftime("%Y-%m-%d"),
+                    now.strftime("%Y-%m-%d"),
+                    (now + timedelta(days=1)).strftime("%Y-%m-%d")
+                ],
+                "temperature_2m_max": [20.0, 26.5, 25.0],
+                "temperature_2m_min": [10.0, 15.5, 14.0]
             }
         }).encode("utf-8")
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
         # Führe Abfrage aus
-        rain_last, rain_next, temp, code = weather.get_weather_data(52.5, 13.5)
+        rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob = weather.get_weather_data(52.5, 13.5)
         
         self.assertEqual(rain_last, 1.5)
         self.assertEqual(rain_next, 2.5)
         self.assertEqual(temp, 22.5)
         self.assertEqual(code, 3)
+        self.assertEqual(temp_min, 15.5)
+        self.assertEqual(temp_max, 26.5)
+        self.assertEqual(rain_prob, 75)
 
         # Skip-Logik testen
         should_skip, details = weather.should_skip_watering()
@@ -175,14 +192,17 @@ class TestGardenIrrigation(unittest.TestCase):
         mock_urlopen.side_effect = URLError("Mocked network timeout")
 
         # Fallback 1: Datenbank enthält bereits einen Wettereintrag
-        database.log_weather(1.0, 2.5, 18.0, 1) # Gesamt = 3.5 mm (> 3.0)
+        database.log_weather(1.0, 2.5, 18.0, 1, 12.0, 24.0, 60) # Gesamt = 3.5 mm (> 3.0)
 
         # Abfrage ausführen
-        rain_last, rain_next, temp, code = weather.get_weather_data(52.5, 13.5)
+        rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob = weather.get_weather_data(52.5, 13.5)
         self.assertEqual(rain_last, 1.0)
         self.assertEqual(rain_next, 2.5)
         self.assertEqual(temp, 18.0)
         self.assertEqual(code, 1)
+        self.assertEqual(temp_min, 12.0)
+        self.assertEqual(temp_max, 24.0)
+        self.assertEqual(rain_prob, 60)
 
         should_skip, details = weather.should_skip_watering()
         self.assertTrue(should_skip)
@@ -195,11 +215,14 @@ class TestGardenIrrigation(unittest.TestCase):
         conn.close()
 
         # Abfrage ohne DB-Einträge ausführen
-        rain_last, rain_next, temp, code = weather.get_weather_data(52.5, 13.5)
+        rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob = weather.get_weather_data(52.5, 13.5)
         self.assertEqual(rain_last, 0.0)
         self.assertEqual(rain_next, 0.0)
         self.assertEqual(temp, 0.0)
         self.assertEqual(code, 0)
+        self.assertEqual(temp_min, 0.0)
+        self.assertEqual(temp_max, 0.0)
+        self.assertEqual(rain_prob, 0)
 
         should_skip, details = weather.should_skip_watering()
         self.assertFalse(should_skip)
@@ -301,6 +324,162 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertEqual(mqtt_client.get_valve_status()["state"], "OFF")
         mock_notification.assert_called_once()
         self.assertIn("Sicherheits-Schließung", mock_notification.call_args[0][0])
+
+    def test_11_database_metadata_and_stats(self):
+        """Testet get/set_metadata und get_watering_stats_last_24h in der Datenbank."""
+        # Test 1: Metadaten
+        database.set_metadata("test_key", "test_value")
+        self.assertEqual(database.get_metadata("test_key"), "test_value")
+        self.assertEqual(database.get_metadata("non_existent_key", "default_val"), "default_val")
+
+        # Test 2: Guss-Statistiken der letzten 24h
+        # Zunächst löschen wir die watering_history für saubere Testbedingungen
+        conn = database.get_connection()
+        conn.execute("DELETE FROM watering_history")
+        conn.commit()
+        conn.close()
+
+        # Logge erfolgreiche und fehlgeschlagene Läufe der letzten 24h
+        database.log_watering(10, "schedule", "completed", "Erfolgreicher Lauf", watered_volume=12.5)
+        database.log_watering(5, "manual", "stopped", "Vorzeitig gestoppt", watered_volume=3.2)
+        database.log_watering(15, "schedule", "failed", "Fehlgeschlagener Lauf", watered_volume=0.0)
+
+        # Logge einen Lauf, der älter als 24h ist (sollte ignoriert werden)
+        from datetime import datetime, timedelta
+        conn = database.get_connection()
+        old_time = (datetime.now() - timedelta(hours=25)).isoformat()
+        conn.execute(
+            "INSERT INTO watering_history (timestamp, duration_minutes, source, status, details, watered_volume) VALUES (?, ?, ?, ?, ?, ?)",
+            (old_time, 20, "schedule", "completed", "Alter Lauf", 50.0)
+        )
+        conn.commit()
+        conn.close()
+
+        success_count, failed_count, total_volume = database.get_watering_stats_last_24h()
+        # Vorzeitig gestoppt und completed gelten als erfolgreich; failed als fehlgeschlagen.
+        self.assertEqual(success_count, 2)
+        self.assertEqual(failed_count, 1)
+        self.assertEqual(total_volume, 15.7)
+
+    def test_12_daily_report_generation(self):
+        """Testet die Generierung des Tagesberichts und das Erkennen von Warnungen."""
+        from datetime import datetime, timedelta
+        from daemon import scheduler
+        
+        # Mocke Wetterdaten
+        with patch("daemon.adapters.weather.get_weather_data") as mock_weather_data:
+            mock_weather_data.return_value = (1.5, 2.0, 21.0, 3, 12.5, 25.0, 80) # Bedeckt
+            
+            # 1. Fall: Normaler Zustand (Keine Warnungen)
+            mqtt_client.valve_status["battery"] = 90
+            mqtt_client.valve_status["valve_abnormal_state"] = "normal"
+            mqtt_client.valve_status["last_update"] = datetime.now().isoformat()
+            
+            report = scheduler.generate_daily_report("2026-06-07")
+            self.assertIn("Statusbericht vom 07.06.2026", report)
+            self.assertIn("Erfolgreiche Zyklen", report)
+            self.assertIn("Temperatur: 21.0 °C (Min: 12.5 °C / Max: 25.0 °C) | ☁️ Bedeckt / Bewölkt", report)
+            self.assertIn("Regenwahrscheinlichkeit: 80%", report)
+            self.assertNotIn("System-Warnungen", report)
+            
+            # 2. Fall: Batterie schwach, Offline und abnormaler Zustand (Warnungen)
+            mqtt_client.valve_status["battery"] = 15 # Unter 20%
+            mqtt_client.valve_status["valve_abnormal_state"] = "water_shortage"
+            # Letztes Signal vor 25 Stunden
+            mqtt_client.valve_status["last_update"] = (datetime.now() - timedelta(hours=25)).isoformat()
+            
+            report_warn = scheduler.generate_daily_report("2026-06-07")
+            self.assertIn("System-Warnungen", report_warn)
+            self.assertIn("Niedriger Batteriestand", report_warn)
+            self.assertIn("Verbindung verloren", report_warn)
+            self.assertIn("Ventil-Anomalie erkannt", report_warn)
+
+            # 3. Fall: Broker disconnected, Mittelweg-Dienst offline
+            mqtt_client.HAS_PAHO = True
+            
+            with patch("daemon.adapters.mqtt_client.is_broker_connected", return_value=False), \
+                 patch("daemon.adapters.mqtt_client.get_bridge_status", return_value="offline"):
+                report_serv_offline = scheduler.generate_daily_report("2026-06-07")
+                self.assertIn("System-Warnungen", report_serv_offline)
+                self.assertIn("MQTT-Broker ist offline", report_serv_offline)
+                
+            with patch("daemon.adapters.mqtt_client.is_broker_connected", return_value=True), \
+                 patch("daemon.adapters.mqtt_client.get_bridge_status", return_value="offline"):
+                report_z2m_offline = scheduler.generate_daily_report("2026-06-07")
+                self.assertIn("System-Warnungen", report_z2m_offline)
+                self.assertIn("Mittelweg-Dienst (Zigbee2MQTT) ist offline", report_z2m_offline)
+                
+            # Zurücksetzen für nachfolgende Tests
+            mqtt_client.HAS_PAHO = False
+
+    def test_13_device_status_stats(self):
+        """Testet das passive Loggen des Gerätestatus und die Berechnung der LQI- und Funklücken-Statistik."""
+        # 1. Datenbank-Tabelle leeren
+        conn = database.get_connection()
+        conn.execute("DELETE FROM device_status_log")
+        conn.commit()
+        conn.close()
+
+        # 2. Logge Status-Meldungen zu verschiedenen Zeitpunkten
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        
+        conn = database.get_connection()
+        
+        # Meldung 1: Vor 20 Stunden, LQI = 150
+        time1 = (now - timedelta(hours=20)).isoformat()
+        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time1, 95, 150))
+        
+        # Meldung 2: Vor 12 Stunden, LQI = 120
+        time2 = (now - timedelta(hours=12)).isoformat()
+        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time2, 94, 120))
+        
+        # Meldung 3: Vor 2 Stunden, LQI = 130
+        time3 = (now - timedelta(hours=2)).isoformat()
+        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time3, 93, 130))
+        
+        conn.commit()
+        conn.close()
+
+        # 3. Statistik abrufen
+        stats = database.get_device_status_stats_last_24h()
+        
+        self.assertEqual(stats["count"], 3)
+        self.assertEqual(stats["avg_lqi"], 133.3)  # (150 + 120 + 130) / 3 = 133.333...
+        
+        # Längste Lücke zwischen Meldung 2 (vor 12h) und Meldung 3 (vor 2h) -> 10 Stunden
+        self.assertAlmostEqual(stats["max_gap_hours"], 10.0, places=1)
+
+    def test_14_mqtt_bridge_status_parsing(self):
+        """Testet das Empfangen und Verarbeiten des Bridge-Status in on_message."""
+        # Initialer Zustand
+        mqtt_client.bridge_status = "offline"
+        
+        # Simuliere eingehende Nachricht
+        class MockMsg:
+            def __init__(self, topic, payload):
+                self.topic = topic
+                self.payload = payload
+                
+        # Send online payload (altes Format)
+        msg_online = MockMsg("zigbee2mqtt/bridge/state", b"online")
+        mqtt_client.on_message(None, None, msg_online)
+        self.assertEqual(mqtt_client.get_bridge_status(), "online")
+        
+        # Send offline payload (altes Format)
+        msg_offline = MockMsg("zigbee2mqtt/bridge/state", b"offline")
+        mqtt_client.on_message(None, None, msg_offline)
+        self.assertEqual(mqtt_client.get_bridge_status(), "offline")
+
+        # Send online JSON payload (neues Format)
+        msg_online_json = MockMsg("zigbee2mqtt/bridge/state", b'{"state":"online"}')
+        mqtt_client.on_message(None, None, msg_online_json)
+        self.assertEqual(mqtt_client.get_bridge_status(), "online")
+        
+        # Send offline JSON payload (neues Format)
+        msg_offline_json = MockMsg("zigbee2mqtt/bridge/state", b'{"state":"offline"}')
+        mqtt_client.on_message(None, None, msg_offline_json)
+        self.assertEqual(mqtt_client.get_bridge_status(), "offline")
 
 
 if __name__ == "__main__":

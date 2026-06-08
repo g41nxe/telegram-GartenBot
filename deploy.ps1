@@ -34,13 +34,50 @@ if ([string]::IsNullOrEmpty($PiUser)) {
 }
 
 
-Write-Host ""
+# 1. Lokaler Build und Archivierung von Zigbee2MQTT
+if (Test-Path "vendor/zigbee2mqtt") {
+    Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
+    Write-Host "   Kompiliere Zigbee2MQTT lokal auf dem Host..." -ForegroundColor Cyan
+    Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
+    Push-Location vendor/zigbee2mqtt
+    try {
+        npm run build
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "NPM-Build fehlgeschlagen. Der Build wird übersprungen."
+        } else {
+            Write-Host "TypeScript-Kompilierung erfolgreich!" -ForegroundColor Green
+        }
+    }
+    catch {
+        Write-Warning "Fehler beim Ausführen von npm run build: $_"
+    }
+    Pop-Location
+    Write-Host ""
+    
+    Write-Host "Erstelle Archiv zigbee2mqtt.tar.gz..." -ForegroundColor Cyan
+    if (Test-Path "zigbee2mqtt.tar.gz") {
+        Remove-Item "zigbee2mqtt.tar.gz" -Force
+    }
+    tar -czf zigbee2mqtt.tar.gz --exclude=node_modules --exclude=.git --exclude=*.tar.gz -C vendor/zigbee2mqtt .
+    if (Test-Path "zigbee2mqtt.tar.gz") {
+        $ArchiveSize = [int]((Get-Item "zigbee2mqtt.tar.gz").Length / 1MB)
+        Write-Host "Archiv erfolgreich erstellt (Größe: $ArchiveSize MB)." -ForegroundColor Green
+    } else {
+        Write-Warning "Archiv konnte nicht erstellt werden."
+    }
+    Write-Host ""
+}
+
 Write-Host "Starte Übertragung zu ${PiUser}@${PiHost} via scp..." -ForegroundColor Cyan
 Write-Host "Ggf. werden Sie gleich nach dem SSH-Passwort des Pi gefragt." -ForegroundColor Gray
 Write-Host ""
 
 # Ausführung der Übertragung der notwendigen Ordner und Dateien (ohne .git, garden.db, etc. zur Vermeidung von Konflikten)
-$TransferItems = @("src", "setup.sh", ".env")
+$TransferItems = @("src", "setup.sh", ".env", "migrate_zigbee_adapter.sh", "tools")
+if (Test-Path "zigbee2mqtt.tar.gz") {
+    $TransferItems += "zigbee2mqtt.tar.gz"
+}
+
 foreach ($Item in $TransferItems) {
     if (Test-Path $Item) {
         scp -r $Item "${PiUser}@${PiHost}:/home/${PiUser}/garden/"
@@ -52,19 +89,26 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host ""
     Write-Host "🎉 Übertragung erfolgreich abgeschlossen!" -ForegroundColor Green
     Write-Host ""
-    Write-Host "Starte den Bewässerungs-Daemon auf dem Pi neu, um den neuen Code zu aktivieren..." -ForegroundColor Cyan
     
-    # Führe einen schnellen Neustart des Daemons über SSH aus
-    ssh -o ConnectTimeout=5 "${PiUser}@${PiHost}" "sudo systemctl restart garden-irrigation.service"
+    if (Test-Path "zigbee2mqtt.tar.gz") {
+        Write-Host "Starte Setup-Skript auf dem Pi, um Zigbee2MQTT einzurichten/zu aktualisieren..." -ForegroundColor Cyan
+        ssh -t -o ConnectTimeout=5 "${PiUser}@${PiHost}" "cd ~/garden && bash setup.sh"
+    } else {
+        Write-Host "Starte den Bewässerungs-Daemon auf dem Pi neu, um den neuen Code zu aktivieren..." -ForegroundColor Cyan
+        ssh -t -o ConnectTimeout=5 "${PiUser}@${PiHost}" "sudo systemctl restart garden-irrigation.service"
+    }
     
     if ($LASTEXITCODE -eq 0) {
-        Write-Host "⚡ Bewässerungs-Daemon erfolgreich neugestartet!" -ForegroundColor Green
-        Write-Host "ℹ️ Der neue Code ist jetzt live aktiv." -ForegroundColor Green
+        Write-Host "⚡ Bereitstellung und Aktivierung erfolgreich abgeschlossen!" -ForegroundColor Green
     } else {
-        Write-Host "⚠️ Warnung: Der Daemon konnte nicht neugestartet werden. Möglicherweise fehlt sudo-Passwortfreiheit auf dem Pi." -ForegroundColor Yellow
-        Write-Host "   Führen Sie manuell aus: ssh ${PiUser}@${PiHost} 'sudo systemctl restart garden-irrigation.service'" -ForegroundColor Gray
+        Write-Warning "Der Neustart oder das Setup konnte nicht vollständig per SSH durchgeführt werden."
     }
 } else {
     Write-Host "❌ Fehler bei der Übertragung. Prüfen Sie die Verbindung und Zugangsdaten." -ForegroundColor Red
+}
+
+# Aufräumen des temporären Archivs
+if (Test-Path "zigbee2mqtt.tar.gz") {
+    Remove-Item "zigbee2mqtt.tar.gz" -Force
 }
 

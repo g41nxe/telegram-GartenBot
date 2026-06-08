@@ -64,3 +64,8 @@ try:
     SAFETY_TIMEOUT_MINUTES = int(os.getenv("SAFETY_TIMEOUT_MINUTES", "30"))
 except ValueError:
     SAFETY_TIMEOUT_MINUTES = 30
+
+try:
+    BATTERY_WARNING_THRESHOLD = int(os.getenv("BATTERY_WARNING_THRESHOLD", "20"))
+except ValueError:
+    BATTERY_WARNING_THRESHOLD = 20

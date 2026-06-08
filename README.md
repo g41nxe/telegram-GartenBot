@@ -63,9 +63,33 @@ graph TD
 ## 🚀 Installation & Bereitstellung auf dem Pi Zero W
 
 ### Voraussetzungen
-1. **Funk-Koordinator** (Sonoff Zigbee 3.0 USB Dongle Plus) am Pi eingesteckt
-2. **Sonoff Hydro ONE Ventil** griffbereit (wird während des Setups gekoppelt)
-3. `.env`-Datei mit deinen Zugangsdaten (aus `.env.template` erstellen):
+
+#### 1. Hardware
+*   **Steuerzentrale**: Raspberry Pi Zero W (oder neuer)
+*   **Funk-Koordinator**: Sonoff Zigbee 3.0 USB Dongle Plus (am Pi eingesteckt)
+*   **Ventil**: Sonoff Hydro ONE Smart-Wasserlaufventil (griffbereit für die Kopplung)
+
+#### 2. System- & Software-Bibliotheken (auf dem Raspberry Pi)
+Das automatische Installationsskript `setup.sh` richtet diese Versionen und Pakete selbstständig ein:
+
+| Komponente / Bibliothek | Benötigte Version | Installationsquelle | Zweck |
+|---|---|---|---|
+| **Python** | `>= 3.9` | Vorinstalliert im OS | Ausführung des Bewässerungs-Daemons |
+| **paho-mqtt** | `python3-paho-mqtt` (`~1.6`) | `apt` Paket | MQTT-Kommunikation in Python |
+| **Mosquitto** | `mosquitto` & `mosquitto-clients` | `apt` Paket | Lokaler MQTT-Message-Broker |
+| **Node.js** | `>= v20.10.0` (installiert wird `v20.11.1`) | Inoffizieller ARMv6-Build | Laufzeitumgebung für Zigbee2MQTT |
+| **Zigbee2MQTT** | `v2.10.1` | Git / lokaler Build | Mittelweg-Dienst für Zigbee-Kommunikation |
+| **System-Tools** | `git`, `curl` | `apt` Paket | Git-Repository und Download-Utilities |
+
+> [!IMPORTANT]
+> **Wichtiger Hinweis zum Firmware-Upgrade des Funk-Koordinators (ZBDongle-E / EZSP v8 -> v13+):**
+> Wenn Sie die Firmware des Dongles auf Version `v7.4` (oder neuer) aktualisieren, müssen Sie unbedingt folgenden Migrations-Workflow einhalten, da andernfalls das Backup-File beschädigt wird und Sie Ihr gesamtes Zigbee-Netzwerk neu anlernen müssen:
+> 1. Konfigurieren Sie Zigbee2MQTT beim ersten Start nach dem Upgrade zwingend mit `adapter: ezsp` in der `configuration.yaml` (NICHT direkt mit `adapter: ember` starten!).
+> 2. Lassen Sie Zigbee2MQTT einmal vollständig mit `ezsp` starten, um die interne Backup-Datei erfolgreich auf das neue Format zu migrieren.
+> 3. Ändern Sie erst danach den Wert in der `configuration.yaml` auf `adapter: ember` (bzw. entfernen Sie den Eintrag, da `ember` der Standardwert ist).
+
+#### 3. Konfigurationsdatei
+Erstelle eine `.env`-Datei aus der Vorlage `.env.template` im Projektverzeichnis:
    ```bash
    cp .env.template .env
    nano .env

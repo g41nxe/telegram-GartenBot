@@ -50,13 +50,43 @@ class TestMqttClient(unittest.TestCase):
         client.connect()
         
         # Trigger pairing
-        client.publish("zigbee2mqtt/bridge/request/permit_join", '{"value": true}')
+        client.publish("zigbee2mqtt/bridge/request/permit_join", '{"time": 90}')
         
         # Wait a moment for simulated asynchronous device joined trigger
         time.sleep(0.2)
         
         self.assertEqual(len(joined_events), 1)
         self.assertEqual(joined_events[0].ieee_address, "0x00124b0025aa1122")
+        client.disconnect()
+
+    def test_simulated_client_pairing_flow_formats(self):
+        """Verifies that SimulatedMqttAdapter handles various permit_join payload formats."""
+        import json
+        for payload in ['{"time": 90}', '{"value": true}', '"90"', '90']:
+            bus = EventBus()
+            client = SimulatedMqttAdapter(bus)
+            
+            joined_events = []
+            bus.subscribe(DeviceJoinedEvent, lambda e: joined_events.append(e))
+            
+            client.connect()
+            client.publish("zigbee2mqtt/bridge/request/permit_join", payload)
+            
+            time.sleep(0.2)
+            self.assertEqual(len(joined_events), 1, f"Failed for format: {payload}")
+            client.disconnect()
+
+    def test_simulated_client_configuration_and_get_ignored(self):
+        """Verifies that SimulatedMqttAdapter handles safety timeout and get requests without raising exceptions."""
+        bus = EventBus()
+        client = SimulatedMqttAdapter(bus)
+        client.connect()
+        
+        # Should return True and not crash
+        self.assertTrue(client.publish("zigbee2mqtt/garden_valve/set", '{"manual_default_settings": {"fail_safe": 30}}'))
+        self.assertTrue(client.publish("zigbee2mqtt/garden_valve/get", '{"state": ""}'))
+        
+        client.disconnect()
 
 if __name__ == "__main__":
     unittest.main()
