@@ -25,10 +25,10 @@ Dieser Skill automatisiert die Bereitstellung des gesamten Gartenbewässerungs-S
    Bestätige dem Benutzer die erfolgreiche Übertragung und weise ihn an, sich über SSH auf dem Pi einzuloggen und das **einheitliche** Setup-Skript auszuführen:
    ```
    ssh <user>@<pi-ip>
-   cd ~/garden && bash setup.sh
+   cd ~/garden && bash scripts/setup.sh
    ```
    
-   Erkläre dem Benutzer, dass `setup.sh` nun **alle drei Dienste** automatisch einrichtet:
+   Erkläre dem Benutzer, dass `scripts/setup.sh` nun **alle drei Dienste** automatisch einrichtet:
    - Mosquitto MQTT-Broker
    - Mittelweg-Dienst (Zigbee2MQTT) inkl. automatischer Ventil-Kopplung
    - Bewässerungs-Daemon
