@@ -69,7 +69,7 @@ Das vom Füllstandssensor per MQTT an die Steuerzentrale gesendete Datenpaket mi
 _Avoid_: Sensor-Signal, Telemetrie-Paket
 
 **Inaktivitäts-Watchdog**:
-Die Überwachungslogik im Bewässerungs-Daemon, die das Ausbleiben von Füllstands-Meldungen (z. B. über einen Zeitraum von mehr als 18 Stunden) erkennt und proaktiv über den Telegram-Bot warnt.
+Die Überwachungslogik im Bewässerungs-Daemon, die das Ausbleiben regelmäßiger Lebenszeichen von batteriebetriebenen Geräten (z. B. mehr als 18 Stunden beim Füllstandssensor oder mehr als 24 Stunden beim Ventil) erkennt und proaktiv über den Telegram-Bot warnt.
 _Avoid_: Offline-Timer, Connection-Checker, Heartbeat-Sensor
 
 
