@@ -72,10 +72,7 @@ _Avoid_: Sensor-Signal, Telemetrie-Paket
 Die Überwachungslogik im Bewässerungs-Daemon, die das Ausbleiben regelmäßiger Lebenszeichen von batteriebetriebenen Geräten (z. B. mehr als 18 Stunden beim Füllstandssensor oder mehr als 24 Stunden beim Ventil) erkennt und proaktiv über den Telegram-Bot warnt.
 _Avoid_: Offline-Timer, Connection-Checker, Heartbeat-Sensor
 
+## Architecture Rules
 
-
-
-
-
-
-
+- **Stateless Adapters**: Adapters (e.g. `weather`, `database`, `mqtt_client`) MUST be stateless and MUST NOT import other adapters. 
+- **Event-Driven Side Effects**: Cross-cutting concerns and side-effects (like logging to the database or sending UI notifications) MUST NOT be executed via direct function calls across boundaries. Instead, they MUST be handled by publishing Domain Events to the system's `EventBus` (Ereignis-Kanal).
