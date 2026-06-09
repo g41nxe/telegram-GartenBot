@@ -62,6 +62,8 @@ graph TD
 │       ├── scheduler.py     # Guss-Zeitsteuerung & parallele Wächter-Threads
 │       ├── telegram_bot.py  # Dialogführung, Assistenten & Statusvisualisierung
 │       └── main.py          # Zentraler Programmeinstieg
+├── vendor/
+│   └── zigbee2mqtt/         # Lokale, modifizierte Zigbee2MQTT-Quellen (Mittelweg-Dienst)
 └── tests/
     └── test_irrigation.py   # Unit- & Integrationstests (Offline-Simulationsmodus)
 ```
@@ -152,6 +154,16 @@ Der Bot bietet ein permanentes Tastenmenü am unteren Bildschirmrand:
 *   **🟢 Bewässern starten:** Startet den zweistufigen manuellen Guss-Assistenten zur bequemen Festlegung von Zeitlimit (Minuten) und Volumenlimit (Liter).
 *   **🔴 Sofort Stopp (`/stop`):** Schließt das Ventil unverzüglich und bricht alle aktiven Scheduler- und Volumenwächter-Threads ab.
 
+---
+
+## 📦 Lokales Vendoring & Anpassungen (Zigbee2MQTT)
+
+Der Mittelweg-Dienst (Zigbee2MQTT) wird als lokaler Quellcode im Verzeichnis `vendor/zigbee2mqtt/` verwaltet („gevendort“). Dies war aus zwei Gründen notwendig:
+
+1. **Ressourcenschonung (Vorkompilierung):** Die TypeScript-Kompilierung (`npm run build` bzw. `tsc`) überlastet den Raspberry Pi Zero W (ARMv6, 512 MB RAM) und führt ohne großen Swap-Speicher zu Abstürzen. Durch das Vendoring wird der Dienst lokal auf dem Windows-Host gebaut (`deploy.ps1`) und als komprimiertes Archiv (`zigbee2mqtt.tar.gz`) auf den Pi übertragen.
+2. **CommonJS-Kompatibilität (Debounce-Downgrade):** Die höchste für die ARMv6-Architektur verfügbare Node.js-Version (`v20.11.1`) unterstützt kein `require()` von reinen ES-Modulen. Da die neuere Bibliothek `debounce@^3.0.0` ein reines ES-Modul ist, scheiterte der Start von Zigbee2MQTT. In `vendor/zigbee2mqtt/package.json` wurde `debounce` daher auf die CommonJS-kompatible Version `^1.2.1` downgegradet.
+
+Detaillierte Informationen findest du in der Architekturentscheidung [ADR 0010](docs/adr/0010-vorkompilierte-bereitstellung-des-mittelweg-dienstes.md).
 
 ---
 

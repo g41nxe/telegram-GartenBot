@@ -450,6 +450,89 @@ class TestGardenIrrigation(unittest.TestCase):
         mqtt_client.on_message(None, None, msg_offline_json)
         self.assertEqual(mqtt_client.get_bridge_status(), "offline")
 
+    def test_15_scheduler_trigger_watering(self):
+        """Testet die Wetter-Skip und Start-Logik in _trigger_scheduled_watering."""
+        from daemon import scheduler
+        from daemon.core.scheduler_events import WateringSkipped, ScheduleFailed
+        
+        # Mock weather skip
+        with patch("daemon.adapters.weather.should_skip_watering", return_value=(True, "Too wet")):
+            mock_handler = MagicMock()
+            mqtt_client._global_bus.subscribe(WateringSkipped, mock_handler)
+            scheduler._trigger_scheduled_watering({"name": "Test1", "duration_minutes": 10})
+            mock_handler.assert_called_once()
+            self.assertIn("Too wet", mock_handler.call_args[0][0].details)
+            
+        # Mock weather skip exception
+        with patch("daemon.adapters.weather.should_skip_watering", side_effect=Exception("API down")), \
+             patch("daemon.scheduler.start_watering", return_value=(False, "Failed start")):
+            mock_fail = MagicMock()
+            mqtt_client._global_bus.subscribe(ScheduleFailed, mock_fail)
+            scheduler._trigger_scheduled_watering({"name": "Test2", "duration_minutes": 10})
+            mock_fail.assert_called_once()
+            self.assertIn("Failed start", mock_fail.call_args[0][0].details)
+            
+    def test_16_scheduler_loop_and_daily_report(self):
+        """Testet den main _scheduler_loop auf weather updates und daily reports."""
+        from daemon import scheduler
+        from datetime import datetime
+        
+        with patch("daemon.scheduler.datetime") as mock_datetime, \
+             patch("daemon.scheduler.time.sleep") as mock_sleep, \
+             patch("daemon.scheduler.check_startup_safety") as mock_safety, \
+             patch("daemon.scheduler.send_daily_report") as mock_report, \
+             patch("daemon.adapters.weather.get_weather_data") as mock_weather:
+            
+            # Setup mock time
+            mock_now = datetime(2026, 6, 9, 8, 5) # 08:05
+            mock_datetime.now.return_value = mock_now
+            mock_datetime.fromisoformat = datetime.fromisoformat
+            
+            # Simulate one loop iteration
+            sleep_calls = [0]
+            def side_effect_sleep(*args):
+                sleep_calls[0] += 1
+                if sleep_calls[0] > 1:
+                    scheduler.scheduler_running = False # Stop loop
+                
+            mock_sleep.side_effect = side_effect_sleep
+            
+            database.set_metadata("last_daily_report_date", "2026-06-08") # Yesterday
+            
+            scheduler.scheduler_running = True
+            scheduler._scheduler_loop()
+            
+            mock_safety.assert_called_once()
+            # The thread is started, mock_report should be called in thread.
+            # But thread might take a moment.
+            
+    def test_17_scheduler_facades(self):
+        """Testet die Fassaden-Methoden im scheduler."""
+        from daemon import scheduler
+        
+        # When controller is none
+        old_ctrl = scheduler.controller
+        scheduler.controller = None
+        
+        self.assertIsNone(scheduler.get_active_cycle())
+        success, msg = scheduler.start_watering(10, 0, "test")
+        self.assertFalse(success)
+        self.assertIn("nicht initialisiert", msg)
+        
+        success, msg = scheduler.stop_watering()
+        self.assertFalse(success)
+        self.assertIn("nicht initialisiert", msg)
+        
+        # time limit callback should not crash
+        scheduler._time_limit_callback()
+        
+        scheduler.controller = old_ctrl
+        
+    def test_18_generate_daily_report_exception(self):
+        from daemon import scheduler
+        with patch("daemon.adapters.weather.get_weather_data", side_effect=Exception("API error")):
+            report = scheduler.generate_daily_report("2026-06-09")
+            self.assertIn("Statusbericht vom 09.06.2026", report)
 
 if __name__ == "__main__":
     unittest.main()

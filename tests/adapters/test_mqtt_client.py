@@ -88,5 +88,84 @@ class TestMqttClient(unittest.TestCase):
         
         client.disconnect()
 
+from unittest.mock import patch
+import unittest
+
+from daemon.adapters.mqtt_client import HAS_PAHO
+
+@unittest.skipIf(not HAS_PAHO, "paho-mqtt nicht installiert")
+class TestPahoMqttClient(unittest.TestCase):
+    def setUp(self):
+        from daemon.core.event_bus import EventBus
+        from daemon.adapters.mqtt_client import PahoMqttAdapter
+        self.bus = EventBus()
+        self.adapter = PahoMqttAdapter(self.bus)
+        
+    @patch("daemon.adapters.mqtt_client.mqtt.Client")
+    def test_connect_subscribe_publish(self, mock_mqtt):
+        from unittest.mock import MagicMock
+        mock_instance = MagicMock()
+        mock_mqtt.return_value = mock_instance
+        
+        self.adapter.connect()
+        mock_instance.connect_async.assert_called_once()
+        mock_instance.loop_start.assert_called_once()
+        
+        self.adapter._on_connect(mock_instance, None, None, 0)
+        self.assertTrue(self.adapter.is_connected())
+        
+        # In _on_connect it gets config topic
+        from daemon import config
+        mock_instance.subscribe.assert_any_call(config.MQTT_VALVE_TOPIC)
+        mock_instance.publish.assert_any_call(f"{config.MQTT_VALVE_TOPIC}/get", '{"state": ""}', retain=False)
+        
+        self.adapter.publish("test/topic", "test")
+        mock_instance.publish.assert_any_call("test/topic", "test", retain=False)
+        
+    def test_on_message_routing(self):
+        from unittest.mock import MagicMock
+        import json
+        from daemon import config
+        mock_handler = MagicMock()
+        self.bus.subscribe(ValveStatusReported, mock_handler)
+        
+        class MockMsg:
+            def __init__(self, topic, payload):
+                self.topic = topic
+                self.payload = payload
+                
+        msg = MockMsg(config.MQTT_VALVE_TOPIC, json.dumps({
+            "state": "ON", "flow_rate": 5.5, "battery": 80, "linkquality": 100, "valve_abnormal_state": "normal"
+        }).encode())
+        
+        self.adapter._on_message(None, None, msg)
+        
+        mock_handler.assert_called_once()
+        event = mock_handler.call_args[0][0]
+        self.assertEqual(event.state, "ON")
+        self.assertEqual(event.flow_rate, 5.5)
+        self.assertEqual(event.battery, 80)
+        
+    def test_on_message_device_joined(self):
+        from unittest.mock import MagicMock
+        import json
+        mock_handler = MagicMock()
+        self.bus.subscribe(DeviceJoinedEvent, mock_handler)
+        
+        class MockMsg:
+            def __init__(self, topic, payload):
+                self.topic = topic
+                self.payload = payload
+                
+        msg = MockMsg("zigbee2mqtt/bridge/event", json.dumps({
+            "type": "device_joined", "data": {"ieee_address": "0x123"}
+        }).encode())
+        
+        self.adapter._on_message(None, None, msg)
+        
+        mock_handler.assert_called_once()
+        event = mock_handler.call_args[0][0]
+        self.assertEqual(event.ieee_address, "0x123")
+
 if __name__ == "__main__":
     unittest.main()
