@@ -73,7 +73,7 @@ Write-Host "Ggf. werden Sie gleich nach dem SSH-Passwort des Pi gefragt." -Foreg
 Write-Host ""
 
 # Ausführung der Übertragung der notwendigen Ordner und Dateien (ohne .git, garden.db, etc. zur Vermeidung von Konflikten)
-$TransferItems = @("src", "setup.sh", ".env", "migrate_zigbee_adapter.sh", "tools")
+$TransferItems = @("src", "scripts", ".env", "tools")
 if (Test-Path "zigbee2mqtt.tar.gz") {
     $TransferItems += "zigbee2mqtt.tar.gz"
 }
@@ -92,7 +92,7 @@ if ($LASTEXITCODE -eq 0) {
     
     if (Test-Path "zigbee2mqtt.tar.gz") {
         Write-Host "Starte Setup-Skript auf dem Pi, um Zigbee2MQTT einzurichten/zu aktualisieren..." -ForegroundColor Cyan
-        ssh -t -o ConnectTimeout=5 "${PiUser}@${PiHost}" "cd ~/garden && bash setup.sh"
+        ssh -t -o ConnectTimeout=5 "${PiUser}@${PiHost}" "cd ~/garden && bash scripts/setup.sh"
     } else {
         Write-Host "Starte den Bewässerungs-Daemon auf dem Pi neu, um den neuen Code zu aktivieren..." -ForegroundColor Cyan
         ssh -t -o ConnectTimeout=5 "${PiUser}@${PiHost}" "sudo systemctl restart garden-irrigation.service"
