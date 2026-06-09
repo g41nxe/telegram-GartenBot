@@ -10,6 +10,8 @@ Die Steuerung erfolgt weltweit gesichert über einen whitelist-basierten **Teleg
 
 *   **🟢 Kombinierter Guss (First-to-Hit Limit):** Ultimativer Überflutungsschutz. Jeder Bewässerungslauf (sowohl manuell als auch geplant) überwacht *parallel* ein **Zeitlimit** (Minuten) und ein **Volumenlimit** (Liter). Das Ventil schließt automatisch, sobald der *erste* Grenzwert erreicht wird (z. B. 50 Liter fließen ODER 15 Minuten verstreichen).
 *   **📅 Geführter Zeitplan-Assistent (Guided Wizard):** Erstellen Sie komplexe Zeitpläne Schritt-für-Schritt direkt im Telegram-Chat über intuitive Inline-Tastaturen (freie Namenseingabe, Stundenraster, 5-Minuten-Schritte, Kleingarten-Presets und Multi-Select-Wochentage).
+*   **🛢️ Füllstandsauswertung & Alarmierung:** Der Daemon empfängt Messwerte des Füllstandssensors (Abstand in cm) per MQTT, berechnet den prozentualen Füllstand der Klärgrube und speichert ihn in SQLite. Bei erstmaliger Überschreitung eines Schwellenwerts (z. B. 80 %) erfolgt ein Sofort-Alarm via Telegram. Der Füllstand wird in den täglichen Statusbericht integriert.
+*   **🐕 Inaktivitäts-Watchdog:** Sicherheitsüberwachung für den Batterie-Füllstandssensor. Bleibt eine Füllstands-Meldung für mehr als 18 Stunden aus, warnt der Bot proaktiv vor einem Sensor- oder Batterieausfall.
 *   **🌦️ Intelligenter Wetter-Skip (Offline-first):** Open-Meteo API-Anbindung prüft stündlich im Hintergrund den Regen (letzte 24h Historie + nächste 24h Vorhersage). Überschreitet die Summe Ihren Grenzwert (z. B. 3.0 mm), wird die geplante Bewässerung übersprungen und protokolliert. Durch lokale SQLite-Zwischenspeicherung funktioniert dies auch bei temporärem Internetausfall.
 *   **🔌 Live-Verbindungsanzeige:** Der Status-Bildschirm (`/status`) visualisiert in Echtzeit, ob die MQTT-Brokerverbindung steht (Erkennung von fehlenden USB-Dongles) und wann das physische Ventil das letzte Mal ein Lebenszeichen gesendet hat.
 *   **⚡ 100 % Abhängigkeitsfrei (Telegram & API):** Entwickelt komplett auf Basis der Python-Standardbibliotheken (`urllib.request`). Keine schweren Frameworks – perfekt optimiert für den ressourcenschwachen Single-Core-Prozessor des Pi Zero W.
@@ -138,10 +140,12 @@ Oder einfach den Telegram-Bot öffnen und `/status` senden.
 
 Der Bot bietet ein permanentes Tastenmenü am unteren Bildschirmrand:
 
-*   **📊 Status anzeigen (`/status`):** Liefert ein detailliertes Dashboard mit MQTT-Brokerstatus, Ventil-Online-Zustand, aktuellem Guss-Status (Restzeit), Wetterkonditionen (Inkl. Temperatur & Datenstand) und dem Verlauf der letzten Zyklen.
+*   **📊 Status anzeigen (`/status`):** Liefert ein detailliertes Dashboard mit MQTT-Brokerstatus, Ventil-Online-Zustand, Füllstand, Wetterkonditionen (inkl. Temperatur & Datenstand) und dem Verlauf der letzten Zyklen.
+*   **🛢️ Füllstand Grube (`/fuellstand`):** Zeigt den aktuellen Pegel der Klärgrube als visuellen Ladebalken, den 24-Stunden-Trend, das Datum der letzten Aktualisierung sowie die Batteriespannung des Füllstandssensors.
 *   **📅 Zeitsteuerung (`/zeitplan`):** Listet alle aktiven Zeitpläne auf und bietet die Schaltfläche **`➕ Neuer Zeitplan`**, um den geführten Assistenten zu starten.
 *   **🟢 Bewässern starten:** Startet den zweistufigen manuellen Guss-Assistenten zur bequemen Festlegung von Zeitlimit (Minuten) und Volumenlimit (Liter).
 *   **🔴 Sofort Stopp (`/stop`):** Schließt das Ventil unverzüglich und bricht alle aktiven Scheduler- und Volumenwächter-Threads ab.
+
 
 ---
 
