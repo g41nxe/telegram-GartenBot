@@ -4,7 +4,8 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timedelta
 from .. import config
-from . import database
+from .mqtt_client import _global_bus
+from ..core.scheduler_events import WeatherDataFetched
 
 logger = logging.getLogger("garden_weather")
 
@@ -108,8 +109,8 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
             f"Regen 24h: {rain_last_24h}mm, Vorhersage: {rain_next_24h}mm"
         )
         
-        # In lokaler Datenbank für spätere Anzeige archivieren
-        database.log_weather(rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_prob)
+        # Event publizieren (Datenbank-Adapter und andere Abonnenten kümmern sich um Speicherung)
+        _global_bus.publish(WeatherDataFetched(rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_prob))
         
         return rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_prob
         
@@ -118,20 +119,7 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
     except Exception as e:
         logger.error(f"Unerwarteter Fehler beim Verarbeiten der Wetterdaten: {e}")
         
-    # Im Fehlerfall versuchen wir den letzten lokal gespeicherten Zustand zu lesen
-    last_stored = database.get_last_weather()
-    if last_stored:
-        logger.info("Nutze lokal archivierte Wetterdaten aufgrund eines API-Fehlers.")
-        return (
-            last_stored["rain_last_24h_mm"], 
-            last_stored["rain_next_24h_mm"],
-            last_stored.get("current_temp", 0.0),
-            last_stored.get("weather_code", 0),
-            last_stored.get("temp_min", last_stored.get("current_temp", 0.0) - 5.0),
-            last_stored.get("temp_max", last_stored.get("current_temp", 0.0) + 5.0),
-            last_stored.get("rain_probability", 0)
-        )
-        
+    # Im Fehlerfall geben wir Fallback-Werte zurück, da die DB-Kopplung aufgehoben wurde.
     return 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0
 
 def should_skip_watering() -> tuple[bool, str]:

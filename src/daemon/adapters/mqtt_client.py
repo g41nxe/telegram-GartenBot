@@ -36,15 +36,13 @@ valve_status = {
     "last_update": None
 }
 
-active_cycle_volume = 0.0
-last_flow_update_time = None
 bridge_status = "offline"
 
 # --- Abwärtskompatibles on_message ---
 
 def on_message(client, userdata, msg):
     """Callback bei eingehender MQTT-Nachricht (global und abwärtskompatibel)."""
-    global valve_status, active_cycle_volume, last_flow_update_time, bridge_status
+    global valve_status, bridge_status
     try:
         payload = msg.payload.decode("utf-8")
         
@@ -68,23 +66,6 @@ def on_message(client, userdata, msg):
         flow_rate = float(data.get("flow_rate", valve_status["flow_rate"]))
         now = datetime.now()
         
-        # Durchfluss-Integration (Liter aufsummieren über Zeitdifferenz)
-        if state == "ON" and valve_status["state"] == "ON" and last_flow_update_time is not None:
-            elapsed_seconds = (now - last_flow_update_time).total_seconds()
-            if elapsed_seconds > 0:
-                # Stabilitätsschutz gegen extreme Time-Gaps (max. 60 Sek deckeln)
-                calculation_seconds = min(elapsed_seconds, 60.0)
-                added_liters = flow_rate * (calculation_seconds / 60.0)
-                active_cycle_volume += added_liters
-                logger.info(f"Durchfluss-Messer: +{added_liters:.3f}l (Gesamt: {active_cycle_volume:.2f} Liter, Latenz: {elapsed_seconds:.1f}s)")
-        
-        if state == "ON" and last_flow_update_time is None:
-            active_cycle_volume = 0.0
-            
-        last_flow_update_time = now
-        if state == "OFF":
-            last_flow_update_time = None
-            
         # Status aktualisieren
         valve_status["state"] = state
         valve_status["battery"] = data.get("battery", valve_status["battery"])
