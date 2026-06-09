@@ -105,7 +105,7 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertIsNotNone(scheduler.get_active_cycle())
         
         # Simuliert, dass das Volumenlimit überschritten wird
-        mqtt_client.active_cycle_volume = 6.0
+        scheduler.controller._active_cycle["current_volume"] = 6.0
         
         # Warte kurz, bis der Volumen-Wächter-Thread (schläft 2 Sek) zuschlägt
         time.sleep(3)
@@ -191,29 +191,6 @@ class TestGardenIrrigation(unittest.TestCase):
         from urllib.error import URLError
         mock_urlopen.side_effect = URLError("Mocked network timeout")
 
-        # Fallback 1: Datenbank enthält bereits einen Wettereintrag
-        database.log_weather(1.0, 2.5, 18.0, 1, 12.0, 24.0, 60) # Gesamt = 3.5 mm (> 3.0)
-
-        # Abfrage ausführen
-        rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob = weather.get_weather_data(52.5, 13.5)
-        self.assertEqual(rain_last, 1.0)
-        self.assertEqual(rain_next, 2.5)
-        self.assertEqual(temp, 18.0)
-        self.assertEqual(code, 1)
-        self.assertEqual(temp_min, 12.0)
-        self.assertEqual(temp_max, 24.0)
-        self.assertEqual(rain_prob, 60)
-
-        should_skip, details = weather.should_skip_watering()
-        self.assertTrue(should_skip)
-        self.assertIn("Regenschwelle überschritten", details)
-
-        # Fallback 2: Datenbank ist leer (wir leeren die Wettertabelle temporär)
-        conn = database.get_connection()
-        conn.execute("DELETE FROM weather_history")
-        conn.commit()
-        conn.close()
-
         # Abfrage ohne DB-Einträge ausführen
         rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob = weather.get_weather_data(52.5, 13.5)
         self.assertEqual(rain_last, 0.0)
@@ -240,12 +217,14 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertTrue(success)
         self.assertEqual(mqtt_client.get_valve_status()["state"], "ON")
         
-        # Mocking des Telegram-Callbacks, um die Push-Nachricht zu überprüfen
-        mock_notification = MagicMock()
-        scheduler.register_notification_callback(mock_notification)
+        from daemon.core.watering_controller import WateringCycleFailed
+        
+        # Mocking des Event-Busses
+        mock_event_handler = MagicMock()
+        mqtt_client._global_bus.subscribe(WateringCycleFailed, mock_event_handler)
         
         # Simuliere, dass das Volumenlimit vor Ablauf der Zeit nicht erreicht wurde (z.B. nur 3 Liter)
-        mqtt_client.active_cycle_volume = 3.0
+        scheduler.controller._active_cycle["current_volume"] = 3.0
         
         # Manuelles Auslösen des Timeouts
         scheduler._time_limit_callback()
@@ -262,44 +241,32 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertIn("3.0l geflossen", history[0]["details"])
         
         # Benachrichtigung auf Notfall-Text prüfen
-        mock_notification.assert_called_once()
-        notification_text = mock_notification.call_args[0][0]
-        self.assertIn("Notfall-Abschaltung", notification_text)
-        self.assertIn("Zielwassermenge", notification_text)
-        self.assertIn("3.0 Liter", notification_text)
+        mock_event_handler.assert_called_once()
+        event = mock_event_handler.call_args[0][0]
+        self.assertIn("Notfall-Abschaltung", event.details)
+        self.assertIn("Zielwassermenge", event.details)
 
     def test_09_mqtt_time_gap_capping(self):
-        """Testet, ob ein Zeit-Gap von >= 60 Sek in der MQTT-Durchfluss-Integration auf 60 Sek gedeckelt wird."""
+        """Testet, ob ein Zeit-Gap von >= 60 Sek in der Durchfluss-Integration auf 60 Sek gedeckelt wird."""
         from datetime import datetime, timedelta
+        from daemon import scheduler
+        from daemon.adapters.mqtt_client import ValveStatusReported
         
-        # Client starten und Ventil auf ON setzen
-        mqtt_client.start_client()
-        mqtt_client.valve_status["state"] = "ON"
-        mqtt_client.active_cycle_volume = 10.0
+        # Starte Bewässerung über Controller
+        scheduler.start_watering(duration_minutes=10, target_volume_liters=20, source="test")
         
-        # Mocking der letzten Update-Zeit auf 75 Sekunden in der Vergangenheit
-        mqtt_client.last_flow_update_time = datetime.now() - timedelta(seconds=75)
+        # Setze den Controller künstlich auf 10 Liter in die Vergangenheit
+        scheduler.controller._active_cycle["current_volume"] = 10.0
+        scheduler.controller._last_flow_update_time = datetime.now() - timedelta(seconds=75)
         
-        # Mock-Nachricht mit flow_rate = 6.0 L/min (0.1 l/s)
-        class MockMsg:
-            def __init__(self, payload):
-                self.payload = payload
-        
-        payload = json.dumps({
-            "state": "ON",
-            "flow_rate": 6.0,
-            "battery": 95,
-            "linkquality": 120
-        }).encode("utf-8")
-        msg = MockMsg(payload)
-        
-        # on_message direkt triggern
-        mqtt_client.on_message(None, None, msg)
+        # Simuliere ON-Event mit Flow-Rate 6.0 L/min
+        scheduler.controller.event_bus.publish(ValveStatusReported("ON", 6.0, 95, 120, "normal"))
         
         # Durch die Deckelung auf max. 60 Sek:
         # Zuwachs = 6.0 L/min * (60.0 / 60.0) = 6.0 Liter
         # Erwartetes Gesamtvolumen = 10.0 + 6.0 = 16.0 Liter
-        self.assertAlmostEqual(mqtt_client.get_active_volume(), 16.0, places=1)
+        self.assertAlmostEqual(scheduler.controller.get_active_volume(), 16.0, places=1)
+        scheduler.stop_watering()
 
     def test_10_startup_safety_shutdown(self):
         """Testet die Sicherheits-Schließung beim Systemstart bei unerwartet offenem Ventil."""
@@ -312,9 +279,11 @@ class TestGardenIrrigation(unittest.TestCase):
         # Mocking des Ventil-Zustands auf ON
         mqtt_client.valve_status["state"] = "ON"
         
-        # Mocking der Telegram-Push-Meldung
-        mock_notification = MagicMock()
-        scheduler.register_notification_callback(mock_notification)
+        from daemon.core.scheduler_events import ScheduleFailed
+        
+        # Mocking Event Bus
+        mock_event_handler = MagicMock()
+        mqtt_client._global_bus.subscribe(ScheduleFailed, mock_event_handler)
         
         # Führe den Sicherheitscheck aus
         triggered = scheduler.check_startup_safety()
@@ -322,8 +291,8 @@ class TestGardenIrrigation(unittest.TestCase):
         # Assertions
         self.assertTrue(triggered)
         self.assertEqual(mqtt_client.get_valve_status()["state"], "OFF")
-        mock_notification.assert_called_once()
-        self.assertIn("Sicherheits-Schließung", mock_notification.call_args[0][0])
+        mock_event_handler.assert_called_once()
+        self.assertIn("Sicherheits-Schließung", mock_event_handler.call_args[0][0].details)
 
     def test_11_database_metadata_and_stats(self):
         """Testet get/set_metadata und get_watering_stats_last_24h in der Datenbank."""

@@ -6,6 +6,17 @@ from ..adapters import database, weather
 from . import telegram_client
 from ..core.event_bus import EventBus
 from ..adapters.mqtt_client import _global_bus
+from ..core.watering_controller import (
+    WateringCycleStarted,
+    WateringCycleCompleted,
+    WateringCycleFailed,
+    WateringCycleStopped
+)
+from ..core.scheduler_events import (
+    DailyReportTriggered,
+    WateringSkipped,
+    ScheduleFailed
+)
 
 logger = logging.getLogger("garden_telegram_ui")
 
@@ -838,3 +849,67 @@ def on_telegram_update(msg_obj: dict, cb_obj: dict):
         _process_message(msg_obj)
     elif cb_obj:
         _process_callback_query(cb_obj)
+
+# --- Domain Event Listeners ---
+
+def _on_watering_started(event: WateringCycleStarted):
+    msg = (
+        f"🟢 **Bewässerung gestartet!**\n"
+        f"⏱️ Zeitlimit: {event.duration} Minuten\n"
+        f"💧 Volumenlimit: {f'{event.target_volume} Liter' if event.target_volume > 0 else 'Keines'}\n"
+        f"⏳ Quelle: {'Zeitplan' if event.source == 'schedule' else 'Manuell'}"
+    )
+    telegram_client.broadcast_notification(msg)
+
+def _on_watering_completed(event: WateringCycleCompleted):
+    if "Volumenlimit" in event.details:
+        target_volume = event.volume_run
+        msg = (
+            f"🏁 **Wassermenge erreicht!**\n"
+            f"💧 Bewässerung nach {int(target_volume)} Litern automatisch beendet.\n"
+            f"⏱️ Benötigte Zeit: ca. {event.duration_run} Minute(n)."
+        )
+    else:
+        msg = (
+            f"🏁 **Zeitlimit erreicht!**\n"
+            f"⏱️ Bewässerung nach {event.duration_run} Minuten planmäßig beendet.\n"
+            f"💧 Wassermenge: {event.volume_run} Liter geflossen."
+        )
+    telegram_client.broadcast_notification(msg)
+
+def _on_watering_failed(event: WateringCycleFailed):
+    target_vol = 0
+    if "Zielwassermenge von" in event.details:
+        try:
+            parts = event.details.split("Zielwassermenge von ")
+            target_vol = int(parts[1].split("l")[0])
+        except Exception:
+            pass
+            
+    msg = (
+        f"⚠️ **Notfall-Abschaltung ausgelöst!**\n"
+        f"⏱️ Abschaltung nach Ablauf von {event.duration_run} Minuten bei geflossenen {event.volume_run} Litern.\n"
+        f"💧 Zielwassermenge von {target_vol} Litern wurde nicht erreicht."
+    )
+    telegram_client.broadcast_notification(msg)
+
+def _on_watering_stopped(event: WateringCycleStopped):
+    msg = f"🔴 **Bewässerung vorzeitig gestoppt!**\n⏱️ Laufzeit: ca. {event.duration_run} Min\n💧 Geflossene Menge: {event.volume_run} Liter"
+    telegram_client.broadcast_notification(msg)
+
+def _on_daily_report(event: DailyReportTriggered):
+    telegram_client.broadcast_notification(event.report_text)
+
+def _on_watering_skipped(event: WateringSkipped):
+    telegram_client.broadcast_notification(f"🌤️ **Zeitplan '{event.schedule_name}' übersprungen!**\n{event.details}")
+
+def _on_schedule_failed(event: ScheduleFailed):
+    telegram_client.broadcast_notification(f"⚠️ **Fehler bei Zeitplan '{event.schedule_name}'!**\n{event.details}")
+
+_global_bus.subscribe(WateringCycleStarted, _on_watering_started)
+_global_bus.subscribe(WateringCycleCompleted, _on_watering_completed)
+_global_bus.subscribe(WateringCycleFailed, _on_watering_failed)
+_global_bus.subscribe(WateringCycleStopped, _on_watering_stopped)
+_global_bus.subscribe(DailyReportTriggered, _on_daily_report)
+_global_bus.subscribe(WateringSkipped, _on_watering_skipped)
+_global_bus.subscribe(ScheduleFailed, _on_schedule_failed)

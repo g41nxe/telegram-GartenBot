@@ -56,7 +56,9 @@ class WateringController:
     def get_active_volume(self) -> float:
         """Gibt die aktuell geflossene Wassermenge in Litern zurück."""
         with self._lock:
-            return round(mqtt_client.active_cycle_volume, 2)
+            if self._active_cycle:
+                return round(self._active_cycle.get("current_volume", 0.0), 2)
+            return 0.0
 
     def get_active_cycle(self) -> Optional[Dict[str, Any]]:
         """Gibt Informationen zum aktuell laufenden Guss zurück."""
@@ -69,7 +71,7 @@ class WateringController:
                     "target_volume": self._active_cycle["target_volume"],
                     "start_time": self._active_cycle["start_time"].isoformat(),
                     "end_time": self._active_cycle["end_time"].isoformat(),
-                    "current_volume": round(mqtt_client.active_cycle_volume, 2),
+                    "current_volume": round(self._active_cycle.get("current_volume", 0.0), 2),
                     "remaining_seconds": remaining
                 }
             return None
@@ -99,7 +101,6 @@ class WateringController:
             start_time = datetime.now()
             end_time = start_time + timedelta(minutes=duration_minutes)
             
-            mqtt_client.active_cycle_volume = 0.0
             self._last_flow_update_time = start_time
             
             self._active_cycle = {
@@ -107,6 +108,7 @@ class WateringController:
                 "end_time": end_time,
                 "duration": duration_minutes,
                 "target_volume": target_volume_liters,
+                "current_volume": 0.0,
                 "source": source,
                 "timer": timer
             }
@@ -136,7 +138,7 @@ class WateringController:
             self.mqtt_client.publish(set_topic, '{"state": "OFF"}')
             
             duration_run = max(1, int((datetime.now() - self._active_cycle["start_time"]).total_seconds() / 60))
-            vol_run = round(mqtt_client.active_cycle_volume, 2)
+            vol_run = round(self._active_cycle.get("current_volume", 0.0), 2)
             source = self._active_cycle["source"]
             
             self._active_cycle = None
@@ -158,8 +160,8 @@ class WateringController:
             calculation_seconds = min(elapsed_seconds, 60.0)
             added_liters = flow_rate * (calculation_seconds / 60.0)
             
-            mqtt_client.active_cycle_volume += added_liters
-            current_volume = round(mqtt_client.active_cycle_volume, 2)
+            self._active_cycle["current_volume"] = self._active_cycle.get("current_volume", 0.0) + added_liters
+            current_volume = round(self._active_cycle["current_volume"], 2)
             target_volume = self._active_cycle["target_volume"]
             
             logger.debug(f"Guss-Steuerung: +{added_liters:.3f}l (Gesamt: {current_volume:.2f}l)")
@@ -216,7 +218,7 @@ class WateringController:
 
             duration = self._active_cycle["duration"]
             target_vol = self._active_cycle["target_volume"]
-            vol_run = round(mqtt_client.active_cycle_volume, 2)
+            vol_run = round(self._active_cycle.get("current_volume", 0.0), 2)
             source = self._active_cycle["source"]
             
             # Schließe physisches Ventil

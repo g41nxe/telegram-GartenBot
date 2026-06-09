@@ -8,6 +8,7 @@ from ..core.watering_controller import (
     WateringCycleStopped
 )
 from .mqtt_client import ValveStatusReported
+from ..core.scheduler_events import WeatherDataFetched
 
 logger = logging.getLogger("garden_database_adapter")
 
@@ -22,6 +23,7 @@ class DatabaseLoggerAdapter:
         self.event_bus.subscribe(WateringCycleFailed, self._on_cycle_failed)
         self.event_bus.subscribe(WateringCycleStopped, self._on_cycle_stopped)
         self.event_bus.subscribe(ValveStatusReported, self._on_valve_status_reported)
+        self.event_bus.subscribe(WeatherDataFetched, self._on_weather_data_fetched)
 
     def _on_cycle_started(self, event: WateringCycleStarted):
         limit_info = f"Zeitlimit: {event.duration} Min"
@@ -42,5 +44,16 @@ class DatabaseLoggerAdapter:
 
     def _on_valve_status_reported(self, event: ValveStatusReported):
         database.log_device_status(event.battery, event.linkquality)
+
+    def _on_weather_data_fetched(self, event: WeatherDataFetched):
+        database.log_weather(
+            event.rain_last_24h,
+            event.rain_next_24h,
+            event.current_temp,
+            event.weather_code,
+            event.temp_min,
+            event.temp_max,
+            event.rain_prob
+        )
 
 
