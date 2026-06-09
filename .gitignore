@@ -121,5 +121,7 @@ poetry.lock
 # Temporäre Archive für Deployment
 zigbee2mqtt.tar.gz
 
-# End of file
+# Scratch dir
+scratch/
 
+# End of file
