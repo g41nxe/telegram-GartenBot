@@ -28,8 +28,10 @@ graph TD
     Bot <-->|SQLite CRUD| DB[(💾 SQLite Database)]
     Bot -->|Steuerbefehle| Scheduler[⏰ Scheduler Thread]
     Scheduler -->|MQTT Publish| Valve[💧 Sonoff Hydro ONE]
-    Scheduler <-->|Volumen-Watchdog| MQTT[📡 MQTT Client Thread]
+    Scheduler <-->|Volumen- & Inaktivitäts-Watchdog| MQTT[📡 MQTT Client Thread]
     MQTT <-->|Status-Updates / Flow Rate| Valve
+    MQTT -->|Füllstands- & Statusdaten| DB
+    Sensor[🛢️ Füllstandssensor] -->|MQTT Publish| MQTT
     Weather[🌤️ Weather Pre-Poller] -->|Stündliches Cache-Warmup| DB
 ```
 
