@@ -64,13 +64,9 @@ SEPTIC_TANK_WARNING_THRESHOLD_PCT=80.0
 
 ---
 
-### 4. Scheduler & Watchdog
+### 4. Scheduler
 
 #### [MODIFY] [scheduler.py](file:///d:/Projects/Repositories/telegram-GartenBot/src/daemon/scheduler.py)
-- **Watchdog-Task:** 
-  - Eine regelmäßige Prüfung (z. B. stündlich) vergleicht das aktuelle Datum/Uhrzeit mit dem Zeitstempel der letzten Messung in `septic_tank_readings`.
-  - Liegt das letzte Signal länger als 18 Stunden zurück, wird eine Warnung ("Sensor offline") gesendet und `septic_tank_offline_alert_sent = 1` in `system_metadata` markiert.
-  - Sobald ein neuer Messwert eintrifft, wird die Warnung in `system_metadata` gelöscht.
 - **Erweiterung Statusbericht:**
   - Einfügen des aktuellen Füllstands und der Batteriespannung in `generate_daily_report()`.
 

@@ -27,7 +27,6 @@ Wir implementieren folgende Kommunikationswege:
 - **MQTT-Handler:** Integration des neuen Topics in die bestehende MQTT-Bridge. Der Handler stößt die Berechnung, Speicherung und Alarmprüfung an.
 - **Alarmierungs-Zustand:** Um wiederholte Alarme zu vermeiden, wird der Sendezustand (Flankensteuerung) persistent in `system_metadata` abgelegt. Erst wenn der Füllstand wieder unter einen bestimmten Hysteresewert sinkt, wird der Alarm zurückgesetzt.
 - **Zustand & Automatische Kopplung:** Im Gegensatz zum Zigbee-Ventil ist für den WLAN-basierten Füllstandssensor kein physischer Kopplungsprozess (Pairing) nötig. Die Kopplung erfolgt automatisch: Sobald der Daemon die erste MQTT-Nachricht auf dem Topic empfängt, wird der Sensor als aktiv registriert. Bei diesem allerersten Signal sendet der Bot eine einmalige Bestätigungsnachricht an alle autorisierten Benutzer. Im Status-Menü wird ab diesem Zeitpunkt der Füllstand sowie das Datum/Uhrzeit der letzten Messung angezeigt.
-- **Inaktivitäts-Überwachung (Watchdog):** Der Daemon überwacht die regelmäßigen Meldungen des Sensors (normalerweise 2x täglich). Bleibt eine Meldung für mehr als 18 Stunden aus (z.B. wegen leerer Batterie oder fehlendem WLAN), wird eine Warnung per Telegram gesendet.
 - **Benutzeroberfläche:** 
   - Neue Schaltfläche im Telegram-Hauptmenü: `"🛢️ Füllstand Grube"`.
   - Implementierung des `/fuellstand` Textbefehls.
