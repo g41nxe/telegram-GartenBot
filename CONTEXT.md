@@ -57,8 +57,21 @@ Die softwareseitige Kernkomponente des Bewässerungs-Daemons, welche die zeit- u
 _Avoid_: Cycle-Controller, Ventil-Manager
 
 **Ereignis-Kanal**:
-Der systeminterne Kommunikationskanal zur entkoppelten Weiterleitung von Zustandsmeldungen (z. B. Guss gestoppt, Ventil gekoppelt) von der Guss-Steuerung an die Datenbank und die Präsentationsschicht.
+Systeminterner Kommunikationskanal zur entkoppelten Weiterleitung von Zustandsmeldungen (z. B. Guss gestoppt, Ventil gekoppelt) von der Guss-Steuerung an die Datenbank und die Präsentationsschicht.
 _Avoid_: Event-Bus, Message-Broker
+
+**Füllstandssensor**:
+Der batteriebetriebene, WLAN-basierte Ultraschallsensor (M5Stack AtomS3 Lite) zur berührungslosen Erfassung des Abstands zur Flüssigkeitsoberfläche in der Klärgrube.
+_Avoid_: Distanzmesser, Sensor-Modul, ESP32, Pegelmesser
+
+**Füllstands-Meldung**:
+Das vom Füllstandssensor per MQTT an die Steuerzentrale gesendete Datenpaket mit der gemessenen Distanz (in cm) und der aktuellen Batteriespannung.
+_Avoid_: Sensor-Signal, Telemetrie-Paket
+
+**Inaktivitäts-Watchdog**:
+Die Überwachungslogik im Bewässerungs-Daemon, die das Ausbleiben von Füllstands-Meldungen (z. B. über einen Zeitraum von mehr als 18 Stunden) erkennt und proaktiv über den Telegram-Bot warnt.
+_Avoid_: Offline-Timer, Connection-Checker, Heartbeat-Sensor
+
 
 
 
