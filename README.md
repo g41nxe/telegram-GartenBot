@@ -48,7 +48,11 @@ graph TD
 ├── garden.db                # Lokale SQLite-Datenbank
 ├── zeitsteuerung_guide.md   # Detaillierter Leitfaden zur Zeitsteuerung
 ├── docs/
-│   └── adr/                 # Architekturentscheidungen (ADRs 0001 - 0008)
+│   ├── adr/                 # Architekturentscheidungen (ADRs 0001 - 0013)
+│   ├── features/            # Feature-Spezifikationen (Zeitsteuerung, Bot-Menüs, Füllstand, Watchdog)
+│   ├── hardware/            # Pläne zur Geräteverkabelung
+│   └── plans/               # Detaillierte Umsetzungspläne
+
 ├── src/
 │   └── daemon/
 │       ├── config.py        # Konfigurations- und .env-Loader
