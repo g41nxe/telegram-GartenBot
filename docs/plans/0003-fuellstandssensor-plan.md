@@ -5,9 +5,10 @@ Dieser Plan beschreibt den Entwurf und die zu ändernden Dateien für die Integr
 ## Design Rules & Decisions
 
 - **Automatische Kopplung (Auto-Discovery):** Die Registrierung erfolgt beim ersten Eintreffen eines Messsignals über MQTT. Eine einmalige Push-Nachricht informiert den Benutzer darüber.
-- **Flanken-Triggerung für Warnungen:** Der Bot warnt sofort bei erstmaliger Überschreitung des Grenzwerts (z. B. 80%). Folge-Messungen über dem Grenzwert senden keinen neuen Alarm, um Spam zu verhindern.
-- **Inaktivitäts-Watchdog:** Wenn für mehr als 18 Stunden keine neuen Daten eintreffen, sendet das System eine Fehlermeldung per Telegram, um Ausfälle des Sensors (z. B. leere Batterie) abzufangen.
-- **Konfiguration:** Alle Kalibrierungsparameter (Tiefe leer, Tiefe voll, Alarmschwelle) werden in der `.env` definiert, damit der Sensor-Code selbst unberührt bleiben kann.
+- **Dynamischer Menü-Button:** Die Schaltfläche `"🛢️ Füllstand Grube"` wird erst nach dem ersten empfangenen Signal dynamisch in der Bot-Tastatur (`get_main_keyboard()`) eingeblendet.
+- **Flanken-Triggerung & Hysterese:** Der Bot warnt sofort bei erstmaliger Überschreitung des Grenzwerts (z. B. 80%). Das Flag wird erst gelöscht, wenn der Pegel unter einen Hysteresewert von **75%** sinkt.
+- **Trendberechnung:** Der 24h-Trend wird als direkter Prozentvergleich (Differenz zur Messung vor exakt 24 Stunden) berechnet.
+- **Konfiguration:** Alle Kalibrierungsparameter (Tiefe leer, Tiefe voll, Alarmschwelle) werden in der `.env` definiert.
 
 ---
 
@@ -23,6 +24,7 @@ SEPTIC_TANK_MQTT_TOPIC=garden/septic_tank/reading
 SEPTIC_TANK_DEPTH_EMPTY_CM=200.0
 SEPTIC_TANK_DEPTH_FULL_CM=20.0
 SEPTIC_TANK_WARNING_THRESHOLD_PCT=80.0
+SEPTIC_TANK_HYSTERESIS_THRESHOLD_PCT=75.0
 ```
 
 #### [MODIFY] [config.py](file:///d:/Projects/Repositories/telegram-GartenBot/src/daemon/config.py)
@@ -42,6 +44,7 @@ SEPTIC_TANK_WARNING_THRESHOLD_PCT=80.0
 - **CRUD-Funktionen:**
   - `log_septic_reading(distance_cm: float, fill_level_percent: float, battery_voltage: float)`
   - `get_latest_septic_reading() -> dict`
+  - `get_septic_reading_closest_to(timestamp: str) -> dict` (für Trend-Berechnung)
   - `get_septic_readings_history(limit: int) -> list[dict]`
 
 ---
@@ -58,9 +61,8 @@ SEPTIC_TANK_WARNING_THRESHOLD_PCT=80.0
 - **Automatische Kopplung & Bestätigung:**
   - Ist das die erste gespeicherte Messung, wird eine Willkommensnachricht gesendet.
 - **Alarmierung bei Schwellenwert-Überschreitung:**
-  - Laden des vorherigen Pegels.
-  - Steigt der Pegel von unter 80% auf $\ge 80\%$, wird eine Warnmeldung abgesetzt und ein Alert-Flag in `system_metadata` gesetzt.
-  - Sinkt der Pegel unter 80% (mit Hystereseschutz, z. B. unter 78%), wird das Alert-Flag in `system_metadata` zurückgesetzt.
+  - Steigt der Pegel von unter 80% auf $\ge 80\%$, wird eine Warnmeldung abgesetzt und das Alert-Flag `watchdog_alert_active_septic` in `system_metadata` gesetzt.
+  - Sinkt der Pegel unter den Hysteresewert von 75%, wird das Alert-Flag in `system_metadata` gelöscht.
 
 ---
 
@@ -68,7 +70,7 @@ SEPTIC_TANK_WARNING_THRESHOLD_PCT=80.0
 
 #### [MODIFY] [scheduler.py](file:///d:/Projects/Repositories/telegram-GartenBot/src/daemon/scheduler.py)
 - **Erweiterung Statusbericht:**
-  - Einfügen des aktuellen Füllstands und der Batteriespannung in `generate_daily_report()`.
+  - Einfügen des aktuellen Füllstands und der Batteriespannung in `generate_daily_report()`, sofern der Sensor gekoppelt ist.
 
 ---
 
@@ -76,12 +78,13 @@ SEPTIC_TANK_WARNING_THRESHOLD_PCT=80.0
 
 #### [MODIFY] [telegram_ui.py](file:///d:/Projects/Repositories/telegram-GartenBot/src/daemon/ui/telegram_ui.py)
 - **Hauptmenü:**
-  - Hinzufügen des Buttons `"🛢️ Füllstand Grube"` in das Reply Keyboard (`get_main_keyboard()`).
+  - Dynamisches Hinzufügen des Buttons `"🛢️ Füllstand Grube"` in das Reply Keyboard (`get_main_keyboard()`), wenn mindestens ein Eintrag in `septic_tank_readings` vorhanden ist.
 - **Befehle:**
   - Implementierung der manuellen Abfrage bei Klick auf den Button oder Eingabe von `/fuellstand`.
+  - Berechnen des 24h-Trends durch Differenzbildung zur Messung, die vor 24 Stunden aufgezeichnet wurde (unter Nutzung von `get_septic_reading_closest_to`).
   - Visualisierung des Pegels (z. B. `[██████░░░░] 60%`) und Anzeige der Details (Batterie, letzte Aktualisierung, 24h-Trend).
 - **Statusanzeige:**
-  - Integration einer kompakten Zeile zum Füllstand in `handle_status()`.
+  - Integration einer kompakten Zeile zum Füllstand in `handle_status()`, falls der Sensor gekoppelt ist.
 
 ---
 
@@ -89,12 +92,13 @@ SEPTIC_TANK_WARNING_THRESHOLD_PCT=80.0
 
 ### Automated Tests
 - Testen der Füllstandsberechnung bei verschiedenen Rohwerten (Randwerte, Division durch Null, Begrenzung auf 0-100%).
-- Simulation von nacheinander eingehenden Werten zur Verifizierung der Flankenerkennung und des Watchdogs.
+- Simulation von nacheinander eingehenden Werten zur Verifizierung der Flankenerkennung und Hysterese (75%).
+- Testen der 24h-Trend-Berechnung mit mockierten Zeitstempeln.
 
 ### Manual Verification
 1. Senden eines Messwerts via MQTT:
    `mosquitto_pub -h 127.0.0.1 -t garden/septic_tank/reading -m "{\"distance_cm\": 50.0, \"battery_voltage\": 3.95}"`
-2. Verifizieren des Datenbank-Eintrags und der automatischen Bestätigungsnachricht im Telegram-Bot.
+2. Verifizieren des Datenbank-Eintrags und der automatischen Bestätigungsnachricht im Telegram-Bot sowie das Erscheinen des Buttons `"🛢️ Füllstand Grube"`.
 3. Ausführen der manuellen Abfrage über den neuen Menü-Button.
-4. Prüfen der Warnung beim Überschreiten des Füllstands (z. B. bei Distanz = 15 cm).
-5. Simulieren eines Ausfalls (keine Messungen über 18 Stunden) und Verifizieren des Offline-Alarms.
+4. Prüfen der Warnung beim Überschreiten des Füllstands (z. B. bei Distanz = 15 cm) und des Rücksetzens beim Absinken unter 75% Hysterese.
+5. Simulieren eines Ausfalls (keine Messungen über 18 Stunden) und Verifizieren des Offline-Alarms im Watchdog.
