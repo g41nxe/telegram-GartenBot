@@ -2,7 +2,7 @@
 
 ## Problemstellung (Problem Statement)
 
-Als Besitzer eines Gartens mit mehreren Bewässerungsbereichen (z. B. Rasen, Hochbeet und Gewächshaus) kann ich aktuell nur ein einziges physisches Ventil steuern und überwachen. Zeitpläne und manuelle Bewässerungsbefehle sind starr auf das Standard-Ventil ausgelegt. Ich kann nicht flexibel entscheiden, welche Bewässerungszonen über welche Zeitpläne oder bei einer manuellen Bewässerung angesteuert werden sollen, und ich sehe im Status sowie im täglichen Bericht keine Details über den Zustand aller meiner Ventile.
+Als Besitzer eines Gärtens mit mehreren Bewässerungsbereichen (z. B. Rasen, Hochbeet und Gewächshaus) kann ich aktuell nur ein einziges physisches Ventil steuern und überwachen. Zeitpläne und manuelle Bewässerungsbefehle sind starr auf das Standard-Ventil ausgelegt. Ich kann nicht flexibel entscheiden, welche Bewässerungszonen über welche Zeitpläne oder bei einer manuellen Bewässerung angesteuert werden sollen, und ich sehe im Status sowie im täglichen Bericht keine Details über den Zustand aller meiner Ventile.
 
 ## Lösung (Solution)
 
@@ -12,7 +12,7 @@ Wir führen die Unterstützung für mehrere Ventile (Multi-Valve Support) im Sys
 
 1. Als Benutzer möchte ich beim Hinzufügen eines Ventils (`/setup`) vorab einen verständlichen Wunschnamen (z. B. "Hochbeet") vergeben können, damit ich es später im Bot eindeutig identifizieren kann.
 2. Als Benutzer möchte ich, dass ein neu gekoppeltes Ventil in Zigbee2MQTT automatisch eine eindeutige systeminterne Kennung erhält, um Namenskollisionen im Zigbee-Netzwerk auszuschließen.
-3. Als Benutzer möchte ich beim Erstellen eines Zeitplanzwecks eine Liste meiner gekoppelten Ventile sehen und eines oder mehrere davon auswählen können.
+3. Als Benutzer möchte ich beim Erstellen eines Zeitplans eine Liste meiner gekoppelten Ventile sehen und eines oder mehrere davon auswählen können.
 4. Als Benutzer möchte ich bei der Zuweisung mehrerer Ventile zu einem Zeitplan entscheiden können, ob diese nacheinander (sequentiell) oder gleichzeitig (parallel) bewässert werden sollen.
 5. Als Benutzer möchte ich, dass im parallelen Modus eines Zeitplans die eingestellte Dauer und Wassermenge als individuelles Limit für jedes einzelne Ventil gelten, um eine bedarfsgerechte Bewässerung sicherzustellen.
 6. Als Benutzer möchte ich, dass im sequentiellen Modus eines Zeitplans die Grenzwerte nacheinander für jedes Ventil separat angewendet werden, um den Wasserdruck im System optimal zu nutzen.
@@ -28,34 +28,31 @@ Wir führen die Unterstützung für mehrere Ventile (Multi-Valve Support) im Sys
   - Eine neue Tabelle `valves` speichert alle gekoppelten Ventile (ID, benutzerdefinierter Name, eindeutiger MQTT-Name, Koppelungsstatus, Batteriestand, Signalstärke, letzter Signal-Zeitstempel und Anomalie-Zustand).
   - Eine n-zu-m Verknüpfungstabelle `schedule_valves` verknüpft Zeitpläne (`schedules`) mit den zugewiesenen Ventilen (`valves`).
   - Die Tabelle `schedules` erhält die Spalte `execution_mode` (Werte: `'sequential'` oder `'parallel'`).
-  - Die Tabelle `watering_history` erhält die Spalte `valve_id` zur eindeutigen Zuordnung von Protokolleinträgen zu physischen Ventilen.
+  - Die Tabelle `watering_history` erhält die Spalte `valve_id` zur Zuordnung zu Ventilen.
+  - Die Tabelle `device_status_log` erhält die Spalte `device_name`, um Verbindungsdaten ventilgenau abzuspeichern.
 - **MQTT-Infrastruktur**:
   - Der MQTT-Adapter verwaltet den Zustand aller Ventile dynamisch in einer Key-Value-Struktur, indiziert nach dem MQTT-Topictitel.
-  - Beim Starten des Daemons werden alle registrierten Ventile geladen und deren Status- sowie Steuerungs-Topics (z. B. `zigbee2mqtt/valve_<ieee_address>`) abonniert.
+  - Alle Ventil-Topics werden dynamisch nach dem Muster `zigbee2mqtt/{mqtt_name}` gebildet.
+  - Das Event `ValveStatusReported` erhält den Parameter `mqtt_name: str` zur eindeutigen Zuordnung.
 - **Guss-Steuerung (Watering Controller)**:
-  - Der Kern-Controller wird so angepasst, dass er mehrere aktive Guss-Zyklen (Kombinierter Guss aus Zeit- und Volumenbegrenzung) gleichzeitig in einer internen Datenstruktur (`_active_cycles`) verwalten kann.
-  - Im sequentiellen Modus steuert der Controller eine Warteschlange an Ventilen: Nach Abschluss des aktuellen Ventils wird das nächste in der Liste geöffnet.
-  - Domain-Events werden um die ID oder den Namen des betroffenen Ventils erweitert, um die Ereignis-Kanal-Meldungen zu personalisieren.
+  - Der Kern-Controller veraltet active cycles in einer Struktur (`_active_cycles: Dict[int, Dict[str, Any]]`), indiziert nach `valve_id`.
+  - Im sequentiellen Modus steuert der Controller eine Warteschlange an Ventilen nacheinander.
 - **Abwärtskompatibilität**:
-  - Die Datenbankinitialisierung migriert bestehende Datenbanken automatisch: Sie legt ein Standardventil (`id=1`, Name `"garden_valve"`) an, verknüpft alle bestehenden Zeitpläne mit diesem Ventil und setzt die historische Bewässerung auf dieses Standardventil um.
+  - Die Datenbankinitialisierung migriert bestehende Datenbanken: Sie legt das Standardventil (`id=1`, Name `"garden_valve"`) an, verknüpft alle bestehenden Zeitpläne und migriert historische Verläufe und Status-Logs auf dieses Standardventil.
 
 ## Test-Entscheidungen (Testing Decisions)
 
 - **Testbare Nahtstellen (Seams)**:
-  - Der `WateringController` wird als primäre funktionale Nahtstelle verwendet. Wir testen das sequentielle und parallele Starten/Stoppen von Guss-Zyklen unter Übergabe verschiedener Ventil-IDs und kontrollieren, ob die richtigen MQTT-Publish-Befehle generiert werden.
-  - Der `EventBus` dient als Nahtstelle, um das Feuern der ventilgenauen Events (`WateringCycleStarted`, `WateringCycleCompleted`, etc.) bei Zeit- oder Volumenüberschreitung abzufangen und zu verifizieren.
-  - Die Datenbank-Schnittstelle (`database.py`) dient als Nahtstelle zur Verifizierung der n-zu-m Abfragen und der korrekten Einzelprotokollierung in `watering_history`.
+  - Der `WateringController` wird als primäre funktionale Nahtstelle verwendet. Wir testen das sequentielle und parallele Starten/Stoppen von Guss-Zyklen unter Übergabe verschiedener Ventil-IDs.
+  - Der `EventBus` dient als Nahtstelle, um das Feuern der ventilgenauen Events (`WateringCycleStarted`, `WateringCycleCompleted`, etc.) abzufangen und zu verifizieren.
 - **Referenzen**:
-  - Existierende Integrationstests in `tests/test_irrigation.py` (z. B. Volumenlimit-Tests und Mock-Simulationen) werden als Vorlage verwendet und um Multi-Ventil-Testszenarien erweitert.
+  - Existierende Integrationstests in `tests/test_irrigation.py` dienen als Vorlage.
 
 ## Nicht im Leistungsumfang (Out of Scope)
 
 - Dynamische Gruppierung von Ventilen in Zonen außerhalb des Zeitplan-Assistenten.
-- Ein grafisches Dashboard zur Visualisierung der Flussraten-Diagramme mehrerer Ventile.
-- Hardwareseitige Installation oder Funk-Reichweiten-Optimierung für zusätzliche Ventile.
+- Ein grafisches Dashboard zur Visualisierung der Flussraten-Diagramme.
 
 ## Weitere Anmerkungen (Further Notes)
 
-- Das Aufwecken der Ventile vor dem täglichen Statusbericht (um aktuelle Werte abzufragen) erfolgt nacheinander für alle registrierten Ventile. Die Wartezeiten im Bot und Scheduler werden so optimiert, dass alle Antworten eingelesen werden können, bevor der Bericht generiert wird.
-- **Ein-Ventil-Kompatibilität**: Wenn nur ein einziges Ventil im System registriert ist, verhält sich die Anwendung für den Endbenutzer identisch zum ursprünglichen Zustand. Im Telegram-Bot-Assistenten werden Auswahlschritte für Ventile und Ausführungsmodi übersprungen, sodass das System schlank und ohne unnötige Klicks bedient werden kann.
-
+- **Ein-Ventil-Kompatibilität**: Wenn nur ein einziges Ventil im System registriert ist, verhält sich die Anwendung identisch zum ursprünglichen Zustand. Die Telegram-Bot-Assistenten überspringen alle Auswahlschritte für Ventile und Ausführungsmodi automatisch.
