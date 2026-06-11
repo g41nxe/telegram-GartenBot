@@ -2,25 +2,25 @@
 
 ## Problemstellung (Problem Statement)
 
-Batteriebetriebene Smart-Home-Komponenten (wie das Bewässerungsventil oder Füllstandssensoren) können unbemerkt ausfallen. Mögliche Ursachen sind leere Batterien, Verbindungsabbrüche (WLAN oder Zigbee) oder physische Störungen. Ein unbemerkter Ausfall kann kritische Folgen haben (z. B. unbemerkte Überläufe oder ausbleibende Bewässerung). 
+Batteriebetriebene Smart-Home-Komponenten (wie Bewässerungsventile oder Füllstandssensoren) können unbemerkt ausfallen. Mögliche Ursachen sind leere Batterien, Verbindungsabbrüche (WLAN oder Zigbee) oder physische Störungen. Ein unbemerkter Ausfall kann kritische Folgen haben (z. B. unbemerkte Überläufe der Klärgrube oder ausbleibende Bewässerung im Garten). 
 
-Es wird eine einheitliche, systemweite Lösung benötigt, die alle verbundenen Geräte überwacht und proaktiv alarmiert, wenn ein Gerät über einen längeren Zeitraum kein Lebenszeichen gesendet hat.
+Da das System mehrere Ventile unterstützen kann, wird eine einheitliche, systemweite Lösung benötigt, die alle verbundenen Ventile sowie den Füllstandssensor überwacht und proaktiv alarmiert, wenn eine Komponente über einen längeren Zeitraum kein Lebenszeichen gesendet hat.
 
 ## Lösung (Solution)
 
 Wir implementieren einen **Inaktivitäts-Watchdog** im Bewässerungs-Daemon. Dieser Dienst läuft als periodischer Hintergrund-Task (z. B. stündlich) und überwacht die Aktivitäts-Zeitstempel aller registrierten Hardware-Komponenten. 
 
-Für jedes Gerät wird in der Konfiguration (`.env`) ein individuelles Timeout-Intervall definiert. Überschreitet die Zeit seit dem letzten Lebenszeichen (dem letzten Datenbankeintrag für dieses Gerät) den konfigurierten Schwellenwert, sendet der Bot eine Warnmeldung per Telegram.
+Für jeden Gerätetyp wird in der Konfiguration (`.env`) ein individuelles Timeout-Intervall definiert. Überschreitet die Zeit seit dem letzten Lebenszeichen (dem letzten Datenbankeintrag bzw. `last_update` für dieses Gerät) den konfigurierten Schwellenwert, sendet der Bot eine Warnmeldung per Telegram.
 
-Unterstützte Geräte in der ersten Version:
-1. **Ventil (Sonoff Hydro ONE):** Auswertung der Zeitstempel in `device_status_log`. Standard-Timeout: 24 Stunden.
-2. **Füllstandssensor (Klärgrube):** Auswertung der Zeitstempel in `septic_tank_readings`. Standard-Timeout: 18 Stunden.
+Unterstützte Geräte:
+1. **Ventile (Sonoff Hydro ONE):** Dynamische Prüfung aller in der Datenbank (`valves`) registrierten Ventile. Der Watchdog wertet für jedes Ventil einzeln das Feld `last_update` aus. Standard-Timeout: 24 Stunden.
+2. **Füllstandssensor (Klärgrube):** Auswertung des Zeitstempels der letzten Füllstandsmeldung. Standard-Timeout: 18 Stunden.
 
 ## User Stories
 
-1. Als Betreiber des GartenBots möchte ich sofort benachrichtigt werden, wenn ein wichtiges Gerät (wie das Ventil) offline geht, um Ausfälle frühzeitig zu beheben.
-2. Als Betreiber möchte ich für jedes Gerät ein eigenes Zeit-Timeout festlegen können, da manche Geräte häufiger senden (Ventil bei Aktivität) und manche seltener (Füllstandssensor 2x täglich).
-3. Als Betreiber möchte ich eine Entwarnung erhalten, sobald das betroffene Gerät wieder ein Signal sendet, damit ich weiß, dass das Problem gelöst ist.
+1. Als Betreiber des GartenBots möchte ich sofort benachrichtigt werden, wenn eines meiner Ventile offline geht, unter Angabe seines Wunschnamens (z. B. "Rasen"), um Ausfälle frühzeitig zu beheben.
+2. Als Betreiber möchte ich für jedes Gerät ein eigenes Zeit-Timeout festlegen können, da manche Geräte häufiger senden (Ventile bei Aktivität) und manche seltener (Füllstandssensor 2x täglich).
+3. Als Betreiber möchte ich eine Entwarnung erhalten, sobald das betroffene Gerät wieder ein Signal sendet (unter Angabe des Wunschnamens), damit ich weiß, dass das Problem gelöst ist.
 4. Als Entwickler möchte ich ein generisches System haben, bei dem neue Gerätetypen (z. B. Bodenfeuchtesensoren) mit minimalem Aufwand in die Überwachung integriert werden können.
 
 ## Implementierungs-Entscheidungen (Implementation Decisions)
@@ -30,22 +30,26 @@ Unterstützte Geräte in der ersten Version:
   - Ein globaler Schalter `WATCHDOG_ENABLED=true` erlaubt das Deaktivieren des gesamten Watchdogs.
 - **Hintergrund-Task:**
   - Ein stündlicher Task im `scheduler.py` prüft alle aktiven Überwachungs-Regeln.
-- **Warnzustand & Entwarnung:**
-  - Der Sendezustand einer Warnung wird in `system_metadata` hinterlegt (z. B. `watchdog_alert_active_<device_id> = 1`).
-  - Erst wenn dieser Wert gesetzt ist, wird bei Inaktivität keine erneute Warnung geschickt (Spam-Schutz).
-  - Sobald ein neuer Datenbankeintrag für das Gerät registriert wird, wird die Warnung zurückgesetzt und eine Entwarnungsnachricht gesendet (z. B. `🟢 Verbindung zu [Gerätename] wiederhergestellt.`).
-- **Erweiterbarkeit:**
-  - Die Watchdog-Prüfung verwendet eine Registry oder eine Liste von Watchdog-Regeln (jeweils definiert durch einen Gerätenamen, ein Timeout, eine Datenbank-Abfragefunktion für das letzte Signal und das entsprechende Alert-Flag in den Metadaten).
+- **Dynamische Ventil-Iteration:**
+  - Der Watchdog holt stündlich die Liste aller gekoppelten Ventile aus der Datenbank-Tabelle `valves`. Jedes Ventil wird einzeln anhand seines `last_update`-Zeitstempels gegen das Ventil-Timeout geprüft.
+- **Warnzustand & Entwarnung (Spam-Schutz):**
+  - Der Sendezustand einer Warnung wird in `system_metadata` hinterlegt.
+  - Für Ventile wird das Flag anhand der Datenbank-ID des Ventils benannt: `watchdog_alert_active_valve_<id> = 1` (z. B. `watchdog_alert_active_valve_2`). Dies verhindert Namenskollisionen bei Umbenennungen.
+  - Für den Füllstandssensor lautet das Flag: `watchdog_alert_active_septic = 1`.
+  - Erst wenn das jeweilige Flag gesetzt ist, wird bei anhaltender Inaktivität keine erneute Warnung geschickt.
+  - Sobald ein Lebenszeichen registriert wird, wird die Warnung zurückgesetzt (Flag wird gelöscht) und eine Entwarnungsnachricht gesendet (z. B. `🟢 Verbindung zu Rasen wiederhergestellt.`).
+- **Benachrichtigungen:**
+  - In den Telegram-Warnungen und -Entwarnungen wird ausschließlich der benutzerdefinierte Wunschname des Geräts ausgegeben (z. B. "Rasen" oder "Füllstandssensor"), um die Nachrichten für den Endanwender übersichtlich und lesbar zu halten.
 
 ## Test-Entscheidungen (Testing Decisions)
 
 - **Unit-Tests für die Timeout-Erkennung:**
   - Testen der Abfragefunktionen mit mockierten Zeitstempeln (z. B. letztes Signal vor 25 Stunden triggert Alarm bei 24h Limit).
-  - Testen der Entwarnungslogik (Empfang eines aktuellen Signals löscht das Alert-Flag in `system_metadata`).
+  - Testen der Entwarnungslogik und des Spam-Schutzes pro Ventil-ID.
 - **Integrationstest:**
-  - Simulieren des Watchdog-Durchlaufs im Test-Framework ohne echten Scheduler, um den korrekten Telegram-Versand zu validieren.
+  - Simulieren des Watchdog-Durchlaufs im Test-Framework mit mehreren gekoppelten Ventilen, um den korrekten Telegram-Versand und die Flag-Verwaltung in `system_metadata` zu validieren.
 
 ## Nicht im Leistungsumfang (Out of Scope)
 
-- Pingen von Netzwerkgeräten (wie dem Raspberry Pi selbst) – der Watchdog läuft lokal auf dem Pi und überwacht nur Peripheriegeräte.
+- Pingen von Netzwerkgeräten (wie dem Raspberry Pi selbst) – der Watchdog läuft lokal auf dem Pi und überwacht nur PeripheriSensoren/Ventile.
 - Automatische Behebung der Störungen (z. B. Neustart von Diensten).
