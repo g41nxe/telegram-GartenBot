@@ -16,6 +16,7 @@ Wir treffen folgende Architekturentscheidungen zur Festigung der Modulgrenzen:
    - Transport-Adapter (z. B. MQTT) dürfen keine Domänen-Zustände (wie aktive Gussvolumina) verwalten oder Berechnungen dazu anstellen.
    - Sie übersetzen lediglich eingehende Rohdaten in typisierte Ereignisse (`ValveStatusReported`) und leiten diese an den systemweiten `EventBus` weiter.
    - Die fachliche Guss-Steuerung (`WateringController`) absorbiert diese Zustände und führt die Berechnungen (z. B. Durchfluss-Integration) intern aus.
+   - **Abgrenzung: Protokollzustand vs. Domänenzustand:** Adapter dürfen *Protokollzustand* halten — d. h. den zuletzt bekannten Hardware-Zustand des Geräts (z. B. `valve_status`-Dict mit `state`, `battery`, `linkquality`; `bridge_status`). Dieser Zustand beschreibt das Gerät, nicht die Geschäftslogik. *Domänenzustand* (z. B. wie viel Wasser in diesem Zyklus geflossen ist, wie lange der Zyklus schon läuft) muss im Kern verbleiben. Prüffrage: Wenn der Adapter gegen eine andere Implementierung ausgetauscht wird, muss der Wert mitgenommen werden? Dann ist es Domänenzustand.
 
 2. **Entkopplung externer API-Clients von der Persistenz:**
    - Externe API-Adapter (z. B. Wetter-Dienst) sind reine Funktions-Clients. Sie nehmen Parameter entgegen, führen den Netzwerkaufruf aus, verarbeiten das JSON und geben die Daten zurück oder werfen Fehler.
