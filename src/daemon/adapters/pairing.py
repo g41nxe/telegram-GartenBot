@@ -2,7 +2,6 @@ import json
 import logging
 import threading
 import time
-from .. import config
 from . import mqtt_client
 from .mqtt_client import _global_bus, DeviceJoinedEvent
 
@@ -138,4 +137,5 @@ def _pairing_worker(chat_id: int, notify_fn):
         logger.error(f"Ventil-Kopplung: Unerwarteter Fehler: {e}")
         notify_fn(chat_id, f"❌ Fehler bei der Ventil-Kopplung: {e}")
     finally:
+        _global_bus.unsubscribe(DeviceJoinedEvent, on_device_joined)
         _pairing_active = False

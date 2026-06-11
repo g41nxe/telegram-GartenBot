@@ -1,12 +1,12 @@
 import time
 import logging
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime
 from . import config
 from .adapters import database, weather
-from .core.event_bus import EventBus
 from .adapters.mqtt_client import _global_bus
-from .core.scheduler_events import DailyReportTriggered, WateringSkipped, ScheduleFailed
+from .core.scheduler_events import WateringSkipped, ScheduleFailed
+from .adapters.daily_report import generate_daily_report, send_daily_report  # noqa: F401 (generate_daily_report re-exported for telegram_ui)
 
 logger = logging.getLogger("garden_scheduler")
 
@@ -18,142 +18,6 @@ scheduler_running = False
 scheduler_thread = None
 
 # Event-basierte Entkopplung der Benachrichtigungen (siehe scheduler_events)
-
-def _get_wmo_description(code: int) -> str:
-    mapping = {
-        0: "☀️ Sonnig / Klar", 1: "🌤️ Leicht bewölkt", 2: "⛅ Teilweise bewölkt", 3: "☁️ Bedeckt / Bewölkt",
-        45: "🌫️ Nebelig", 48: "🌫️ Raureifnebel", 51: "🌧️ Leichter Nieselregen", 53: "🌧️ Mäßiger Nieselregen",
-        55: "🌧️ Starker Nieselregen", 56: "🌧️ Leichter gefrierender Nieselregen", 57: "🌧️ Dichter gefrierender Nieselregen",
-        61: "🌧️ Leichter Regen", 63: "🌧️ Mäßiger Regen", 65: "🌧️ Starker Regen",
-        66: "🌧️ Leichter gefrierender Regen", 67: "🌧️ Starker gefrierender Regen",
-        71: "❄️ Leichter Schneefall", 73: "❄️ Mäßiger Schneefall", 75: "❄️ Starker Schneefall",
-        77: "❄️ Schneegriesel", 80: "🌧️ Leichte Regenschauer", 81: "🌧️ Mäßige Regenschauer", 82: "🌧️ Starke Regenschauer",
-        85: "❄️ Leichte Schneeschauer", 86: "❄️ Starke Schneeschauer", 95: "⚡ Gewitter",
-        96: "⚡ Gewitter mit leichtem Hagel", 99: "⚡ Gewitter mit starkem Hagel"
-    }
-    return mapping.get(code, "🌡️ Unbekannt")
-
-def generate_daily_report(today_str: str) -> str:
-    """Generiert den Text für den täglichen Statusbericht."""
-    from .adapters import mqtt_client
-    
-    # 1. Guss-Statistiken der letzten 24 Stunden
-    success_count, failed_count, total_volume = database.get_watering_stats_last_24h()
-    
-    # 2. Wetterdaten abrufen
-    try:
-        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob = weather.get_weather_data(config.LATITUDE, config.LONGITUDE)
-        weather_desc = _get_wmo_description(weather_code)
-    except Exception as e:
-        logger.error(f"Fehler beim Abrufen der Wetterdaten für Statusbericht: {e}")
-        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0
-        weather_desc = "Unbekannt"
-        
-    # 3. Ventil-Status und Warnungen prüfen
-    status = mqtt_client.get_valve_status()
-    warnings = []
-    
-    # Hintergrund-Dienstewarnung
-    if mqtt_client.HAS_PAHO:
-        if not mqtt_client.is_broker_connected():
-            warnings.append("🚨 **System-Dienst gestört:** MQTT-Broker ist offline")
-        elif mqtt_client.get_bridge_status() != "online":
-            warnings.append("🚨 **System-Dienst gestört:** Mittelweg-Dienst (Zigbee2MQTT) ist offline")
-            
-    # Batteriewarnung
-    battery = status.get("battery", 100)
-    if battery <= config.BATTERY_WARNING_THRESHOLD:
-        warnings.append(f"🪫 **Niedriger Batteriestand:** {battery}% (Grenzwert: {config.BATTERY_WARNING_THRESHOLD}%)")
-        
-    # Offline-Warnung (letztes Update älter als 24h)
-    last_update_str = status.get("last_update")
-    if not last_update_str:
-        warnings.append("⚠️ **Verbindung verloren:** Ventil ist nicht gekoppelt / offline")
-    else:
-        try:
-            last_up = datetime.fromisoformat(last_update_str)
-            if datetime.now() - last_up > timedelta(hours=24):
-                time_diff_hours = int((datetime.now() - last_up).total_seconds() / 3600)
-                warnings.append(f"⚠️ **Verbindung verloren:** Letzte Rückmeldung vor {time_diff_hours} Stunden ({last_up.strftime('%d.%m. %H:%M')})")
-        except Exception:
-            warnings.append("⚠️ **Verbindung verloren:** Fehler beim Ermitteln des letzten Signals")
-            
-    # Anomalien
-    abnormal_state = status.get("valve_abnormal_state", "normal")
-    if abnormal_state != "normal":
-        warnings.append(f"🚨 **Ventil-Anomalie erkannt:** {abnormal_state}")
-        
-    # 4. Verbindungsstatistik der letzten 24 Stunden (Passives Monitoring)
-    conn_stats = database.get_device_status_stats_last_24h()
-    
-    if conn_stats["count"] == 0:
-        lqi_desc = "Keine Verbindung"
-    elif conn_stats["avg_lqi"] >= 180:
-        lqi_desc = "Sehr gut"
-    elif conn_stats["avg_lqi"] >= 120:
-        lqi_desc = "Gut"
-    elif conn_stats["avg_lqi"] >= 60:
-        lqi_desc = "Ausreichend"
-    else:
-        lqi_desc = "Kritisch"
-        
-    conn_info = (
-        f"📡 **Verbindung (letzte 24h):**\n"
-        f"   - Signalmeldungen: {conn_stats['count']}\n"
-        f"   - Signalstärke: Ø {conn_stats['avg_lqi']} LQI ({lqi_desc})\n"
-        f"   - Längste Funkstille: {conn_stats['max_gap_hours']} Std.\n"
-    )
-        
-    # Nachricht zusammensetzen
-    warning_text = ""
-    if warnings:
-        warning_text = "\n⚠️ **System-Warnungen:**\n" + "\n".join([f"- {w}" for w in warnings]) + "\n"
-        
-    # Formatiere Datum zur Anzeige
-    try:
-        date_obj = datetime.strptime(today_str, "%Y-%m-%d")
-        display_date = date_obj.strftime("%d.%m.%Y")
-    except Exception:
-        display_date = today_str
-        
-    msg = (
-        f"📊 **Täglicher Statusbericht vom {display_date}**\n\n"
-        f"💧 **Bewässerung (letzte 24h):**\n"
-        f"   - Erfolgreiche Zyklen: {success_count}\n"
-        f"   - Fehlgeschlagene Zyklen: {failed_count}\n"
-        f"   - Gesamtvolumen: {total_volume} Liter\n\n"
-        f"🌤️ **Wetter:**\n"
-        f"   - Temperatur: {temp} °C (Min: {temp_min} °C / Max: {temp_max} °C) | {weather_desc}\n"
-        f"   - Regenwahrscheinlichkeit: {rain_prob}%\n"
-        f"   - Regen (letzte 24h): {rain_last} mm\n"
-        f"   - Vorhersage (nächste 24h): {rain_next} mm\n\n"
-        f"{conn_info}"
-        f"{warning_text}"
-    )
-    return msg
-
-def send_daily_report(today_str: str):
-    """Generiert den täglichen Bericht und versendet ihn über Telegram, aktualisiert system_metadata."""
-    # Setze das Datum direkt in der DB, um mehrfachen Trigger zu verhindern
-    database.set_metadata("last_daily_report_date", today_str)
-    
-    # 1. Vorab aktuelle Werte vom Ventil anfordern (Aufweck-Abfrage)
-    try:
-        from .adapters import mqtt_client
-        mqtt_client.request_valve_status()
-    except Exception as e:
-        logger.warning(f"Konnte Ventil-Statusaktualisierung nicht anfordern: {e}")
-        
-    # 2. 5 Sekunden warten, um dem Ventil Zeit für den Empfang/Antwort zu geben (Option A)
-    time.sleep(5.0)
-    
-    try:
-        report_text = generate_daily_report(today_str)
-        _global_bus.publish(DailyReportTriggered(today_str, report_text))
-        logger.info(f"Täglicher Statusbericht für {today_str} erfolgreich generiert und Event veröffentlicht.")
-    except Exception as e:
-        logger.error(f"Fehler beim Generieren/Senden des täglichen Statusberichts: {e}")
-
 
 def get_active_cycle():
     """Gibt Details zum aktuell laufenden Bewässerungszyklus zurück (Fassaden-Methode)."""
@@ -231,7 +95,7 @@ def _scheduler_loop():
             today_str = now.strftime("%Y-%m-%d")
             
             # Täglicher Statusbericht um 08:00 Uhr (oder danach falls heute noch ausstehend)
-            if current_time >= "08:00":
+            if current_time >= config.DAILY_REPORT_TIME:
                 last_report = database.get_metadata("last_daily_report_date")
                 if last_report != today_str:
                     logger.info(f"Täglicher Statusbericht für heute ({today_str}) steht aus. Starte Versand...")
@@ -240,7 +104,7 @@ def _scheduler_loop():
             
             # Stündliches Wetter-Pre-Polling (Wärmt den lokalen Cache auf)
             current_timestamp = time.time()
-            if current_timestamp - last_weather_update >= 3600:
+            if current_timestamp - last_weather_update >= config.WEATHER_REFRESH_INTERVAL_SECONDS:
                 last_weather_update = current_timestamp
                 logger.info("Hintergrund-Wetterabfrage (Cache-Update) ausgelöst...")
                 t_weather = threading.Thread(

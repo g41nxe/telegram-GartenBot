@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from daemon.core.event_bus import EventBus
-from daemon.adapters.mqtt_client import SimulatedMqttAdapter, ValveStatusReported
+from daemon.adapters.mqtt_client import SimulatedMqttAdapter
 from daemon.core.watering_controller import (
     WateringController,
     WateringCycleStarted,
@@ -18,7 +18,7 @@ class TestWateringController(unittest.TestCase):
     def setUp(self):
         self.bus = EventBus()
         self.client = SimulatedMqttAdapter(self.bus)
-        self.controller = WateringController(self.bus, self.client)
+        self.controller = WateringController(self.bus, self.client.publish)
         self.assertTrue(self.client.connect())
 
     def tearDown(self):

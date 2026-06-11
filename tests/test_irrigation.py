@@ -26,7 +26,7 @@ class TestGardenIrrigation(unittest.TestCase):
         from daemon.adapters.database_adapter import DatabaseLoggerAdapter
         
         mqtt_client.start_client()
-        watering_ctrl = WateringController(mqtt_client._global_bus, mqtt_client.client_instance)
+        watering_ctrl = WateringController(mqtt_client._global_bus, mqtt_client.client_instance.publish)
         scheduler.controller = watering_ctrl
         cls.db_adapter = DatabaseLoggerAdapter(mqtt_client._global_bus)
         
