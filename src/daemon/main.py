@@ -39,7 +39,7 @@ def main():
     from .adapters.database_adapter import DatabaseLoggerAdapter
     
     # Erzeuge Guss-Steuerung und weise sie dem Scheduler zu (Fassaden-Kopplung)
-    watering_ctrl = WateringController(mqtt_client._global_bus, mqtt_client.client_instance)
+    watering_ctrl = WateringController(mqtt_client._global_bus, mqtt_client.client_instance.publish)
     scheduler.controller = watering_ctrl
     
     # Initialisiere den DB-Logger Adapter zur Event-Archivierung

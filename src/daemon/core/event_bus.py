@@ -18,6 +18,15 @@ class EventBus:
                 self._listeners[event_type] = []
             self._listeners[event_type].append(callback)
 
+    def unsubscribe(self, event_type: Type[Event], callback: Callable[[Any], None]):
+        """Entfernt einen zuvor registrierten Listener-Callback."""
+        with self._lock:
+            if event_type in self._listeners:
+                try:
+                    self._listeners[event_type].remove(callback)
+                except ValueError:
+                    pass
+
     def publish(self, event: Event):
         """Verteilt ein Event synchron an alle registrierten Listener dieses Event-Typs."""
         event_type = type(event)

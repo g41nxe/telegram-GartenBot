@@ -1,11 +1,10 @@
 import logging
 import threading
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 from .event_bus import Event, EventBus
-from ..adapters.mqtt_client import MqttClient, ValveStatusReported
+from .valve_events import ValveStatusReported
 from .. import config
-from ..adapters import mqtt_client
 
 logger = logging.getLogger("garden_watering_controller")
 
@@ -42,9 +41,9 @@ class WateringCycleStopped(Event):
 
 class WateringController:
     """Die softwareseitige Kernkomponente des Daemons zur Steuerung des Kombinierten Gusses."""
-    def __init__(self, event_bus: EventBus, mqtt_client_instance: MqttClient):
+    def __init__(self, event_bus: EventBus, publish_fn: Callable[[str, str], bool]):
         self.event_bus = event_bus
-        self.mqtt_client = mqtt_client_instance
+        self.publish_fn = publish_fn
         
         self._lock = threading.RLock()
         self._active_cycle: Optional[Dict[str, Any]] = None
@@ -91,7 +90,7 @@ class WateringController:
 
             # Öffne das Ventil über den Mqtt-Infrastruktur-Adapter
             set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-            if not self.mqtt_client.publish(set_topic, '{"state": "ON"}'):
+            if not self.publish_fn(set_topic, '{"state": "ON"}'):
                 return False, "Fehler beim Ansteuern des Ventils über MQTT."
 
             # Software-Timer initialisieren
@@ -127,7 +126,7 @@ class WateringController:
             if self._active_cycle is None:
                 # Physisches Schließen zur Sicherheit auslösen
                 set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-                self.mqtt_client.publish(set_topic, '{"state": "OFF"}')
+                self.publish_fn(set_topic, '{"state": "OFF"}')
                 return False, "Kein aktiver Bewässerungszyklus gefunden."
 
             # Wächter-Timer abbrechen
@@ -135,7 +134,7 @@ class WateringController:
             
             # Physisches Ventil schließen
             set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-            self.mqtt_client.publish(set_topic, '{"state": "OFF"}')
+            self.publish_fn(set_topic, '{"state": "OFF"}')
             
             duration_run = max(1, int((datetime.now() - self._active_cycle["start_time"]).total_seconds() / 60))
             vol_run = round(self._active_cycle.get("current_volume", 0.0), 2)
@@ -156,8 +155,8 @@ class WateringController:
             if self._active_cycle is None:
                 return
 
-            # Zeit-Gap-Capping (max. 60 Sek.)
-            calculation_seconds = min(elapsed_seconds, 60.0)
+            # Zeit-Gap-Capping verhindert massive Überschätzung bei langen Pausen
+            calculation_seconds = min(elapsed_seconds, float(config.FLOW_TIME_GAP_CAP_SECONDS))
             added_liters = flow_rate * (calculation_seconds / 60.0)
             
             self._active_cycle["current_volume"] = self._active_cycle.get("current_volume", 0.0) + added_liters
@@ -175,7 +174,7 @@ class WateringController:
                 
                 # Schließe Ventil
                 set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-                self.mqtt_client.publish(set_topic, '{"state": "OFF"}')
+                self.publish_fn(set_topic, '{"state": "OFF"}')
                 
                 duration_run = max(1, int((datetime.now() - self._active_cycle["start_time"]).total_seconds() / 60))
                 source = self._active_cycle["source"]
@@ -223,7 +222,7 @@ class WateringController:
             
             # Schließe physisches Ventil
             set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-            self.mqtt_client.publish(set_topic, '{"state": "OFF"}')
+            self.publish_fn(set_topic, '{"state": "OFF"}')
             
             self._active_cycle = None
             self._last_flow_update_time = None
