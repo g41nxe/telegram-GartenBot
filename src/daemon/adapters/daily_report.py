@@ -55,7 +55,7 @@ def generate_daily_report(today_str: str) -> str:
         warnings.append(f"🚨 **Ventil-Anomalie erkannt:** {abnormal_state}")
 
     # 4. Verbindungsstatistik der letzten 24 Stunden
-    conn_stats = database.get_device_status_stats_last_24h()
+    conn_stats = database.get_device_status_stats_last_24h("garden_valve")
 
     if conn_stats["count"] == 0:
         lqi_desc = "Keine Verbindung"

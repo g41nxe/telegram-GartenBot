@@ -3,7 +3,8 @@ from .event_bus import Event
 
 class ValveStatusReported(Event):
     """Event, das gefeuert wird, wenn ein neuer Ventil-Zustand empfangen wird."""
-    def __init__(self, state: str, flow_rate: float, battery: int, linkquality: int, valve_abnormal_state: str = "normal"):
+    def __init__(self, mqtt_name: str, state: str, flow_rate: float, battery: int, linkquality: int, valve_abnormal_state: str = "normal"):
+        self.mqtt_name = mqtt_name
         self.state = state
         self.flow_rate = flow_rate
         self.battery = battery

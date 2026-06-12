@@ -93,10 +93,92 @@ class TestWateringController(unittest.TestCase):
         """Verifies that starting a cycle when another is active fails."""
         success1, msg1 = self.controller.start_watering(duration_minutes=5, target_volume_liters=0, source="manual")
         self.assertTrue(success1, f"Failed to start 1: {msg1}")
-        
+
         success2, msg2 = self.controller.start_watering(duration_minutes=5, target_volume_liters=0, source="manual")
         self.assertFalse(success2)
         self.assertIn("bereits", msg2)
+
+    # --- Multi-Ventil-Tests (Schritt 6 / Feature 0006) ---
+
+    def test_start_watering_with_mqtt_name(self):
+        """start_watering() akzeptiert mqtt_name und valve_topic; Flow-Integration filtert nach mqtt_name."""
+        from daemon.core.valve_events import ValveStatusReported
+        events = []
+        self.bus.subscribe(WateringCycleCompleted, lambda e: events.append(e))
+
+        success, _ = self.controller.start_watering(
+            duration_minutes=10, target_volume_liters=5, source="manual",
+            mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve"
+        )
+        self.assertTrue(success)
+
+        # Event vom richtigen Ventil → wird integriert
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 5.0, 95, 120))
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 5.0, 95, 120))
+        # ... nach ausreichend Zeit sollte das Volumenlimit nicht sofort erreicht sein
+        # Wir prüfen nur, dass der Zyklus noch aktiv ist
+        self.assertIsNotNone(self.controller.get_active_cycle("garden_valve"))
+
+    def test_flow_integration_ignores_other_valves(self):
+        """ValveStatusReported-Events von anderen Ventilen werden für die Flow-Integration ignoriert."""
+        from daemon.core.valve_events import ValveStatusReported
+
+        success, _ = self.controller.start_watering(
+            duration_minutes=10, target_volume_liters=20, source="manual",
+            mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve"
+        )
+        self.assertTrue(success)
+        initial_volume = self.controller.get_active_volume("garden_valve")
+
+        # Event von anderem Ventil → darf NICHT integriert werden
+        self.controller._last_flow_update_time["garden_valve"] = \
+            self.controller._last_flow_update_time["garden_valve"] - __import__("datetime").timedelta(seconds=10)
+        self.bus.publish(ValveStatusReported("valve_other", "ON", 999.0, 95, 120))
+
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), initial_volume, places=2,
+                               msg="Event vom falschen Ventil darf den Flow nicht verändern")
+
+    def test_parallel_cycles_independent(self):
+        """Zwei Ventile können parallel laufen mit unabhängigen Zyklen."""
+        from daemon.core.valve_events import ValveStatusReported
+
+        ok1, _ = self.controller.start_watering(
+            duration_minutes=10, target_volume_liters=10, source="manual",
+            mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve"
+        )
+        ok2, _ = self.controller.start_watering(
+            duration_minutes=10, target_volume_liters=10, source="manual",
+            mqtt_name="valve_1122", valve_topic="zigbee2mqtt/valve_1122"
+        )
+        self.assertTrue(ok1)
+        self.assertTrue(ok2)
+        self.assertIsNotNone(self.controller.get_active_cycle("garden_valve"))
+        self.assertIsNotNone(self.controller.get_active_cycle("valve_1122"))
+
+        # Jetzt Valve 1 stoppen
+        self.controller.stop_watering("garden_valve")
+        self.assertIsNone(self.controller.get_active_cycle("garden_valve"))
+        self.assertIsNotNone(self.controller.get_active_cycle("valve_1122"),
+                             "Valve 2 muss noch laufen nach Stopp von Valve 1")
+
+    def test_stop_all_valves(self):
+        """stop_watering() ohne Argument stoppt alle aktiven Zyklen."""
+        self.controller.start_watering(
+            duration_minutes=10, target_volume_liters=10, source="manual",
+            mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve"
+        )
+        self.controller.start_watering(
+            duration_minutes=10, target_volume_liters=10, source="manual",
+            mqtt_name="valve_1122", valve_topic="zigbee2mqtt/valve_1122"
+        )
+        self.controller.stop_watering()
+        self.assertIsNone(self.controller.get_active_cycle("garden_valve"))
+        self.assertIsNone(self.controller.get_active_cycle("valve_1122"))
+
+    def test_get_active_cycle_returns_none_without_mqtt_name(self):
+        """get_active_cycle() ohne Argument gibt None zurück wenn kein Zyklus läuft."""
+        self.assertIsNone(self.controller.get_active_cycle())
+
 
 if __name__ == "__main__":
     unittest.main()

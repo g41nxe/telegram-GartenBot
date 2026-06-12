@@ -43,7 +43,7 @@ class DatabaseLoggerAdapter:
         database.log_watering(event.duration_run, event.source, "stopped", event.details, watered_volume=event.volume_run)
 
     def _on_valve_status_reported(self, event: ValveStatusReported):
-        database.log_device_status(event.battery, event.linkquality)
+        database.log_device_status(event.mqtt_name, event.battery, event.linkquality)
 
     def _on_weather_data_fetched(self, event: WeatherDataFetched):
         database.log_weather(

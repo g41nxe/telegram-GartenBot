@@ -120,6 +120,70 @@ def init_db():
                 )
             """)
 
+        # --- Multi-Ventil-Schema (Feature 0006) ---
+
+        # Neue Tabellen anlegen
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS valves (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wish_name TEXT NOT NULL,
+                mqtt_name TEXT NOT NULL UNIQUE,
+                is_paired INTEGER DEFAULT 1,
+                battery INTEGER DEFAULT 100,
+                linkquality INTEGER DEFAULT 0,
+                last_update TEXT,
+                valve_abnormal_state TEXT DEFAULT 'normal'
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS schedule_valves (
+                schedule_id INTEGER NOT NULL,
+                valve_id INTEGER NOT NULL,
+                PRIMARY KEY (schedule_id, valve_id)
+            )
+        """)
+
+        # Spalten-Migrationen für bestehende Tabellen
+        try:
+            cursor.execute("SELECT execution_mode FROM schedules LIMIT 1")
+        except sqlite3.OperationalError:
+            logger.info("Migriere Datenbank: Füge execution_mode Spalte zu schedules hinzu...")
+            cursor.execute("ALTER TABLE schedules ADD COLUMN execution_mode TEXT DEFAULT 'sequential'")
+
+        try:
+            cursor.execute("SELECT valve_id FROM watering_history LIMIT 1")
+        except sqlite3.OperationalError:
+            logger.info("Migriere Datenbank: Füge valve_id Spalte zu watering_history hinzu...")
+            cursor.execute("ALTER TABLE watering_history ADD COLUMN valve_id INTEGER")
+
+        try:
+            cursor.execute("SELECT device_name FROM device_status_log LIMIT 1")
+        except sqlite3.OperationalError:
+            logger.info("Migriere Datenbank: Füge device_name Spalte zu device_status_log hinzu...")
+            cursor.execute("ALTER TABLE device_status_log ADD COLUMN device_name TEXT")
+
+        # Daten-Migrationen: Standard-Ventil anlegen und Altdaten verknüpfen
+        cursor.execute("SELECT COUNT(*) FROM valves")
+        if cursor.fetchone()[0] == 0:
+            logger.info("Migriere Datenbank: Lege Standard-Ventil an (garden_valve)...")
+            cursor.execute(
+                "INSERT INTO valves (wish_name, mqtt_name, is_paired) VALUES (?, ?, ?)",
+                ("Ventil", "garden_valve", 1)
+            )
+
+        # Bestehende Zeitpläne ohne schedule_valves-Eintrag mit valve_id=1 verknüpfen
+        cursor.execute("""
+            INSERT OR IGNORE INTO schedule_valves (schedule_id, valve_id)
+            SELECT id, 1 FROM schedules
+            WHERE id NOT IN (SELECT schedule_id FROM schedule_valves)
+        """)
+
+        # Bestehende device_status_log-Einträge ohne device_name auf "garden_valve" setzen
+        cursor.execute(
+            "UPDATE device_status_log SET device_name = 'garden_valve' WHERE device_name IS NULL"
+        )
+
         conn.commit()
         logger.info("Datenbank erfolgreich initialisiert.")
     except Exception as e:
@@ -326,15 +390,15 @@ def get_watering_stats_last_24h() -> tuple[int, int, float]:
     finally:
         conn.close()
 
-def log_device_status(battery: int, linkquality: int):
+def log_device_status(device_name: str, battery: int, linkquality: int):
     """Loggt den aktuellen Batteriestand und die Signalqualität für statistische Auswertungen."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
         timestamp = datetime.now().isoformat()
         cursor.execute(
-            "INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)",
-            (timestamp, battery, linkquality)
+            "INSERT INTO device_status_log (timestamp, device_name, battery, linkquality) VALUES (?, ?, ?, ?)",
+            (timestamp, device_name, battery, linkquality)
         )
         conn.commit()
     except Exception as e:
@@ -342,20 +406,21 @@ def log_device_status(battery: int, linkquality: int):
     finally:
         conn.close()
 
-def get_device_status_stats_last_24h() -> dict:
-    """Errechnet Signalstärkestatistiken der letzten 24 Stunden."""
+def get_device_status_stats_last_24h(device_name: str) -> dict:
+    """Errechnet Signalstärkestatistiken der letzten 24 Stunden für ein bestimmtes Gerät."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
         from datetime import datetime, timedelta
         time_limit = (datetime.now() - timedelta(hours=24)).isoformat()
-        
+
         cursor.execute("""
-            SELECT timestamp, linkquality 
-            FROM device_status_log 
-            WHERE timestamp >= ? 
+            SELECT timestamp, linkquality
+            FROM device_status_log
+            WHERE timestamp >= ?
+              AND device_name = ?
             ORDER BY timestamp ASC
-        """, (time_limit,))
+        """, (time_limit, device_name))
         rows = cursor.fetchall()
         
         if not rows:
@@ -405,5 +470,117 @@ def get_device_status_stats_last_24h() -> dict:
             "avg_lqi": 0.0,
             "max_gap_hours": 0.0
         }
+    finally:
+        conn.close()
+
+# --- CRUD Operationen für Ventile (valves) ---
+
+def get_all_valves() -> list:
+    """Gibt alle registrierten Ventile zurück."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM valves ORDER BY id ASC")
+        return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Ventile: {e}")
+        return []
+    finally:
+        conn.close()
+
+def get_valve_by_id(valve_id: int) -> dict | None:
+    """Gibt ein Ventil anhand seiner ID zurück."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM valves WHERE id = ?", (valve_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"Fehler beim Laden des Ventils (id={valve_id}): {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_valve_by_mqtt_name(mqtt_name: str) -> dict | None:
+    """Gibt ein Ventil anhand seines MQTT-Namens zurück."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM valves WHERE mqtt_name = ?", (mqtt_name,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"Fehler beim Laden des Ventils (mqtt_name={mqtt_name}): {e}")
+        return None
+    finally:
+        conn.close()
+
+def add_valve(wish_name: str, mqtt_name: str) -> int:
+    """Fügt ein neues Ventil hinzu und gibt dessen ID zurück. Gibt -1 bei Fehler zurück."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO valves (wish_name, mqtt_name, is_paired) VALUES (?, ?, ?)",
+            (wish_name, mqtt_name, 1)
+        )
+        conn.commit()
+        return cursor.lastrowid
+    except sqlite3.IntegrityError:
+        logger.warning(f"Ventil mit mqtt_name='{mqtt_name}' existiert bereits.")
+        return -1
+    except Exception as e:
+        logger.error(f"Fehler beim Hinzufügen des Ventils '{mqtt_name}': {e}")
+        return -1
+    finally:
+        conn.close()
+
+def update_valve_status(mqtt_name: str, battery: int, linkquality: int, last_update: str, valve_abnormal_state: str):
+    """Aktualisiert den Live-Status eines Ventils in der Datenbank."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """UPDATE valves
+               SET battery = ?, linkquality = ?, last_update = ?, valve_abnormal_state = ?
+               WHERE mqtt_name = ?""",
+            (battery, linkquality, last_update, valve_abnormal_state, mqtt_name)
+        )
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Fehler beim Aktualisieren des Ventilstatus für '{mqtt_name}': {e}")
+    finally:
+        conn.close()
+
+# --- CRUD Operationen für schedule_valves ---
+
+def get_schedule_valves(schedule_id: int) -> list:
+    """Gibt alle valve_ids zurück, die einem Zeitplan zugeordnet sind."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT valve_id FROM schedule_valves WHERE schedule_id = ?", (schedule_id,))
+        return [row[0] for row in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Ventile für Zeitplan {schedule_id}: {e}")
+        return []
+    finally:
+        conn.close()
+
+def set_schedule_valves(schedule_id: int, valve_ids: list):
+    """Setzt die Ventil-Zuordnung für einen Zeitplan (ersetzt bestehende Einträge)."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM schedule_valves WHERE schedule_id = ?", (schedule_id,))
+        for valve_id in valve_ids:
+            cursor.execute(
+                "INSERT INTO schedule_valves (schedule_id, valve_id) VALUES (?, ?)",
+                (schedule_id, valve_id)
+            )
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Fehler beim Setzen der Ventile für Zeitplan {schedule_id}: {e}")
     finally:
         conn.close()
