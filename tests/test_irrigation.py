@@ -105,9 +105,9 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertIsNotNone(scheduler.get_active_cycle())
         
         # Simuliert, dass das Volumenlimit überschritten wird
-        scheduler.controller._active_cycle["current_volume"] = 6.0
-        
-        # Warte kurz, bis der Volumen-Wächter-Thread (schläft 2 Sek) zuschlägt
+        scheduler.controller._active_cycles["garden_valve"]["current_volume"] = 6.0
+
+        # Warte kurz, bis der Volumen-Wächter-Thread (schlägt beim nächsten MQTT-Event zu)
         time.sleep(3)
         
         # Prüfen, ob das Ventil geschlossen wurde
@@ -224,7 +224,7 @@ class TestGardenIrrigation(unittest.TestCase):
         mqtt_client._global_bus.subscribe(WateringCycleFailed, mock_event_handler)
         
         # Simuliere, dass das Volumenlimit vor Ablauf der Zeit nicht erreicht wurde (z.B. nur 3 Liter)
-        scheduler.controller._active_cycle["current_volume"] = 3.0
+        scheduler.controller._active_cycles["garden_valve"]["current_volume"] = 3.0
         
         # Manuelles Auslösen des Timeouts
         scheduler._time_limit_callback()
@@ -251,17 +251,25 @@ class TestGardenIrrigation(unittest.TestCase):
         from datetime import datetime, timedelta
         from daemon import scheduler
         from daemon.adapters.mqtt_client import ValveStatusReported
-        
-        # Starte Bewässerung über Controller
-        scheduler.start_watering(duration_minutes=10, target_volume_liters=20, source="test")
-        
+
+        # Vorherige Zyklen bereinigen
+        scheduler.stop_watering()
+
+        # Starte Bewässerung mit großem Volumenziel, damit der Hintergrund-Simulator es nicht zufällig schließt
+        success, msg = scheduler.start_watering(duration_minutes=10, target_volume_liters=100, source="test")
+        self.assertTrue(success, f"Bewässerung konnte nicht gestartet werden: {msg}")
+
+        # Hintergrund-Simulator pausieren: valve_status auf OFF setzen, damit der Sim-Loop keine
+        # ON-Events feuert, die die künstlich gesetzte _last_flow_update_time konsumieren würden.
+        mqtt_client.valve_status["state"] = "OFF"
+
         # Setze den Controller künstlich auf 10 Liter in die Vergangenheit
-        scheduler.controller._active_cycle["current_volume"] = 10.0
-        scheduler.controller._last_flow_update_time = datetime.now() - timedelta(seconds=75)
-        
+        scheduler.controller._active_cycles["garden_valve"]["current_volume"] = 10.0
+        scheduler.controller._last_flow_update_time["garden_valve"] = datetime.now() - timedelta(seconds=75)
+
         # Simuliere ON-Event mit Flow-Rate 6.0 L/min
-        scheduler.controller.event_bus.publish(ValveStatusReported("ON", 6.0, 95, 120, "normal"))
-        
+        scheduler.controller.event_bus.publish(ValveStatusReported("garden_valve", "ON", 6.0, 95, 120, "normal"))
+
         # Durch die Deckelung auf max. 60 Sek:
         # Zuwachs = 6.0 L/min * (60.0 / 60.0) = 6.0 Liter
         # Erwartetes Gesamtvolumen = 10.0 + 6.0 = 16.0 Liter
@@ -397,21 +405,21 @@ class TestGardenIrrigation(unittest.TestCase):
         
         # Meldung 1: Vor 20 Stunden, LQI = 150
         time1 = (now - timedelta(hours=20)).isoformat()
-        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time1, 95, 150))
-        
+        conn.execute("INSERT INTO device_status_log (timestamp, device_name, battery, linkquality) VALUES (?, ?, ?, ?)", (time1, "garden_valve", 95, 150))
+
         # Meldung 2: Vor 12 Stunden, LQI = 120
         time2 = (now - timedelta(hours=12)).isoformat()
-        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time2, 94, 120))
-        
+        conn.execute("INSERT INTO device_status_log (timestamp, device_name, battery, linkquality) VALUES (?, ?, ?, ?)", (time2, "garden_valve", 94, 120))
+
         # Meldung 3: Vor 2 Stunden, LQI = 130
         time3 = (now - timedelta(hours=2)).isoformat()
-        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time3, 93, 130))
-        
+        conn.execute("INSERT INTO device_status_log (timestamp, device_name, battery, linkquality) VALUES (?, ?, ?, ?)", (time3, "garden_valve", 93, 130))
+
         conn.commit()
         conn.close()
 
         # 3. Statistik abrufen
-        stats = database.get_device_status_stats_last_24h()
+        stats = database.get_device_status_stats_last_24h("garden_valve")
         
         self.assertEqual(stats["count"], 3)
         self.assertEqual(stats["avg_lqi"], 133.3)  # (150 + 120 + 130) / 3 = 133.333...
