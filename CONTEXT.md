@@ -68,6 +68,18 @@ _Avoid_: Distanzmesser, Sensor-Modul, ESP32, Pegelmesser
 Das vom Füllstandssensor per MQTT an die Steuerzentrale gesendete Datenpaket mit der gemessenen Distanz (in cm) und der aktuellen Batteriespannung.
 _Avoid_: Sensor-Signal, Telemetrie-Paket
 
+**Gieß-Empfehlung**:
+Die vom Bewässerungs-Daemon berechnete Einschätzung, ob eine manuelle oder geplante Bewässerung heute sinnvoll ist. Basiert auf dem Regen-Fenster (letzte + nächste 24h), der Tagestemperatur und der Hitzestrecke. Wird auf Anfrage über den Telegram-Bot ausgegeben (`/giesscheck`).
+_Avoid_: Gieß-Ratschlag, Bewässerungs-Hinweis, Watering-Advice
+
+**Hitzestrecke**:
+Die Anzahl aufeinanderfolgender abgeschlossener Vortage, an denen die maximale Tagestemperatur einen konfigurierten Schwellenwert (Standard: 25°C) erreicht oder überschritten hat. Eine Lücke (fehlende Wetterdaten, z.B. Steuerzentrale offline) bricht die Hitzestrecke ab.
+_Avoid_: Hitzeperiode, Hitzewelle, Hot-Streak
+
+**Regen-Fenster**:
+Die Summe des gemessenen Niederschlags der letzten 24 Stunden und der vorhergesagten Niederschlagsmenge der nächsten 24 Stunden. Entspricht dem bestehenden Schwellenwert `RAIN_THRESHOLD_MM` und wird sowohl für die Gieß-Empfehlung als auch für die automatische Überspringlogik des Schedulers verwendet.
+_Avoid_: Regen-Periode, Niederschlags-Fenster, Rain-Window
+
 **Inaktivitäts-Watchdog**:
 Die Überwachungslogik im Bewässerungs-Daemon, die das Ausbleiben regelmäßiger Lebenszeichen von batteriebetriebenen Geräten (z. B. mehr als 18 Stunden beim Füllstandssensor oder mehr als 24 Stunden bei einem Ventil) erkennt und proaktiv über den Telegram-Bot warnt.
 _Avoid_: Offline-Timer, Connection-Checker, Heartbeat-Sensor
