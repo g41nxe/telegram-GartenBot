@@ -214,9 +214,15 @@ class PahoMqttAdapter(MqttClient):
 
     def _configure_safety_timeout(self):
         set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
+        # The SWV-ZFE converter (hasFlowMeter=true) validates all fields together;
+        # omitting irrigation_mode causes it to return early without writing fail_safe.
         payload = {
             "manual_default_settings": {
-                "fail_safe": config.SAFETY_TIMEOUT_MINUTES
+                "irrigation_mode": "duration",
+                "irrigation_duration": config.SAFETY_TIMEOUT_MINUTES,
+                "irrigation_amount_unit": "liter",
+                "irrigation_amount": 0,
+                "fail_safe": config.SAFETY_TIMEOUT_MINUTES,
             }
         }
         self.publish(set_topic, json.dumps(payload), retain=True)
