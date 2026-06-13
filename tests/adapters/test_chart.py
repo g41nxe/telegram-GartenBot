@@ -1,4 +1,3 @@
-import io
 import json
 import sys
 import unittest
@@ -126,6 +125,28 @@ class TestGenerateWeatherChart(unittest.TestCase):
         labels = body["chart"]["data"]["labels"]
         for label in labels:
             self.assertRegex(label, r"^\d{2}:\d{2}$", f"Label '{label}' ist kein HH:MM-Format")
+
+
+    @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
+    @patch("daemon.adapters.chart.urllib.request.urlopen")
+    def test_payload_includes_version_4(self, mock_urlopen, _):
+        """QuickChart.io-POST muss version='4' enthalten, sonst wird Chart.js-v3-Syntax abgelehnt."""
+        captured = {}
+
+        def capture_request(req, timeout=None):
+            captured["data"] = req.data
+            fake = MagicMock()
+            fake.read.return_value = b"\x89PNG"
+            fake.__enter__ = lambda s: s
+            fake.__exit__ = MagicMock(return_value=False)
+            return fake
+
+        mock_urlopen.side_effect = capture_request
+        chart_module.generate_weather_chart()
+
+        body = json.loads(captured["data"].decode("utf-8"))
+        self.assertEqual(body.get("version"), "4",
+                         "Fehlender oder falscher 'version'-Wert — QuickChart lehnt Chart.js-v3-Syntax sonst ab")
 
 
 if __name__ == "__main__":
