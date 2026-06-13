@@ -1,9 +1,12 @@
 # Feature 0006 — Mehrfach-Ventil-Unterstützung: Sessionfortschritt
 
-**Datum:** 2026-06-12  
-**Teststand:** 75/75 grün, 3 skipped  
-**Schritte abgeschlossen:** 1–6 von 9  
-**Schritte offen:** 7 (scheduler), 8 (daily_report), 9 (telegram_ui)
+> **Abgeschlossen 2026-06-13.** Alle 9 Schritte implementiert. Teststand: 79/79 grün, 3 skipped.
+> Dieser Fortschrittsbericht wird nur noch als Referenz aufbewahrt.
+
+**Datum:** 2026-06-12 (Session 1) / 2026-06-13 (Session 2, Abschluss)  
+**Teststand:** 79/79 grün, 3 skipped  
+**Schritte abgeschlossen:** 1–9 von 9 ✅  
+**Schritte offen:** –
 
 ---
 

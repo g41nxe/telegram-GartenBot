@@ -69,16 +69,11 @@ def _state_del(d: dict, chat_id: int):
 
 def get_main_keyboard() -> dict:
     """Erstellt die permanente Haupttastatur unten im Chat."""
-    from ..adapters import mqtt_client
-    valve_paired = mqtt_client.get_valve_status()["last_update"] is not None
-
     rows = [
         [{"text": "📊 Status anzeigen"}, {"text": "📅 Zeitpläne"}],
-        [{"text": "🟢 Bewässern starten"}, {"text": "🔴 Sofort Stopp"}]
+        [{"text": "🟢 Bewässern starten"}, {"text": "🔴 Sofort Stopp"}],
+        [{"text": "🔧 Ventil koppeln"}]
     ]
-    if not valve_paired:
-        rows.append([{"text": "🔧 Ventil koppeln"}])
-
     return {
         "keyboard": rows,
         "resize_keyboard": True
@@ -247,19 +242,19 @@ def _get_lqi_description(lqi_val) -> str:
 
 # --- Befehlsverarbeitung ---
 
-def _start_pairing(chat_id: int):
+def _start_pairing(chat_id: int, wish_name: str):
     from ..adapters import pairing
     telegram_client.send_message(
         chat_id,
-        "🔧 *Ventil-Kopplung gestartet*\n\n"
+        f'🔧 *Ventil-Kopplung gestartet* - "{wish_name}"\n\n'
         "Bitte drücke jetzt den *Reset-Knopf* am Sonoff Hydro ONE für "
         "*5 Sekunden*, bis die LED schnell blinkt.\n\n"
         "⏱️ Das System wartet bis zu 90 Sekunden auf das Ventil."
     )
-    pairing.start_pairing(chat_id, telegram_client.send_message)
+    pairing.start_pairing(chat_id, telegram_client.send_message, wish_name)
 
 def handle_setup(chat_id: int):
-    from ..adapters import mqtt_client, pairing
+    from ..adapters import pairing
 
     if pairing.is_pairing_active():
         telegram_client.send_message(
@@ -268,66 +263,37 @@ def handle_setup(chat_id: int):
         )
         return
 
-    valve_paired = mqtt_client.get_valve_status()["last_update"] is not None
-
-    if valve_paired:
-        telegram_client.send_message(
-            chat_id,
-            "⚠️ *Ein Ventil ist bereits aktiv.*\n\n"
-            "Möchtest du trotzdem eine neue Ventil-Kopplung starten?\n"
-            "Das bestehende Ventil wird dabei überschrieben.\n\n"
-            "_(Nur sinnvoll bei Gerätetausch)_",
-            {
-                "inline_keyboard": [[
-                    {"text": "❌ Abbrechen",       "callback_data": "setup_cancel"},
-                    {"text": "✅ Ja, neu koppeln", "callback_data": "setup_confirm"}
-                ]]
-            }
-        )
-        return
-
-    _start_pairing(chat_id)
+    _state_set(wizard_states, chat_id, {"step": "setup_wish_name"})
+    telegram_client.send_message(
+        chat_id,
+        "🔧 *Neues Ventil koppeln*\n\n"
+        "Wie soll dieses Ventil heißen?\n"
+        "_(z.B. \"Terrasse\", \"Rasen\", \"Hochbeet\")_\n\n"
+        "Bitte tippe den Namen ein:"
+    )
 
 def handle_status(chat_id: int):
     from ..adapters import mqtt_client
     import time
 
-    # Fordere vorab aktuelle Werte vom Ventil an und warte kurz (Option B)
     mqtt_client.request_valve_status()
     time.sleep(1.5)
-
-    status = mqtt_client.get_valve_status()
-
-    state_icon = "🟢 OFFEN" if status["state"] == "ON" else "🔴 GESCHLOSSEN"
-    battery_icon = "🔋" if status["battery"] > 20 else "🪫"
 
     broker_connected = mqtt_client.is_broker_connected()
     bridge_online = mqtt_client.get_bridge_status() == "online"
 
     if not mqtt_client.HAS_PAHO:
         services_status = "⚡ Simulationsmodus (Lokaler Test)"
-        if status["last_update"] is None:
-            valve_connected = "🔴 Nicht gekoppelt / Offline"
-        else:
-            valve_connected = "🟢 Gekoppelt / Aktiv"
+        services_ok = True
+    elif not broker_connected:
+        services_status = "🔴 Inaktiv (MQTT-Broker nicht erreichbar)"
+        services_ok = False
+    elif not bridge_online:
+        services_status = "🔴 Inaktiv (Mittelweg-Dienst offline)"
+        services_ok = False
     else:
-        if not broker_connected:
-            services_status = "🔴 Inaktiv (MQTT-Broker nicht erreichbar)"
-            valve_connected = "🔴 Offline (Dienste gestört)"
-        elif not bridge_online:
-            services_status = "🔴 Inaktiv (Mittelweg-Dienst offline)"
-            valve_connected = "🔴 Offline (Dienste gestört)"
-        else:
-            services_status = "🟢 Aktiv"
-            if status["last_update"] is None:
-                valve_connected = "🔴 Nicht gekoppelt / Offline"
-            else:
-                try:
-                    last_up = datetime.fromisoformat(status["last_update"])
-                    time_str = last_up.strftime("%d.%m. %H:%M:%S Uhr")
-                    valve_connected = f"🟢 Gekoppelt (Letztes Signal: {time_str})"
-                except Exception:
-                    valve_connected = "🟢 Gekoppelt / Aktiv"
+        services_status = "🟢 Aktiv"
+        services_ok = True
 
     active = scheduler.get_active_cycle()
     active_text = ""
@@ -337,6 +303,38 @@ def handle_status(chat_id: int):
             f"   - Gestartet: {active['source'].upper()}\n"
             f"   - Restzeit: {int(active['remaining_seconds']/60)} Min ({active['remaining_seconds'] % 60} Sek)\n"
         )
+
+    # Pro-Ventil-Abschnitt aus der Datenbank
+    valves = database.get_all_valves()
+    valve_sections = []
+    for valve in valves:
+        wish_name = valve["wish_name"]
+        mqtt_name = valve["mqtt_name"]
+        battery = valve.get("battery") or 0
+        lqi = valve.get("linkquality") or 0
+        last_update_str = valve.get("last_update")
+        battery_icon = "🔋" if battery > 20 else "🪫"
+
+        if not services_ok:
+            conn_text = "🔴 Offline (Dienste gestört)"
+        elif not last_update_str:
+            conn_text = "🔴 Nicht gekoppelt / Offline"
+        else:
+            try:
+                last_up = datetime.fromisoformat(last_update_str)
+                time_str = last_up.strftime("%d.%m. %H:%M:%S Uhr")
+                conn_text = f"🟢 Aktiv (Letztes Signal: {time_str})"
+            except Exception:
+                conn_text = "🟢 Gekoppelt / Aktiv"
+
+        valve_sections.append(
+            f"📡 **{wish_name}** (`{mqtt_name}`):\n"
+            f"   - Verbindung: {conn_text}\n"
+            f"   - {battery_icon} Batterie: {battery}%\n"
+            f"   - Signalqualität: {_get_lqi_description(lqi)}\n"
+        )
+
+    valves_text = "\n".join(valve_sections) if valve_sections else "Keine Ventile registriert.\n"
 
     last_weather = database.get_last_weather()
     weather_text = "   - Keine Daten vorhanden"
@@ -379,11 +377,8 @@ def handle_status(chat_id: int):
     msg = (
         f"📊 **System-Status Gartenbewässerung**\n\n"
         f"🔌 **System-Dienste:** {services_status}\n"
-        f"📶 **Ventil-Verbindung:** {valve_connected}\n\n"
-        f"💧 **Ventil-Zustand:** {state_icon}\n"
-        f"{battery_icon} **Batterie:** {status['battery']}%\n"
-        f"📡 **Signalqualität:** {_get_lqi_description(status['linkquality'])}\n"
         f"{active_text}\n"
+        f"{valves_text}\n"
         f"🌤️ **Wetter:**\n"
         f"{weather_text}\n\n"
         f"📜 **Letzte Zyklen:**\n{history_text}"
@@ -499,7 +494,15 @@ def _process_message(msg_obj: dict):
         if text.startswith("/") or text in ["📊 Status anzeigen", "📅 Zeitsteuerung", "📅 Zeitpläne", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             _state_del(wizard_states, chat_id)
         else:
-            if step == 1:
+            if step == "setup_wish_name":
+                if not text:
+                    telegram_client.send_message(chat_id, "❌ Der Name darf nicht leer sein. Bitte gib einen Namen ein:")
+                    return
+                wish_name = text
+                _state_del(wizard_states, chat_id)
+                _start_pairing(chat_id, wish_name)
+                return
+            elif step == 1:
                 if not text:
                     telegram_client.send_message(chat_id, "❌ Der Name darf nicht leer sein. Bitte gib einen Namen ein:")
                     return
@@ -872,8 +875,12 @@ def _process_callback_query(cb_obj: dict):
         telegram_client.send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
 
     elif data == "setup_confirm":
-        telegram_client.answer_callback_query(cb_id, "Ventil-Kopplung wird gestartet...")
-        _start_pairing(chat_id)
+        telegram_client.answer_callback_query(cb_id, "Bitte Namen eingeben...")
+        _state_set(wizard_states, chat_id, {"step": "setup_wish_name"})
+        telegram_client.send_message(
+            chat_id,
+            "🔧 *Neues Ventil koppeln*\n\nWie soll dieses Ventil heißen?\nBitte tippe den Namen ein:"
+        )
 
     elif data == "setup_cancel":
         telegram_client.answer_callback_query(cb_id, "Abgebrochen")

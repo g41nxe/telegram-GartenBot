@@ -1,5 +1,7 @@
 # Feature: Mehrfach-Ventil-Unterstützung und flexible Zeitpläne
 
+**Status:** ✅ Implementiert (2026-06-13) — 79/79 Tests grün
+
 ## Problemstellung (Problem Statement)
 
 Als Besitzer eines Gärtens mit mehreren Bewässerungsbereichen (z. B. Rasen, Hochbeet und Gewächshaus) kann ich aktuell nur ein einziges physisches Ventil steuern und überwachen. Zeitpläne und manuelle Bewässerungsbefehle sind starr auf das Standard-Ventil ausgelegt. Ich kann nicht flexibel entscheiden, welche Bewässerungszonen über welche Zeitpläne oder bei einer manuellen Bewässerung angesteuert werden sollen, und ich sehe im Status sowie im täglichen Bericht keine Details über den Zustand aller meiner Ventile.
