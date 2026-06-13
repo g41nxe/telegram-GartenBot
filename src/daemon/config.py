@@ -81,3 +81,10 @@ except ValueError:
     WEATHER_REFRESH_INTERVAL_SECONDS = 1800
 
 DAILY_REPORT_TIME = os.getenv("DAILY_REPORT_TIME", "08:00")
+
+# --- Inaktivitäts-Watchdog ---
+WATCHDOG_ENABLED = os.getenv("WATCHDOG_ENABLED", "true").lower() == "true"
+try:
+    WATCHDOG_VALVE_TIMEOUT_HOURS = float(os.getenv("WATCHDOG_VALVE_TIMEOUT_HOURS", "24"))
+except ValueError:
+    WATCHDOG_VALVE_TIMEOUT_HOURS = 24.0

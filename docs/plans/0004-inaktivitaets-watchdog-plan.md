@@ -5,10 +5,11 @@ Dieser Plan beschreibt die zu ändernden Dateien für die Implementierung der Ve
 ## Design-Entscheidungen (Zusammenfassung)
 
 - **Scope:** Nur Ventile. Der Füllstandssensor wird in Feature 0003 nachgezogen.
-- **Neues Modul `adapters/watchdog.py`:** Enthält die gesamte Watchdog-Logik. Der Scheduler ruft `run_watchdog_check()` stündlich in einem eigenen Thread auf (analog zur Wetter-Hintergrundabfrage). Die Funktion `initialize(event_bus)` wird einmalig in `main.py` aufgerufen.
+- **Neues Modul `adapters/watchdog.py`:** Enthält die gesamte Watchdog-Logik. Der Scheduler ruft `run_watchdog_check()` stündlich in einem eigenen Thread auf (analog zur Wetter-Hintergrundabfrage). Die Funktion `initialize()` (kein Argument) wird einmalig in `main.py` aufgerufen; das Modul importiert `_global_bus` auf Modulebene wie alle anderen Adapter.
 - **Sofortige Entwarnung:** `watchdog.py` abonniert `ValveStatusReported` dauerhaft auf Modulebene. Sendet ein Ventil wieder ein Signal, wird `InactivityAlertResolved` sofort publiziert — nicht erst beim nächsten stündlichen Check.
 - **`last_update IS NULL` → überspringen:** Frisch gekoppelte Ventile ohne erstes Signal lösen keinen Alert aus.
-- **Tagesbericht:** Aktive Watchdog-Flags erscheinen als Warnzeile im Tagesbericht.
+- **Tagesbericht:** Der bestehende Verbindungsverlust-Check in `_valve_warnings()` wird entfernt. Stattdessen liest der Tagesbericht den Watchdog-Flag (`watchdog_alert_active_valve_<id>`) aus `system_metadata` — der Flag ist die einzige Quelle für Inaktivitätswarnungen.
+- **Tests:** `tests/adapters/test_watchdog.py` (Adapter-Logik), Watchdog-UI-Handler in `tests/ui/test_telegram_ui.py` ergänzen.
 - **Referenz:** ADR-0018, ADR-0016, ADR-0014.
 
 ---
@@ -56,7 +57,7 @@ Platzierung in `core/` folgt dem Muster von `core/valve_events.py`, damit `teleg
 
 Zwei öffentliche Funktionen:
 
-**`initialize(event_bus)`** — beim Daemon-Start einmalig aufrufen:
+**`initialize()`** — beim Daemon-Start einmalig aufrufen (kein Argument — `_global_bus` auf Modulebene):
 - Prüft `config.WATCHDOG_ENABLED`; bei `false` sofortiger Rücksprung ohne Abonnements.
 - Registriert dauerhaften Modulebene-Listener auf `ValveStatusReported` (ADR-0016: kein `unsubscribe()` nötig).
 - Der Listener prüft für das eingetroffene Ventil, ob `watchdog_alert_active_valve_<id> == "1"` in `system_metadata` gesetzt ist. Falls ja: Flag auf `"0"` setzen, `InactivityAlertResolved` publizieren.
@@ -104,7 +105,7 @@ if current_timestamp - last_watchdog_check >= 3600:
 Nach MQTT-Client- und EventBus-Initialisierung:
 ```python
 from .adapters import watchdog
-watchdog.initialize(_global_bus)
+watchdog.initialize()
 ```
 
 ---
@@ -162,7 +163,7 @@ Die Spalte `device_name` in `device_status_log` ist bereits durch Feature 0006 v
 
 ## Verification Plan
 
-### Automatisierte Tests (`tests/test_watchdog.py`)
+### Automatisierte Tests (`tests/adapters/test_watchdog.py` + Ergänzung in `tests/ui/test_telegram_ui.py`)
 
 | Szenario | Erwartung |
 |---|---|

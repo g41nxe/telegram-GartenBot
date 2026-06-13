@@ -351,6 +351,10 @@ class TestGardenIrrigation(unittest.TestCase):
         with patch("daemon.adapters.weather.get_weather_data") as mock_weather_data:
             mock_weather_data.return_value = (1.5, 2.0, 21.0, 3, 12.5, 25.0, 80)  # Bedeckt
 
+            # Watchdog-Flags zurücksetzen (könnten von vorherigen Testläufen gesetzt worden sein)
+            for v in database.get_all_valves():
+                database.set_metadata(f"watchdog_alert_active_valve_{v['id']}", "0")
+
             # 1. Fall: Normaler Zustand (Keine Warnungen) — Ventil-Status via DB setzen
             database.update_valve_status("garden_valve", 90, 140, datetime.now().isoformat(), "normal")
 
@@ -361,18 +365,21 @@ class TestGardenIrrigation(unittest.TestCase):
             self.assertIn("Regenwahrscheinlichkeit: 80%", report)
             self.assertNotIn("System-Warnungen", report)
 
-            # 2. Fall: Batterie schwach, Offline und abnormaler Zustand (Warnungen)
+            # 2. Fall: Batterie schwach, Watchdog-Flag gesetzt, abnormaler Zustand (Warnungen)
             old_time = (datetime.now() - timedelta(hours=25)).isoformat()
             database.update_valve_status("garden_valve", 15, 140, old_time, "water_shortage")
+            valve = database.get_valve_by_mqtt_name("garden_valve")
+            database.set_metadata(f"watchdog_alert_active_valve_{valve['id']}", "1")
 
             report_warn = scheduler.generate_daily_report("2026-06-07")
             self.assertIn("System-Warnungen", report_warn)
             self.assertIn("Niedriger Batteriestand", report_warn)
-            self.assertIn("Verbindung verloren", report_warn)
+            self.assertIn("Watchdog-Warnung", report_warn)
             self.assertIn("Ventil-Anomalie erkannt", report_warn)
 
-            # DB-Status für Folgetests zurücksetzen
+            # DB-Status und Watchdog-Flag für Folgetests zurücksetzen
             database.update_valve_status("garden_valve", 95, 140, datetime.now().isoformat(), "normal")
+            database.set_metadata(f"watchdog_alert_active_valve_{valve['id']}", "0")
 
             # 3. Fall: Broker disconnected, Mittelweg-Dienst offline
             mqtt_client.HAS_PAHO = True

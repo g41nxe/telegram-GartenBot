@@ -494,5 +494,36 @@ class TestReportChartIntegration(unittest.TestCase):
         self.assertIn("Tagesbericht", all_texts)
 
 
+class TestWatchdogUiHandlers(unittest.TestCase):
+    """Testet die telegram_ui-Handler für InactivityAlertTriggered / InactivityAlertResolved."""
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_alert_message_contains_device_name(self, mock_client):
+        from daemon.ui.telegram_ui import _on_inactivity_alert
+        from daemon.core.watchdog_events import InactivityAlertTriggered
+        event = InactivityAlertTriggered(device_name="Rasen", valve_id=1, hours_silent=26.5, timeout_hours=24)
+        _on_inactivity_alert(event)
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("Rasen", msg)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_alert_message_contains_hours(self, mock_client):
+        from daemon.ui.telegram_ui import _on_inactivity_alert
+        from daemon.core.watchdog_events import InactivityAlertTriggered
+        event = InactivityAlertTriggered(device_name="Terrasse", valve_id=2, hours_silent=30.0, timeout_hours=24)
+        _on_inactivity_alert(event)
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("30.0", msg)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_resolved_message_contains_device_name(self, mock_client):
+        from daemon.ui.telegram_ui import _on_inactivity_resolved
+        from daemon.core.watchdog_events import InactivityAlertResolved
+        event = InactivityAlertResolved(device_name="Hochbeet", valve_id=3)
+        _on_inactivity_resolved(event)
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("Hochbeet", msg)
+
+
 if __name__ == "__main__":
     unittest.main()

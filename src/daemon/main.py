@@ -45,11 +45,15 @@ def main():
     # Initialisiere den DB-Logger Adapter zur Event-Archivierung
     db_adapter = DatabaseLoggerAdapter(mqtt_client._global_bus)
         
-    # 4. Zeitpläne/Scheduler starten
+    # 4. Inaktivitäts-Watchdog initialisieren
+    from .adapters import watchdog
+    watchdog.initialize()
+
+    # 5. Zeitpläne/Scheduler starten
     logger.info("Initialisiere Bewässerungs-Scheduler...")
     scheduler.start_scheduler()
     
-    # 5. Telegram-Bot starten
+    # 6. Telegram-Bot starten
     logger.info("Initialisiere Telegram-Bot...")
     if not config.TELEGRAM_BOT_TOKEN:
         logger.warning(
