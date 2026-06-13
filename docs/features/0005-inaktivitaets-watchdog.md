@@ -63,12 +63,23 @@ Wir implementieren einen **Inaktivitäts-Watchdog** im Bewässerungs-Daemon als 
 
 ## Test-Entscheidungen (Testing Decisions)
 
+- **TDD-Reihenfolge:** Tests werden **vor** der Implementierung geschrieben (failing test first). Nicht im Nachhinein ergänzen — Lektion aus Feature 0007.
+
 - **Unit-Tests für die Timeout-Erkennung:**
   - Testen von `run_watchdog_check()` mit kontrollierten Zeitstempeln in der Testdatenbank.
   - Validierung: korrektes Event bei Überschreitung, kein doppeltes Event bei gesetztem Flag, Überspringen bei `last_update IS NULL`.
 - **Integrationstests für Entwarnung:**
   - Simulieren einer Ventil-Funkstille (Flag setzen), dann `ValveStatusReported`-Event publizieren und prüfen, ob `InactivityAlertResolved` gefeuert und das Flag gelöscht wird.
 - **Test-Nahtstelle:** Alle Tests klinken sich am Ereignis-Kanal ein und verifizieren publizierte Events.
+  - **EventBus-Cleanup-Pflicht:** Jeder Test, der `_global_bus.subscribe()` aufruft, muss den Listener in einem `finally`-Block mit `_global_bus.unsubscribe()` wieder entfernen — sonst leckt der Listener in andere Tests. Muster aus `tests/adapters/test_weather.py`:
+    ```python
+    captured = []
+    _global_bus.subscribe(InactivityAlertTriggered, captured.append)
+    try:
+        watchdog.run_watchdog_check()
+    finally:
+        _global_bus.unsubscribe(InactivityAlertTriggered, captured.append)
+    ```
 
 ## Nicht im Leistungsumfang (Out of Scope)
 
