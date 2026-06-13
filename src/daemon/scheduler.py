@@ -134,7 +134,9 @@ def _scheduler_loop():
     if scheduler_running:
         check_startup_safety()
         
-    last_weather_update = 0.0
+    # Delay the first background weather fetch by 60 s so the Pi Zero W's
+    # WiFi stack has time to resolve DNS before we hit the network.
+    last_weather_update = time.time() - config.WEATHER_REFRESH_INTERVAL_SECONDS + 60
     
     while scheduler_running:
         try:
