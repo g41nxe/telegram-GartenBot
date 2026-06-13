@@ -203,5 +203,70 @@ class TestDatabaseMultiValveSchema(unittest.TestCase):
         self.assertEqual(target.get("execution_mode", "sequential"), "sequential")
 
 
+class TestWeatherHistoryFeature0007(unittest.TestCase):
+    """Testet die neuen Spalten und Funktionen aus Feature 0007 (verbesserte Wetterdaten)."""
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._db_path_patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._db_path_patcher.start()
+        db.init_db()
+
+    def tearDown(self):
+        self._db_path_patcher.stop()
+        import gc
+        gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def test_weather_history_has_current_precipitation_mm_column(self):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(weather_history)")
+        columns = {row[1] for row in cursor.fetchall()}
+        conn.close()
+        self.assertIn("current_precipitation_mm", columns)
+
+    def test_weather_history_has_hourly_forecast_json_column(self):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(weather_history)")
+        columns = {row[1] for row in cursor.fetchall()}
+        conn.close()
+        self.assertIn("hourly_forecast_json", columns)
+
+    def test_log_weather_stores_current_precipitation(self):
+        db.log_weather(0.0, 1.2, current_temp=20.0, weather_code=61,
+                       current_precipitation_mm=0.5)
+        row = db.get_last_weather()
+        self.assertIsNotNone(row)
+        self.assertAlmostEqual(row["current_precipitation_mm"], 0.5)
+
+    def test_log_weather_stores_hourly_forecast_json(self):
+        import json
+        fc = {"times": ["2026-06-13T14:00"], "temp": [22.0],
+              "precip_mm": [0.0], "precip_prob": [5], "wmo": [0]}
+        db.log_weather(0.0, 0.0, hourly_forecast_json=json.dumps(fc))
+        row = db.get_last_weather()
+        self.assertIsNotNone(row)
+        parsed = json.loads(row["hourly_forecast_json"])
+        self.assertEqual(parsed["times"], ["2026-06-13T14:00"])
+        self.assertEqual(parsed["temp"], [22.0])
+
+    def test_log_weather_empty_hourly_json_stored_as_null(self):
+        db.log_weather(0.0, 0.0, hourly_forecast_json="")
+        row = db.get_last_weather()
+        self.assertIsNone(row["hourly_forecast_json"])
+
+    def test_get_last_weather_returns_new_fields_as_defaults_when_null(self):
+        db.log_weather(0.5, 1.0, current_temp=18.0, weather_code=3)
+        row = db.get_last_weather()
+        # current_precipitation_mm has DEFAULT 0.0 — must be present
+        self.assertIn("current_precipitation_mm", row)
+        self.assertIn("hourly_forecast_json", row)
+
+
 if __name__ == "__main__":
     unittest.main()

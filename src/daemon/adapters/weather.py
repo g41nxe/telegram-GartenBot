@@ -23,8 +23,9 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
     # Open-Meteo-Abfrage: past_days=1 (letzte 24h), forecast_days=2 (kommende 24h) sowie aktuelle & tägliche/stündliche Vorhersage
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
-        f"latitude={lat}&longitude={lon}&current=temperature_2m,weather_code"
-        f"&hourly=precipitation,precipitation_probability&timezone=auto&past_days=1&forecast_days=2"
+        f"latitude={lat}&longitude={lon}&current=temperature_2m,precipitation,weather_code"
+        f"&hourly=temperature_2m,precipitation,precipitation_probability,weather_code"
+        f"&timezone=auto&past_days=1&forecast_days=2"
         f"&daily=temperature_2m_max,temperature_2m_min"
     )
     
@@ -37,6 +38,7 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         current = data.get("current", {})
         current_temp = float(current.get("temperature_2m", 0.0))
         weather_code = int(current.get("weather_code", 0))
+        current_precipitation = float(current.get("precipitation", 0.0))
         
         # Tägliche Vorhersage für heute extrahieren
         daily = data.get("daily", {})
@@ -62,6 +64,8 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         times = hourly.get("time", [])
         precip = hourly.get("precipitation", [])
         precip_probs = hourly.get("precipitation_probability", [])
+        hourly_temps = hourly.get("temperature_2m", [])
+        hourly_wmo = hourly.get("weather_code", [])
         
         if not times or not precip:
             logger.warning("Keine stündlichen Niederschlagsdaten in der API-Antwort gefunden.")
@@ -101,21 +105,37 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         else:
             rain_prob = 0
             
+        # Stündliche Vorhersage für die nächsten 24 Stunden ab aktueller Stunde aufbauen
+        forecast_end = min(current_idx + 24, len(times))
+        hourly_forecast_json = json.dumps({
+            "times": times[current_idx:forecast_end],
+            "temp": hourly_temps[current_idx:forecast_end],
+            "precip_mm": precip[current_idx:forecast_end],
+            "precip_prob": precip_probs[current_idx:forecast_end],
+            "wmo": hourly_wmo[current_idx:forecast_end],
+        })
+
         # Werte runden
         rain_last_24h = round(rain_last_24h, 2)
         rain_next_24h = round(rain_next_24h, 2)
         temp_min = round(temp_min, 1)
         temp_max = round(temp_max, 1)
-        
+
         logger.info(
             f"Wetterdaten geladen - Temp: {current_temp}°C (Min: {temp_min}°C/Max: {temp_max}°C), "
             f"Code: {weather_code}, Regenwahrscheinlichkeit: {rain_prob}%, "
-            f"Regen 24h: {rain_last_24h}mm, Vorhersage: {rain_next_24h}mm"
+            f"Regen 24h: {rain_last_24h}mm, Vorhersage: {rain_next_24h}mm, "
+            f"Aktuelle Niederschlag: {current_precipitation}mm"
         )
-        
+
         # Event publizieren (Datenbank-Adapter und andere Abonnenten kümmern sich um Speicherung)
-        _global_bus.publish(WeatherDataFetched(rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_prob))
-        
+        _global_bus.publish(WeatherDataFetched(
+            rain_last_24h, rain_next_24h, current_temp, weather_code,
+            temp_min, temp_max, rain_prob,
+            current_precipitation=current_precipitation,
+            hourly_forecast_json=hourly_forecast_json,
+        ))
+
         return rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_prob
         
     except urllib.error.URLError as e:

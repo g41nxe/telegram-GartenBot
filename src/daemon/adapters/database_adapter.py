@@ -56,7 +56,9 @@ class DatabaseLoggerAdapter:
             event.weather_code,
             event.temp_min,
             event.temp_max,
-            event.rain_prob
+            event.rain_prob,
+            current_precipitation_mm=event.current_precipitation,
+            hourly_forecast_json=event.hourly_forecast_json,
         )
 
 

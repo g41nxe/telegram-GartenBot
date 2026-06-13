@@ -43,6 +43,57 @@ def send_message(chat_id: int, text: str, reply_markup: dict = None) -> bool:
         logger.error(f"Fehler beim Senden der Telegram-Nachricht an {chat_id}: {e}")
         return False
 
+def send_photo(chat_id: int, image_bytes: bytes, caption: str = None) -> bool:
+    """Sendet ein PNG-Bild per Multipart-Upload an einen Telegram-Chat."""
+    if not config.TELEGRAM_BOT_TOKEN:
+        logger.warning("Telegram Bot Token nicht konfiguriert. Foto wird nicht gesendet.")
+        return False
+
+    import email.mime.multipart
+    import email.mime.base
+    import email.encoders
+    import io
+
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendPhoto"
+
+    boundary = b"----TelegramBoundary"
+    body_parts = []
+
+    def add_field(name: str, value: str):
+        body_parts.append(
+            b"--" + boundary + b"\r\n"
+            b'Content-Disposition: form-data; name="' + name.encode() + b'"\r\n\r\n'
+            + value.encode("utf-8") + b"\r\n"
+        )
+
+    add_field("chat_id", str(chat_id))
+    if caption:
+        add_field("caption", caption)
+        add_field("parse_mode", "Markdown")
+
+    body_parts.append(
+        b"--" + boundary + b"\r\n"
+        b'Content-Disposition: form-data; name="photo"; filename="chart.png"\r\n'
+        b"Content-Type: image/png\r\n\r\n"
+        + image_bytes + b"\r\n"
+    )
+    body_parts.append(b"--" + boundary + b"--\r\n")
+
+    body = b"".join(body_parts)
+
+    try:
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary.decode()}"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as response:
+            return response.status == 200
+    except Exception as e:
+        logger.error(f"Fehler beim Senden des Fotos an {chat_id}: {e}")
+        return False
+
+
 def edit_message_text(chat_id: int, message_id: int, text: str, reply_markup: dict = None) -> bool:
     """Editiert den Text einer bestehenden Nachricht."""
     if not config.TELEGRAM_BOT_TOKEN:
