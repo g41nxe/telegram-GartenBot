@@ -6,10 +6,11 @@ Der Bot steuert das **Sonoff Hydro ONE**‑Ventil über **Zigbee 2 MQTT** un
 
 ### Hauptfunktionen
 - **🟢 First‑to‑Hit‑Limit** – Kombination aus Zeit‑ und Volumen‑Grenzwert, das Ventil schließt beim Erreichen des ersten Limits.
+- **📡 Mehrfach‑Ventil‑Support** – beliebig viele Ventile koppeln und benennen; Zeitpläne steuern sie sequentiell oder parallel.
 - **📅 Geführter Zeitplan‑Assistent** – interaktive Wizard‑Tastaturen zum Erstellen komplexer Bewässerungspläne.
 - **🌦️ Wetter‑Skip** – Open‑Meteo‑Daten prüfen Regen‑Vorhersage, bei Überschreitung des Schwellenwertes wird der Lauf übersprungen.
-- **🔌 Live‑Verbindungsanzeige** – Echtzeit‑Dashboard (`/status`) zeigt MQTT‑Broker‑Status, Ventil‑Heartbeat und letzten Guss‑Status.
-- **🔴 Sofort‑Stopp** (`/stop`) – Schließt das Ventil sofort und bricht alle aktiven Scheduler‑Threads ab.
+- **🔌 Live‑Verbindungsanzeige** – Echtzeit‑Dashboard (`/status`) zeigt MQTT‑Broker‑Status, Batterie und Signalstärke pro Ventil.
+- **🔴 Sofort‑Stopp** (`/stop`) – Schließt alle aktiven Ventile sofort und bricht alle Scheduler‑Threads ab.
 
 ### Warum dieser Bot?
 - **Intelligent & sicher** – schützt vor Über‑ und Unterbewässerung.

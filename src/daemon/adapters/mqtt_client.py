@@ -200,7 +200,8 @@ class PahoMqttAdapter(MqttClient):
                     linkquality = int(data.get("linkquality", valve_status["linkquality"]))
                     valve_abnormal_state = data.get("valve_abnormal_state", valve_status.get("valve_abnormal_state", "normal"))
 
-                self.event_bus.publish(ValveStatusReported(state, flow_rate, battery, linkquality, valve_abnormal_state))
+                mqtt_name = msg.topic.split("/")[-1]
+                self.event_bus.publish(ValveStatusReported(mqtt_name, state, flow_rate, battery, linkquality, valve_abnormal_state))
 
             elif msg.topic == "zigbee2mqtt/bridge/event":
                 if data.get("type") == "device_joined":
@@ -271,8 +272,9 @@ class SimulatedMqttAdapter(MqttClient):
                     valve_status["flow_rate"] = flow
                     valve_status["last_update"] = datetime.now().isoformat()
 
+                mqtt_name = topic.split("/")[1] if topic.count("/") >= 2 else "garden_valve"
                 self.event_bus.publish(ValveStatusReported(
-                    new_state, flow, valve_status["battery"], valve_status["linkquality"], valve_status["valve_abnormal_state"]
+                    mqtt_name, new_state, flow, valve_status["battery"], valve_status["linkquality"], valve_status["valve_abnormal_state"]
                 ))
                 logger.info(f"SimulatedMqttAdapter: Ventil-State geändert -> {new_state}")
 
@@ -319,7 +321,7 @@ class SimulatedMqttAdapter(MqttClient):
                     abnormal = valve_status["valve_abnormal_state"]
                 if state == "ON":
                     # Fire a status event every second; WateringController integrates flow
-                    self.event_bus.publish(ValveStatusReported("ON", 5.0, battery, lqi, abnormal))
+                    self.event_bus.publish(ValveStatusReported("garden_valve", "ON", 5.0, battery, lqi, abnormal))
                 time.sleep(1)
             except Exception:
                 pass

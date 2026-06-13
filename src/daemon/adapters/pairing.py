@@ -2,12 +2,11 @@ import json
 import logging
 import threading
 import time
-from . import mqtt_client
+from . import mqtt_client, database
 from .mqtt_client import _global_bus, DeviceJoinedEvent
 
 logger = logging.getLogger("garden_pairing")
 
-VALVE_NAME = "garden_valve"
 PAIRING_TIMEOUT = 90   # Sekunden bis Abbruch
 REMINDER_AT    = 45    # Sekunden bis Erinnerungsnachricht
 
@@ -18,12 +17,13 @@ def is_pairing_active() -> bool:
     """Gibt zurück, ob gerade eine Ventil-Kopplung läuft."""
     return _pairing_active
 
-def start_pairing(chat_id: int, notify_fn) -> bool:
+def start_pairing(chat_id: int, notify_fn, wish_name: str) -> bool:
     """
     Startet die Ventil-Kopplung in einem Hintergrund-Thread.
 
     :param chat_id:   Telegram-Chat-ID des Nutzers, der Fortschritt-Updates erhält.
     :param notify_fn: Callable(chat_id, text) zum Senden von Telegram-Nachrichten.
+    :param wish_name: Benutzerdefinierter Anzeigename des neuen Ventils (z. B. "Rasen").
     :returns:         True wenn der Thread gestartet wurde, False wenn bereits aktiv.
     """
     global _pairing_active
@@ -34,30 +34,27 @@ def start_pairing(chat_id: int, notify_fn) -> bool:
 
     t = threading.Thread(
         target=_pairing_worker,
-        args=(chat_id, notify_fn),
+        args=(chat_id, notify_fn, wish_name),
         daemon=True
     )
     t.start()
     return True
 
-def _pairing_worker(chat_id: int, notify_fn):
-    """Hintergrund-Thread: führt die vollständige Ventil-Kopplung über das einheitliche MqttClient-Seam durch."""
+def _pairing_worker(chat_id: int, notify_fn, wish_name: str):
+    """Hintergrund-Thread: führt die vollständige Ventil-Kopplung durch."""
     global _pairing_active
 
     found_event   = threading.Event()
     ieee_address  = [None]
 
-    # Event-Listener für Beigetretene Geräte
     def on_device_joined(event: DeviceJoinedEvent):
         ieee_address[0] = event.ieee_address
         found_event.set()
         logger.info(f"Ventil-Kopplung: Gerät beigetreten – {event.ieee_address}")
 
-    # Registriere den Listener auf dem Ereignis-Kanal
     _global_bus.subscribe(DeviceJoinedEvent, on_device_joined)
 
     try:
-        # Koppelmodus im Mittelweg-Dienst aktivieren über den Haupt-Client
         permit_join_payload = json.dumps({"time": PAIRING_TIMEOUT})
         mqtt_client.client_instance.publish(
             "zigbee2mqtt/bridge/request/permit_join",
@@ -65,7 +62,6 @@ def _pairing_worker(chat_id: int, notify_fn):
         )
         logger.info("Ventil-Kopplung: Koppelmodus aktiviert.")
 
-        # Auf Beitrittssignal warten (max. PAIRING_TIMEOUT Sekunden)
         reminded = False
         start    = time.time()
 
@@ -90,8 +86,6 @@ def _pairing_worker(chat_id: int, notify_fn):
 
             time.sleep(1)
 
-        # ── Timeout ───────────────────────────────────────────────────────────
-
         if not found_event.is_set():
             mqtt_client.client_instance.publish(
                 "zigbee2mqtt/bridge/request/permit_join",
@@ -107,13 +101,14 @@ def _pairing_worker(chat_id: int, notify_fn):
             )
             return
 
-        # ── Gerät umbenennen auf garden_valve ─────────────────────────────────
-
         ieee = ieee_address[0]
-        logger.info(f"Ventil-Kopplung: Benenne {ieee} → {VALVE_NAME}")
+        # mqtt_name aus den letzten 4 Stellen der IEEE-Adresse ableiten
+        mqtt_name = f"valve_{ieee[-4:]}"
+        logger.info(f"Ventil-Kopplung: Benenne {ieee} → {mqtt_name}")
+
         mqtt_client.client_instance.publish(
             "zigbee2mqtt/bridge/request/device/rename",
-            json.dumps({"from": ieee, "to": VALVE_NAME})
+            json.dumps({"from": ieee, "to": mqtt_name})
         )
         time.sleep(2)
 
@@ -124,11 +119,21 @@ def _pairing_worker(chat_id: int, notify_fn):
         )
         time.sleep(1)
 
+        # Ventil in der Datenbank registrieren
+        valve_id = database.add_valve(wish_name, mqtt_name)
+        if valve_id > 0:
+            logger.info(f"Ventil-Kopplung: '{wish_name}' ({mqtt_name}) in DB gespeichert (id={valve_id}).")
+        else:
+            logger.warning(f"Ventil-Kopplung: Konnte '{mqtt_name}' nicht in DB speichern (evtl. bereits vorhanden).")
+
+        # Topic beim Client abonnieren
+        mqtt_client.client_instance.subscribe(f"zigbee2mqtt/{mqtt_name}")
+
         logger.info("Ventil-Kopplung: Erfolgreich abgeschlossen.")
         notify_fn(
             chat_id,
             f"✅ *Ventil-Kopplung erfolgreich!*\n\n"
-            f"Das Ventil wurde erkannt und als `{VALVE_NAME}` registriert.\n"
+            f"Das Ventil **'{wish_name}'** wurde erkannt und als `{mqtt_name}` registriert.\n"
             f"Der Koppelmodus wurde automatisch deaktiviert.\n\n"
             f"Sende /status um den Verbindungsstatus zu prüfen."
         )

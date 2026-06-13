@@ -9,11 +9,12 @@ Die Steuerung erfolgt weltweit gesichert über einen whitelist-basierten **Teleg
 ## ✨ Hauptmerkmale
 
 *   **🟢 Kombinierter Guss (First-to-Hit Limit):** Ultimativer Überflutungsschutz. Jeder Bewässerungslauf (sowohl manuell als auch geplant) überwacht *parallel* ein **Zeitlimit** (Minuten) und ein **Volumenlimit** (Liter). Das Ventil schließt automatisch, sobald der *erste* Grenzwert erreicht wird (z. B. 50 Liter fließen ODER 15 Minuten verstreichen).
+*   **📡 Mehrfach-Ventil-Unterstützung:** Koppeln und benennen Sie beliebig viele Sonoff Hydro ONE Ventile über den Telegram-Bot (`🔧 Ventil koppeln`). Zeitpläne können mehrere Ventile **sequentiell** (nacheinander, druckschonend) oder **parallel** (gleichzeitig, jedes mit eigenem Grenzwert) steuern. Live-Status und Tagesbericht zeigen Batterie, Signalstärke und letztes Lebenszeichen pro Ventil separat an.
 *   **📅 Geführter Zeitplan-Assistent (Guided Wizard):** Erstellen Sie komplexe Zeitpläne Schritt-für-Schritt direkt im Telegram-Chat über intuitive Inline-Tastaturen (freie Namenseingabe, Stundenraster, 5-Minuten-Schritte, Kleingarten-Presets und Multi-Select-Wochentage).
 *   **🛢️ Füllstandsauswertung & Alarmierung (In Arbeit):** Der Daemon empfängt Messwerte des Füllstandssensors (Abstand in cm) per MQTT, berechnet den prozentualen Füllstand der Klärgrube und speichert ihn in SQLite. Bei erstmaliger Überschreitung eines Schwellenwerts (z. B. 80 %) erfolgt ein Sofort-Alarm via Telegram. Der Füllstand wird in den täglichen Statusbericht integriert.
-*   **🐕 Inaktivitäts-Watchdog (In Arbeit):** Proaktive Überwachung von batteriebetriebenen Geräten. Bleibt eine Füllstands-Meldung des Füllstandssensors (z. B. > 18 Stunden) oder ein Lebenszeichen des Sonoff Hydro ONE Ventils (z. B. > 24 Stunden) aus, warnt der Bot sofort vor einem Verbindungs- oder Batterieausfall.
+*   **🐕 Inaktivitäts-Watchdog (In Arbeit):** Proaktive Überwachung von batteriebetriebenen Geräten. Bleibt eine Füllstands-Meldung des Füllstandssensors (z. B. > 18 Stunden) oder ein Lebenszeichen eines Ventils (z. B. > 24 Stunden) aus, warnt der Bot sofort vor einem Verbindungs- oder Batterieausfall.
 *   **🌦️ Intelligenter Wetter-Skip (Offline-first):** Open-Meteo API-Anbindung prüft stündlich im Hintergrund den Regen (letzte 24h Historie + nächste 24h Vorhersage). Überschreitet die Summe Ihren Grenzwert (z. B. 3.0 mm), wird die geplante Bewässerung übersprungen und protokolliert. Durch lokale SQLite-Zwischenspeicherung funktioniert dies auch bei temporärem Internetausfall.
-*   **🔌 Live-Verbindungsanzeige:** Der Status-Bildschirm (`/status`) visualisiert in Echtzeit, ob die MQTT-Brokerverbindung steht (Erkennung von fehlenden USB-Dongles) und wann das physische Ventil das letzte Mal ein Lebenszeichen gesendet hat.
+*   **🔌 Live-Verbindungsanzeige:** Der Status-Bildschirm (`/status`) visualisiert in Echtzeit, ob die MQTT-Brokerverbindung steht und zeigt für jedes registrierte Ventil separat: Verbindungsstatus, Batteriestand und Signalqualität.
 *   **⚡ 100 % Abhängigkeitsfrei (Telegram & API):** Entwickelt komplett auf Basis der Python-Standardbibliotheken (`urllib.request`). Keine schweren Frameworks – perfekt optimiert für den ressourcenschwachen Single-Core-Prozessor des Pi Zero W.
 
 ---
@@ -42,30 +43,42 @@ graph TD
 ```text
 /
 ├── CONTEXT.md               # Projektspezifische Ubiquitous Language (Glossar)
+├── ARCHITECTURE.md          # Architekturregeln (Hexagonal Architecture, EventBus)
 ├── README.md                # Diese Dokumentation
 ├── deploy.ps1               # PowerShell Bereitstellungsskript für Windows
 ├── setup.sh                 # Vollautomatisches Pi-Installationsskript (alle Dienste)
-├── garden.db                # Lokale SQLite-Datenbank
-├── zeitsteuerung_guide.md   # Detaillierter Leitfaden zur Zeitsteuerung
+├── garden.db                # Lokale SQLite-Datenbank (Zeitpläne, Ventile, Verlauf)
 ├── docs/
-│   ├── adr/                 # Architekturentscheidungen (ADRs 0001 - 0013)
-│   ├── features/            # Feature-Spezifikationen (Zeitsteuerung, Bot-Menüs, Füllstand, Watchdog)
+│   ├── adr/                 # Architekturentscheidungen (ADRs 0001–0017)
+│   ├── features/            # Feature-Spezifikationen
 │   ├── hardware/            # Pläne zur Geräteverkabelung
-│   └── plans/               # Detaillierte Umsetzungspläne
-
+│   └── plans/               # Detaillierte Umsetzungspläne (completed/ für abgeschlossene)
 ├── src/
 │   └── daemon/
 │       ├── config.py        # Konfigurations- und .env-Loader
-│       ├── database.py      # Datenbank-Schnittstelle & automatische Migrationen
-│       ├── weather.py       # Wetterdatenabfrage & Skip-Logik
-│       ├── mqtt_client.py   # Asynchrone Zigbee2MQTT-Schnittstelle mit Durchfluss-Simulator
-│       ├── scheduler.py     # Guss-Zeitsteuerung & parallele Wächter-Threads
-│       ├── telegram_bot.py  # Dialogführung, Assistenten & Statusvisualisierung
-│       └── main.py          # Zentraler Programmeinstieg
+│       ├── scheduler.py     # Zeitsteuerung & sequentielle/parallele Ventil-Queue
+│       ├── main.py          # Zentraler Programmeinstieg & IoC-Verdrahtung
+│       ├── core/            # Domänenlogik (kein I/O)
+│       │   ├── event_bus.py             # Thread-sicherer synchroner Ereignis-Kanal
+│       │   ├── watering_controller.py   # Guss-Steuerung mit Multi-Ventil-Support
+│       │   └── scheduler_events.py      # Domänen-Ereignistypen
+│       ├── adapters/        # Äußere Grenze — kein Cross-Adapter-Import
+│       │   ├── database.py              # SQLite CRUD (Zeitpläne, Ventile, Verlauf)
+│       │   ├── database_adapter.py      # Domänen-Events → Datenbank-Archivierung
+│       │   ├── mqtt_client.py           # MQTT-Schnittstelle + Simulations-Adapter
+│       │   ├── weather.py               # Open-Meteo HTTP-Adapter & Skip-Logik
+│       │   ├── daily_report.py          # Täglicher Statusbericht (pro Ventil)
+│       │   └── pairing.py               # Ventil-Kopplung (Zigbee-Join + DB-Registrierung)
+│       └── ui/              # Benutzeroberfläche (Telegram)
+│           ├── telegram_bot.py          # Bot-Hauptschleife & Event-Dispatcher
+│           ├── telegram_client.py       # Raw HTTP Telegram API (nur Stdlib)
+│           └── telegram_ui.py           # Bot-Handler, Wizards & Benachrichtigungen
 ├── vendor/
 │   └── zigbee2mqtt/         # Lokale, modifizierte Zigbee2MQTT-Quellen (Mittelweg-Dienst)
 └── tests/
-    └── test_irrigation.py   # Unit- & Integrationstests (Offline-Simulationsmodus)
+    ├── test_irrigation.py   # Integrationstests (Offline-Simulationsmodus)
+    ├── core/                # Unit-Tests für Domänen-Kern
+    └── adapters/            # Unit-Tests für Adapter (Datenbank, MQTT, Pairing)
 ```
 
 ---
@@ -134,7 +147,7 @@ Das Skript richtet **alle drei Systemdienste** vollautomatisch ein:
 
 Die Startreihenfolge beim Booten ist: **Mosquitto → Zigbee2MQTT → Bewässerungs-Daemon**
 
-> **Während des Setups:** Das Skript fordert dich auf, den **Reset-Knopf am Sonoff Hydro ONE 5 Sekunden** zu halten. Das Ventil wird danach automatisch erkannt, auf den Namen `garden_valve` konfiguriert und die Kopplung abgeschlossen.
+> **Während des Setups:** Das Skript richtet das System ein, aber das erste Ventil wird erst über den Telegram-Bot gekoppelt. Drücke nach dem Start des Daemons **`🔧 Ventil koppeln`** im Bot, vergib einen Wunschnamen (z. B. „Garten"), halte dann den **Reset-Knopf am Sonoff Hydro ONE 5 Sekunden**. Das Ventil wird automatisch erkannt, erhält eine eindeutige System-ID und wird in der Datenbank registriert.
 
 ### 3. Ergebnis prüfen
 ```bash
@@ -148,11 +161,11 @@ Oder einfach den Telegram-Bot öffnen und `/status` senden.
 
 Der Bot bietet ein permanentes Tastenmenü am unteren Bildschirmrand:
 
-*   **📊 Status anzeigen (`/status`):** Liefert ein detailliertes Dashboard mit MQTT-Brokerstatus, Ventil-Online-Zustand, Füllstand, Wetterkonditionen (inkl. Temperatur & Datenstand) und dem Verlauf der letzten Zyklen.
-*   **🛢️ Füllstand Grube (`/fuellstand`):** Zeigt den aktuellen Pegel der Klärgrube als visuellen Ladebalken, den 24-Stunden-Trend, das Datum der letzten Aktualisierung sowie die Batteriespannung des Füllstandssensors.
+*   **📊 Status anzeigen (`/status`):** Liefert ein detailliertes Dashboard mit MQTT-Brokerstatus, dem Zustand aller registrierten Ventile (Verbindung, Batterie, Signalstärke), aktuellen Wetterdaten und dem Verlauf der letzten Zyklen.
 *   **📅 Zeitsteuerung (`/zeitplan`):** Listet alle aktiven Zeitpläne auf und bietet die Schaltfläche **`➕ Neuer Zeitplan`**, um den geführten Assistenten zu starten.
 *   **🟢 Bewässern starten:** Startet den zweistufigen manuellen Guss-Assistenten zur bequemen Festlegung von Zeitlimit (Minuten) und Volumenlimit (Liter).
-*   **🔴 Sofort Stopp (`/stop`):** Schließt das Ventil unverzüglich und bricht alle aktiven Scheduler- und Volumenwächter-Threads ab.
+*   **🔴 Sofort Stopp (`/stop`):** Schließt alle aktiven Ventile unverzüglich und bricht alle Scheduler-Threads ab.
+*   **🔧 Ventil koppeln (`/setup`):** Immer sichtbar — startet den Kopplungs-Assistenten. Der Bot fragt zunächst nach einem **Wunschnamen** (z. B. „Terrasse"), dann wird der Reset-Knopf am Sonoff Hydro ONE gedrückt. Das Ventil erhält automatisch eine eindeutige System-ID (`valve_<ieee_address>`) und wird in der Datenbank registriert. Mehrere Ventile können so nacheinander hinzugefügt werden.
 
 ---
 
@@ -173,6 +186,6 @@ Sie können das gesamte System lokal (z. B. unter Windows) testen, ohne dass ein
 
 **Ausführen der Testsuite:**
 ```bash
-python -m unittest tests/test_irrigation.py
+python -m unittest discover tests
 ```
-*(Die Tests decken Datenbank-CRUD, Migrationslogik, Wetter-Skips, Simulator-Status und die First-to-Hit-Abschaltung ab).*
+*(Die Tests decken Datenbank-Schema und CRUD, Multi-Ventil-Kopplung, Zeitsteuerung (sequentiell/parallel), Wetter-Skips, Simulator-Status und die First-to-Hit-Abschaltung ab — vollständig offline, ohne MQTT-Broker oder Telegram-Verbindung).*

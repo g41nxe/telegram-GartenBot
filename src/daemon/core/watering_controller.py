@@ -41,42 +41,47 @@ class WateringCycleStopped(Event):
 
 class WateringController:
     """Die softwareseitige Kernkomponente des Daemons zur Steuerung des Kombinierten Gusses."""
+
     def __init__(self, event_bus: EventBus, publish_fn: Callable[[str, str], bool]):
         self.event_bus = event_bus
         self.publish_fn = publish_fn
-        
+
         self._lock = threading.RLock()
-        self._active_cycle: Optional[Dict[str, Any]] = None
-        self._last_flow_update_time: Optional[datetime] = None
-        
-        # Registriere Event-Listener
+        # Indiziert nach mqtt_name; unterstützt mehrere parallele Zyklen
+        self._active_cycles: Dict[str, Dict[str, Any]] = {}
+        self._last_flow_update_time: Dict[str, Optional[datetime]] = {}
+
         self.event_bus.subscribe(ValveStatusReported, self._on_valve_status_reported)
 
-    def get_active_volume(self) -> float:
-        """Gibt die aktuell geflossene Wassermenge in Litern zurück."""
+    def get_active_volume(self, mqtt_name: str = None) -> float:
+        """Gibt die aktuell geflossene Wassermenge zurück. Ohne mqtt_name: erstes aktives Ventil."""
         with self._lock:
-            if self._active_cycle:
-                return round(self._active_cycle.get("current_volume", 0.0), 2)
-            return 0.0
+            cycle = self._active_cycles.get(mqtt_name) if mqtt_name else next(iter(self._active_cycles.values()), None)
+            return round(cycle.get("current_volume", 0.0), 2) if cycle else 0.0
 
-    def get_active_cycle(self) -> Optional[Dict[str, Any]]:
-        """Gibt Informationen zum aktuell laufenden Guss zurück."""
+    def get_active_cycle(self, mqtt_name: str = None) -> Optional[Dict[str, Any]]:
+        """Gibt Informationen zum laufenden Zyklus zurück. Ohne mqtt_name: erstes aktives Ventil."""
         with self._lock:
-            if self._active_cycle:
-                remaining = max(0, int((self._active_cycle["end_time"] - datetime.now()).total_seconds()))
+            cycle = self._active_cycles.get(mqtt_name) if mqtt_name else next(iter(self._active_cycles.values()), None)
+            if cycle:
+                remaining = max(0, int((cycle["end_time"] - datetime.now()).total_seconds()))
                 return {
-                    "source": self._active_cycle["source"],
-                    "duration": self._active_cycle["duration"],
-                    "target_volume": self._active_cycle["target_volume"],
-                    "start_time": self._active_cycle["start_time"].isoformat(),
-                    "end_time": self._active_cycle["end_time"].isoformat(),
-                    "current_volume": round(self._active_cycle.get("current_volume", 0.0), 2),
+                    "source": cycle["source"],
+                    "duration": cycle["duration"],
+                    "target_volume": cycle["target_volume"],
+                    "start_time": cycle["start_time"].isoformat(),
+                    "end_time": cycle["end_time"].isoformat(),
+                    "current_volume": round(cycle.get("current_volume", 0.0), 2),
                     "remaining_seconds": remaining
                 }
             return None
 
-    def start_watering(self, duration_minutes: int, target_volume_liters: int, source: str) -> Tuple[bool, str]:
-        """Startet eine bewachte Guss-Steuerung (Kombinierter Guss) über eine Threading-Verriegelung."""
+    def start_watering(self, duration_minutes: int, target_volume_liters: int, source: str,
+                       mqtt_name: str = "garden_valve", valve_topic: str = None) -> Tuple[bool, str]:
+        """Startet einen bewachten Guss für ein bestimmtes Ventil."""
+        if valve_topic is None:
+            valve_topic = f"zigbee2mqtt/{mqtt_name}"
+
         if duration_minutes <= 0:
             return False, "Ungültiges Zeitlimit."
         if duration_minutes > config.SAFETY_TIMEOUT_MINUTES:
@@ -85,155 +90,133 @@ class WateringController:
             return False, "Ungültiges Volumenlimit."
 
         with self._lock:
-            if self._active_cycle is not None:
+            if mqtt_name in self._active_cycles:
                 return False, "Es läuft bereits eine Bewässerung."
 
-            # Öffne das Ventil über den Mqtt-Infrastruktur-Adapter
-            set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-            if not self.publish_fn(set_topic, '{"state": "ON"}'):
+            if not self.publish_fn(f"{valve_topic}/set", '{"state": "ON"}'):
                 return False, "Fehler beim Ansteuern des Ventils über MQTT."
 
-            # Software-Timer initialisieren
             duration_seconds = duration_minutes * 60
-            timer = threading.Timer(duration_seconds, self._time_limit_callback)
-            
+            timer = threading.Timer(duration_seconds, self._time_limit_callback, args=(mqtt_name, valve_topic))
+
             start_time = datetime.now()
-            end_time = start_time + timedelta(minutes=duration_minutes)
-            
-            self._last_flow_update_time = start_time
-            
-            self._active_cycle = {
+            self._last_flow_update_time[mqtt_name] = start_time
+            self._active_cycles[mqtt_name] = {
                 "start_time": start_time,
-                "end_time": end_time,
+                "end_time": start_time + timedelta(minutes=duration_minutes),
                 "duration": duration_minutes,
                 "target_volume": target_volume_liters,
                 "current_volume": 0.0,
                 "source": source,
-                "timer": timer
+                "timer": timer,
+                "valve_topic": valve_topic,
             }
-            
-            # Starten des Zeitlimits
             timer.start()
 
-        # Feuere Domänen-Event
         self.event_bus.publish(WateringCycleStarted(duration_minutes, target_volume_liters, source))
-        logger.info(f"Guss-Steuerung: Guss gestartet ({duration_minutes} Min / {target_volume_liters}l, Quelle: {source}).")
+        logger.info(f"Guss-Steuerung: Guss gestartet für '{mqtt_name}' ({duration_minutes} Min / {target_volume_liters}l, Quelle: {source}).")
         return True, "Bewässerung gestartet."
 
-    def stop_watering(self) -> Tuple[bool, str]:
-        """Stoppt die aktive Bewässerung vorzeitig."""
+    def stop_watering(self, mqtt_name: str = None) -> Tuple[bool, str]:
+        """Stoppt einen oder alle aktiven Zyklen. Ohne mqtt_name: alle stoppen."""
         with self._lock:
-            if self._active_cycle is None:
-                # Physisches Schließen zur Sicherheit auslösen
-                set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-                self.publish_fn(set_topic, '{"state": "OFF"}')
+            targets = [mqtt_name] if (mqtt_name and mqtt_name in self._active_cycles) else list(self._active_cycles.keys())
+
+            if not targets:
+                # Fallback: Standard-Ventil physisch schließen
+                self.publish_fn(f"{config.MQTT_VALVE_TOPIC}/set", '{"state": "OFF"}')
                 return False, "Kein aktiver Bewässerungszyklus gefunden."
 
-            # Wächter-Timer abbrechen
-            self._active_cycle["timer"].cancel()
-            
-            # Physisches Ventil schließen
-            set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-            self.publish_fn(set_topic, '{"state": "OFF"}')
-            
-            duration_run = max(1, int((datetime.now() - self._active_cycle["start_time"]).total_seconds() / 60))
-            vol_run = round(self._active_cycle.get("current_volume", 0.0), 2)
-            source = self._active_cycle["source"]
-            
-            self._active_cycle = None
-            self._last_flow_update_time = None
+            stopped = []
+            for name in targets:
+                cycle = self._active_cycles.pop(name)
+                cycle["timer"].cancel()
+                valve_topic = cycle.get("valve_topic", f"zigbee2mqtt/{name}")
+                self.publish_fn(f"{valve_topic}/set", '{"state": "OFF"}')
+                duration_run = max(1, int((datetime.now() - cycle["start_time"]).total_seconds() / 60))
+                vol_run = round(cycle.get("current_volume", 0.0), 2)
+                source = cycle["source"]
+                self._last_flow_update_time.pop(name, None)
+                self.event_bus.publish(WateringCycleStopped(
+                    duration_run, vol_run, source, f"Manuell vorzeitig gestoppt bei {vol_run} Litern."
+                ))
+                logger.info(f"Guss-Steuerung: '{name}' gestoppt bei {vol_run}l.")
+                stopped.append(name)
 
-        self.event_bus.publish(WateringCycleStopped(
-            duration_run, vol_run, source, f"Manuell vorzeitig gestoppt bei {vol_run} Litern."
-        ))
-        logger.info(f"Guss-Steuerung: Guss vorzeitig gestoppt bei {vol_run}l.")
-        return True, "Bewässerung gestoppt."
+        return True, f"Bewässerung gestoppt ({', '.join(stopped)})."
 
-    def _integrate_flow(self, flow_rate: float, elapsed_seconds: float):
-        """Rechnet den Literzuwachs basierend auf der gemeldeten Durchflussrate hoch."""
+    def _integrate_flow(self, flow_rate: float, elapsed_seconds: float, mqtt_name: str = "garden_valve"):
+        """Integriert den Durchfluss für ein bestimmtes Ventil."""
         with self._lock:
-            if self._active_cycle is None:
+            if mqtt_name not in self._active_cycles:
                 return
 
-            # Zeit-Gap-Capping verhindert massive Überschätzung bei langen Pausen
+            cycle = self._active_cycles[mqtt_name]
             calculation_seconds = min(elapsed_seconds, float(config.FLOW_TIME_GAP_CAP_SECONDS))
             added_liters = flow_rate * (calculation_seconds / 60.0)
-            
-            self._active_cycle["current_volume"] = self._active_cycle.get("current_volume", 0.0) + added_liters
-            current_volume = round(self._active_cycle["current_volume"], 2)
-            target_volume = self._active_cycle["target_volume"]
-            
-            logger.debug(f"Guss-Steuerung: +{added_liters:.3f}l (Gesamt: {current_volume:.2f}l)")
+            cycle["current_volume"] = cycle.get("current_volume", 0.0) + added_liters
+            current_volume = round(cycle["current_volume"], 2)
+            target_volume = cycle["target_volume"]
 
-            # Prüfe Volumenlimit
+            logger.debug(f"Guss-Steuerung [{mqtt_name}]: +{added_liters:.3f}l (Gesamt: {current_volume:.2f}l)")
+
             if target_volume > 0 and current_volume >= target_volume:
-                logger.info(f"Guss-Steuerung: Volumenlimit von {target_volume}l erreicht ({current_volume}l). Schließe Ventil...")
-                
-                # Timer abbrechen
-                self._active_cycle["timer"].cancel()
-                
-                # Schließe Ventil
-                set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-                self.publish_fn(set_topic, '{"state": "OFF"}')
-                
-                duration_run = max(1, int((datetime.now() - self._active_cycle["start_time"]).total_seconds() / 60))
-                source = self._active_cycle["source"]
-                self._active_cycle = None
-                self._last_flow_update_time = None
-                
-                # Feuere Event
+                logger.info(f"Guss-Steuerung [{mqtt_name}]: Volumenlimit von {target_volume}l erreicht. Schließe Ventil...")
+                cycle["timer"].cancel()
+                valve_topic = cycle.get("valve_topic", f"zigbee2mqtt/{mqtt_name}")
+                self.publish_fn(f"{valve_topic}/set", '{"state": "OFF"}')
+                duration_run = max(1, int((datetime.now() - cycle["start_time"]).total_seconds() / 60))
+                source = cycle["source"]
+                del self._active_cycles[mqtt_name]
+                self._last_flow_update_time.pop(mqtt_name, None)
                 self.event_bus.publish(WateringCycleCompleted(
-                    duration_run, current_volume, source, f"Volumenlimit von {target_volume}l erreicht in {duration_run} Min."
+                    duration_run, current_volume, source,
+                    f"Volumenlimit von {target_volume}l erreicht in {duration_run} Min."
                 ))
 
     def _on_valve_status_reported(self, event: ValveStatusReported):
-        """Callback beim Empfang eines neuen Ventil-Zustands."""
+        """Callback beim Empfang eines neuen Ventil-Zustands — filtert nach mqtt_name."""
+        mqtt_name = event.mqtt_name
         now = datetime.now()
-        
-        is_running = False
-        with self._lock:
-            if self._active_cycle is not None:
-                is_running = True
 
-        if is_running and event.state == "ON" and self._last_flow_update_time is not None:
-            elapsed = (now - self._last_flow_update_time).total_seconds()
+        with self._lock:
+            if mqtt_name not in self._active_cycles:
+                return
+            last_update = self._last_flow_update_time.get(mqtt_name)
+
+        if event.state == "ON" and last_update is not None:
+            elapsed = (now - last_update).total_seconds()
             if elapsed > 0:
-                self._integrate_flow(event.flow_rate, elapsed)
+                self._integrate_flow(event.flow_rate, elapsed, mqtt_name)
 
         with self._lock:
-            if self._active_cycle is not None:
-                if event.state == "ON":
-                    self._last_flow_update_time = now
-                else:
-                    self._last_flow_update_time = None
+            if mqtt_name in self._active_cycles:
+                self._last_flow_update_time[mqtt_name] = now if event.state == "ON" else None
             else:
-                self._last_flow_update_time = None
+                self._last_flow_update_time.pop(mqtt_name, None)
 
-    def _time_limit_callback(self):
+    def _time_limit_callback(self, mqtt_name: str = "garden_valve", valve_topic: str = None):
         """Callback für den zeitgesteuerten Notfall-Timer."""
         with self._lock:
-            if self._active_cycle is None:
+            if mqtt_name not in self._active_cycles:
                 return
 
-            duration = self._active_cycle["duration"]
-            target_vol = self._active_cycle["target_volume"]
-            vol_run = round(self._active_cycle.get("current_volume", 0.0), 2)
-            source = self._active_cycle["source"]
-            
-            # Schließe physisches Ventil
-            set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
-            self.publish_fn(set_topic, '{"state": "OFF"}')
-            
-            self._active_cycle = None
-            self._last_flow_update_time = None
+            cycle = self._active_cycles[mqtt_name]
+            duration = cycle["duration"]
+            target_vol = cycle["target_volume"]
+            vol_run = round(cycle.get("current_volume", 0.0), 2)
+            source = cycle["source"]
+            actual_topic = valve_topic or cycle.get("valve_topic", f"zigbee2mqtt/{mqtt_name}")
+
+            self.publish_fn(f"{actual_topic}/set", '{"state": "OFF"}')
+            del self._active_cycles[mqtt_name]
+            self._last_flow_update_time.pop(mqtt_name, None)
 
         if target_vol > 0 and vol_run < target_vol:
-            # Notfall-Abschaltung (Volumenlimit innerhalb der Zeit nicht erreicht)
             details = f"Notfall-Abschaltung nach {duration} Min: Zielwassermenge von {target_vol}l nicht erreicht ({vol_run}l geflossen)."
             self.event_bus.publish(WateringCycleFailed(duration, vol_run, source, details))
             logger.warning(details)
         else:
-            # Planmäßige zeitgesteuerte Beendigung
             details = f"Zeitlimit von {duration} Min erreicht ({vol_run}l geflossen)."
             self.event_bus.publish(WateringCycleCompleted(duration, vol_run, source, details))
             logger.info(details)
