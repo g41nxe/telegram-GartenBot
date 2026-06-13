@@ -318,5 +318,181 @@ class TestTelegramBotStartup(unittest.TestCase):
             mock_bc.assert_called_once_with("test message")
 
 
+import json as _json_module
+
+
+def _make_weather_row(with_forecast=True):
+    fc = _json_module.dumps({
+        "times":       ["2026-06-13T14:00", "2026-06-13T15:00"],
+        "temp":        [22.0, 21.0],
+        "precip_mm":   [0.0, 0.5],
+        "precip_prob": [5, 30],
+        "wmo":         [0, 61],
+    }) if with_forecast else None
+    return {
+        "timestamp": "2026-06-13T14:00:00",
+        "current_temp": 22.0,
+        "weather_code": 0,
+        "current_precipitation_mm": 0.1,
+        "temp_min": 15.0,
+        "temp_max": 25.0,
+        "rain_probability": 5,
+        "rain_last_24h_mm": 0.0,
+        "rain_next_24h_mm": 0.5,
+        "hourly_forecast_json": fc,
+    }
+
+
+class TestStatusWeatherBlock(unittest.TestCase):
+    """Testet den neuen 'Jetzt / Nächste Stunde'-Wetter-Block im /status-Befehl."""
+
+    def _msg(self, text, chat_id=100):
+        return {"chat": {"id": chat_id}, "text": text}
+
+    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_shows_jetzt_line(self, mock_client, mock_db, mock_scheduler):
+        from daemon.adapters import mqtt_client as mc
+        mock_db.get_last_weather.return_value = _make_weather_row()
+        mock_db.get_all_valves.return_value = []
+        mock_db.get_recent_history.return_value = []
+        mock_scheduler.get_active_cycle.return_value = None
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"), \
+             patch.object(mc, "is_broker_connected", return_value=True), \
+             patch.object(mc, "get_bridge_status", return_value="online"):
+            _process_message(self._msg("/status"))
+
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("Jetzt", sent_text)
+
+    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_shows_next_hour_line(self, mock_client, mock_db, mock_scheduler):
+        from daemon.adapters import mqtt_client as mc
+        mock_db.get_last_weather.return_value = _make_weather_row(with_forecast=True)
+        mock_db.get_all_valves.return_value = []
+        mock_db.get_recent_history.return_value = []
+        mock_scheduler.get_active_cycle.return_value = None
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"), \
+             patch.object(mc, "is_broker_connected", return_value=True), \
+             patch.object(mc, "get_bridge_status", return_value="online"):
+            _process_message(self._msg("/status"))
+
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("15:00", sent_text)  # nächste Stunde aus Forecast-Index 1
+
+    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_without_forecast_shows_no_next_hour(self, mock_client, mock_db, mock_scheduler):
+        from daemon.adapters import mqtt_client as mc
+        mock_db.get_last_weather.return_value = _make_weather_row(with_forecast=False)
+        mock_db.get_all_valves.return_value = []
+        mock_db.get_recent_history.return_value = []
+        mock_scheduler.get_active_cycle.return_value = None
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"), \
+             patch.object(mc, "is_broker_connected", return_value=True), \
+             patch.object(mc, "get_bridge_status", return_value="online"):
+            _process_message(self._msg("/status"))
+
+        sent_text = mock_client.send_message.call_args[0][1]
+        # "Jetzt" must still appear; "🔜" must not (no forecast)
+        self.assertIn("Jetzt", sent_text)
+        self.assertNotIn("🔜", sent_text)
+
+    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_no_weather_shows_fallback(self, mock_client, mock_db, mock_scheduler):
+        from daemon.adapters import mqtt_client as mc
+        mock_db.get_last_weather.return_value = None
+        mock_db.get_all_valves.return_value = []
+        mock_db.get_recent_history.return_value = []
+        mock_scheduler.get_active_cycle.return_value = None
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"), \
+             patch.object(mc, "is_broker_connected", return_value=True), \
+             patch.object(mc, "get_bridge_status", return_value="online"):
+            _process_message(self._msg("/status"))
+
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("Keine Daten", sent_text)
+
+
+class TestReportChartIntegration(unittest.TestCase):
+    """Testet Chart-Einbindung und Textfallback im /report-Befehl."""
+
+    def _msg(self, text, chat_id=100):
+        return {"chat": {"id": chat_id}, "text": text}
+
+    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.adapters.chart.generate_weather_chart", return_value=b"\x89PNG")
+    def test_report_sends_photo_when_chart_available(self, mock_chart, mock_client, mock_db, mock_sched):
+        from daemon.adapters import mqtt_client as mc
+        mock_db.get_last_weather.return_value = _make_weather_row()
+        mock_db.get_all_valves.return_value = []
+        mock_db.get_recent_history.return_value = []
+        mock_sched.get_active_cycle.return_value = None
+        mock_sched.generate_daily_report.return_value = "Tagesbericht"
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"), \
+             patch.object(mc, "is_broker_connected", return_value=True), \
+             patch.object(mc, "get_bridge_status", return_value="online"):
+            _process_message(self._msg("/report"))
+
+        mock_client.send_photo.assert_called_once()
+        args = mock_client.send_photo.call_args[0]
+        self.assertEqual(args[1], b"\x89PNG")
+
+    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.adapters.chart.generate_weather_chart", return_value=None)
+    def test_report_sends_text_fallback_when_chart_fails(self, mock_chart, mock_client, mock_db, mock_sched):
+        from daemon.adapters import mqtt_client as mc
+        mock_db.get_last_weather.return_value = _make_weather_row(with_forecast=True)
+        mock_db.get_all_valves.return_value = []
+        mock_db.get_recent_history.return_value = []
+        mock_sched.get_active_cycle.return_value = None
+        mock_sched.generate_daily_report.return_value = "Tagesbericht"
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"), \
+             patch.object(mc, "is_broker_connected", return_value=True), \
+             patch.object(mc, "get_bridge_status", return_value="online"):
+            _process_message(self._msg("/report"))
+
+        mock_client.send_photo.assert_not_called()
+        # Textfallback must contain hourly data
+        all_texts = " ".join(str(c) for c in mock_client.send_message.call_args_list)
+        self.assertIn("Wetterverlauf", all_texts)
+
+    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.adapters.chart.generate_weather_chart", return_value=None)
+    def test_report_sends_daily_report_regardless_of_chart(self, mock_chart, mock_client, mock_db, mock_sched):
+        from daemon.adapters import mqtt_client as mc
+        mock_db.get_last_weather.return_value = None
+        mock_db.get_all_valves.return_value = []
+        mock_db.get_recent_history.return_value = []
+        mock_sched.get_active_cycle.return_value = None
+        mock_sched.generate_daily_report.return_value = "Tagesbericht"
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"), \
+             patch.object(mc, "is_broker_connected", return_value=True), \
+             patch.object(mc, "get_bridge_status", return_value="online"):
+            _process_message(self._msg("/report"))
+
+        all_texts = " ".join(str(c) for c in mock_client.send_message.call_args_list)
+        self.assertIn("Tagesbericht", all_texts)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,7 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, call
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
@@ -12,6 +12,7 @@ from daemon.core.watering_controller import (
     WateringCycleFailed,
     WateringCycleStopped
 )
+from daemon.core.scheduler_events import WeatherDataFetched
 from daemon.adapters.database_adapter import DatabaseLoggerAdapter
 
 class TestDatabaseAdapter(unittest.TestCase):
@@ -53,6 +54,53 @@ class TestDatabaseAdapter(unittest.TestCase):
         mock_log_watering.assert_called_once_with(
             5, "manual", "stopped", "Stopped by user", watered_volume=10.0
         )
+
+class TestWeatherDataFetchedForwarding(unittest.TestCase):
+    """Stellt sicher, dass WeatherDataFetched-Ereignisse die neuen Felder korrekt weiterleiten."""
+
+    @patch("daemon.adapters.database.log_weather")
+    def test_new_fields_forwarded_to_log_weather(self, mock_log_weather):
+        bus = EventBus()
+        DatabaseLoggerAdapter(bus)
+
+        bus.publish(WeatherDataFetched(
+            rain_last_24h=2.5,
+            rain_next_24h=1.0,
+            current_temp=19.0,
+            weather_code=61,
+            temp_min=15.0,
+            temp_max=23.0,
+            rain_prob=70,
+            current_precipitation=0.3,
+            hourly_forecast_json='{"times":["2026-06-13T14:00"]}',
+        ))
+
+        mock_log_weather.assert_called_once_with(
+            2.5, 1.0, 19.0, 61, 15.0, 23.0, 70,
+            current_precipitation_mm=0.3,
+            hourly_forecast_json='{"times":["2026-06-13T14:00"]}',
+        )
+
+    @patch("daemon.adapters.database.log_weather")
+    def test_defaults_used_when_new_fields_omitted(self, mock_log_weather):
+        """Ereignisse ohne neue Felder (Altcode-Erzeuger) müssen weiterhin funktionieren."""
+        bus = EventBus()
+        DatabaseLoggerAdapter(bus)
+
+        bus.publish(WeatherDataFetched(
+            rain_last_24h=0.0,
+            rain_next_24h=0.0,
+            current_temp=20.0,
+            weather_code=0,
+            temp_min=15.0,
+            temp_max=25.0,
+            rain_prob=0,
+        ))
+
+        _, kwargs = mock_log_weather.call_args
+        self.assertEqual(kwargs.get("current_precipitation_mm"), 0.0)
+        self.assertEqual(kwargs.get("hourly_forecast_json"), "")
+
 
 if __name__ == "__main__":
     unittest.main()
