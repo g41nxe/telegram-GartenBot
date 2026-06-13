@@ -42,6 +42,14 @@ python -m daemon.main
 # Builds vendor/zigbee2mqtt locally via npm, then scp-transfers src/, scripts/, .env, tools/ to the Pi
 ```
 
+### Apply Python/DB changes on Pi (no full setup needed)
+For Python source changes and DB schema migrations, only a service restart is required — do **not** re-run `setup.sh`:
+```bash
+sudo systemctl restart garden-irrigation
+journalctl -u garden-irrigation -n 50 --no-pager
+```
+`database.init_db()` runs the migration automatically on startup. Re-run `setup.sh` only when systemd unit definitions change or new OS packages are required.
+
 ### Check systemd service status on Pi
 ```bash
 sudo systemctl status mosquitto zigbee2mqtt garden-irrigation
@@ -69,6 +77,7 @@ src/daemon/
 │   ├── database_adapter.py     # DatabaseLoggerAdapter: subscribes to domain events → writes to DB
 │   ├── mqtt_client.py     # MqttClient interface + PahoMqttAdapter (prod) / SimulatedMqttAdapter (test)
 │   ├── weather.py         # Open-Meteo HTTP adapter; publishes WeatherDataFetched event
+│   ├── chart.py           # QuickChart.io adapter; builds Chart.js config, returns PNG bytes or None
 │   └── pairing.py         # Ventil-Kopplung logic
 │
 └── ui/
