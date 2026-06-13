@@ -241,8 +241,8 @@ EOF
 sudo tee /etc/systemd/system/garden-irrigation.service > /dev/null <<EOF
 [Unit]
 Description=Gartenbewaesserungs-Steuerung Daemon
-After=network.target mosquitto.service zigbee2mqtt.service
-Wants=mosquitto.service zigbee2mqtt.service
+After=network-online.target mosquitto.service zigbee2mqtt.service
+Wants=network-online.target mosquitto.service zigbee2mqtt.service
 
 [Service]
 Type=simple
