@@ -15,7 +15,7 @@ Dieser Skill automatisiert die Bereitstellung des gesamten Gartenbewässerungs-S
    Frage den Benutzer, ob der Zigbee USB-Funk-Koordinator bereits am Raspberry Pi eingesteckt ist. Wenn nicht, weise ihn darauf hin, dass ohne den Dongle das Ventil-Pairing fehlschlägt.
 
 3. **Verbindungsdaten abfragen**:
-   Frage den Benutzer nach der IP-Adresse oder dem Hostnamen des Pi (Standard: `raspberrypi.local`) und dem SSH-Benutzernamen (Standard: `pi`).
+   Frage den Benutzer nach der IP-Adresse oder dem Hostnamen des Pi und dem SSH-Benutzernamen Als Standardwerte kannst du die Werte des .env File im Root-Verzeichnis verwenden (DEPLOY_PI_HOST und DEPLOY_PI_USER).
 
 4. **Deployment ausführen**:
    Führe das PowerShell-Bereitstellungsskript direkt im Terminal des Benutzers aus:
