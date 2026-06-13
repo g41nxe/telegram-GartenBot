@@ -199,7 +199,8 @@ mqtt:
 frontend:
   port: 8080
 
-homeassistant: false
+homeassistant:
+  enabled: false
 
 ${DEVICES_SECTION}
 EOF
