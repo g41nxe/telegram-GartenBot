@@ -130,5 +130,28 @@ class TestWizardTTLCleanup(unittest.TestCase):
         self.assertEqual(errors, [], f"Thread-safety errors: {errors}")
 
 
+class TestTelegramBotStartup(unittest.TestCase):
+    """Smoke-tests that start_bot() wires up without AttributeError.
+
+    Regression guard: a missing function on an imported module (e.g. scheduler.
+    register_notification_callback) would previously crash the daemon at runtime
+    but was invisible to the test suite.
+    """
+
+    def test_start_bot_does_not_raise(self):
+        from unittest.mock import patch
+        from daemon.ui import telegram_bot
+        with patch("daemon.ui.telegram_client.register_update_callback"), \
+             patch("daemon.ui.telegram_client.start_polling"):
+            telegram_bot.start_bot()
+
+    def test_broadcast_notification_delegates_to_client(self):
+        from unittest.mock import patch, call
+        from daemon.ui import telegram_bot
+        with patch("daemon.ui.telegram_client.broadcast_notification") as mock_bc:
+            telegram_bot.broadcast_notification("test message")
+            mock_bc.assert_called_once_with("test message")
+
+
 if __name__ == "__main__":
     unittest.main()
