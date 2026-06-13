@@ -193,26 +193,21 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertTrue(should_skip)
         self.assertIn("Regenschwelle überschritten", details)
 
+    @patch("daemon.adapters.weather.database.get_last_weather", return_value=None)
     @patch("urllib.request.urlopen")
-    def test_07_weather_offline_fallback(self, mock_urlopen):
-        """Testet das Offline-first Fallback bei einem API-Ausfall."""
-        # urllib.error.URLError simulieren
+    def test_07_weather_offline_fallback(self, mock_urlopen, mock_get_last_weather):
+        """Testet das Offline-first Fallback bei einem API-Ausfall ohne DB-Cache."""
         from urllib.error import URLError
         mock_urlopen.side_effect = URLError("Mocked network timeout")
 
-        # Abfrage ohne DB-Einträge ausführen
-        rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob = weather.get_weather_data(52.5, 13.5)
-        self.assertEqual(rain_last, 0.0)
-        self.assertEqual(rain_next, 0.0)
-        self.assertEqual(temp, 0.0)
-        self.assertEqual(code, 0)
-        self.assertEqual(temp_min, 0.0)
-        self.assertEqual(temp_max, 0.0)
-        self.assertEqual(rain_prob, 0)
+        # Bei Netzwerkfehler gibt get_weather_data None zurück
+        result = weather.get_weather_data(52.5, 13.5)
+        self.assertIsNone(result)
 
+        # Kein Cache + kein Netz → skip=False (Guss wird durchgeführt)
         should_skip, details = weather.should_skip_watering()
         self.assertFalse(should_skip)
-        self.assertIn("Regen liegt unter Grenzwert", details)
+        self.assertIn("Keine Wetterdaten verfügbar", details)
 
     def test_08_first_to_hit_time_limit_with_unreached_volume(self):
         """Testet, ob das Zeitlimit bei nicht erreichtem Volumenlimit eine Notfall-Abschaltung auslöst."""
