@@ -70,7 +70,8 @@ src/daemon/
 ├── core/                  # Domain logic — no I/O allowed here
 │   ├── event_bus.py       # Thread-safe synchronous EventBus (publish/subscribe)
 │   ├── watering_controller.py  # WateringController: Kombinierter Guss, volume integration, timers
-│   └── scheduler_events.py    # Event types: DailyReportTriggered, WateringSkipped, ScheduleFailed, WeatherDataFetched
+│   ├── scheduler_events.py    # Event types: DailyReportTriggered, WateringSkipped, ScheduleFailed, WeatherDataFetched
+│   └── valve_events.py        # Event types: ValveStatusReported, DeviceJoinedEvent
 │
 ├── adapters/              # Stateless outer boundary — no cross-adapter imports
 │   ├── database.py        # SQLite CRUD (schedules, watering_history, weather_history, device_status_log)
@@ -78,6 +79,7 @@ src/daemon/
 │   ├── mqtt_client.py     # MqttClient interface + PahoMqttAdapter (prod) / SimulatedMqttAdapter (test)
 │   ├── weather.py         # Open-Meteo HTTP adapter; publishes WeatherDataFetched event
 │   ├── chart.py           # QuickChart.io adapter; builds Chart.js config, returns PNG bytes or None
+│   ├── daily_report.py    # Tagesbericht-Generierung und -Versand
 │   └── pairing.py         # Ventil-Kopplung logic
 │
 └── ui/

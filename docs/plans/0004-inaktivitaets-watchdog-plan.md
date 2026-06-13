@@ -61,7 +61,7 @@ Zwei öffentliche Funktionen:
 - Registriert dauerhaften Modulebene-Listener auf `ValveStatusReported` (ADR-0016: kein `unsubscribe()` nötig).
 - Der Listener prüft für das eingetroffene Ventil, ob `watchdog_alert_active_valve_<id> == "1"` in `system_metadata` gesetzt ist. Falls ja: Flag auf `"0"` setzen, `InactivityAlertResolved` publizieren.
 
-**`run_watchdog_check(event_bus)`** — stündlich in einem Daemon-Thread aufrufen:
+**`run_watchdog_check()`** — stündlich in einem Daemon-Thread aufrufen (kein `event_bus`-Argument — `_global_bus` wird wie in allen anderen Adaptern auf Modulebene aus `mqtt_client` importiert):
 - Prüft `config.WATCHDOG_ENABLED`; bei `false` sofortiger Rücksprung.
 - Lädt alle Ventile via `database.get_all_valves()`.
 - Pro Ventil:
@@ -90,7 +90,7 @@ last_watchdog_check = 0.0
 if current_timestamp - last_watchdog_check >= 3600:
     last_watchdog_check = current_timestamp
     t_watchdog = threading.Thread(
-        target=watchdog.run_watchdog_check, args=(_global_bus,), daemon=True
+        target=watchdog.run_watchdog_check, daemon=True
     )
     t_watchdog.start()
 ```
@@ -120,15 +120,15 @@ Modulebene-Listener für beide Watchdog-Events registrieren:
 def _on_inactivity_alert(event: InactivityAlertTriggered):
     msg = (f"⚠️ *Verbindung verloren:* Ventil \"{event.device_name}\" "
            f"hat seit {event.hours_silent:.1f} Stunden kein Signal gesendet.")
-    _send_to_all(msg)
+    telegram_client.broadcast_notification(msg)
 
 # Entwarnung
 def _on_inactivity_resolved(event: InactivityAlertResolved):
     msg = f"🟢 *Verbindung wiederhergestellt:* Ventil \"{event.device_name}\" sendet wieder Signale."
-    _send_to_all(msg)
+    telegram_client.broadcast_notification(msg)
 
-event_bus.subscribe(InactivityAlertTriggered, _on_inactivity_alert)
-event_bus.subscribe(InactivityAlertResolved, _on_inactivity_resolved)
+_global_bus.subscribe(InactivityAlertTriggered, _on_inactivity_alert)
+_global_bus.subscribe(InactivityAlertResolved, _on_inactivity_resolved)
 ```
 
 ---
