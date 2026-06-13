@@ -19,12 +19,21 @@ class TestGardenIrrigation(unittest.TestCase):
         """Initialisiert die Testdatenbank und erzwingt den Simulationsmodus."""
         database.init_db()
         mqtt_client.HAS_PAHO = False
+
+        # Block all outbound Telegram HTTP calls for the entire test run.
+        # telegram_ui subscribes event handlers to _global_bus at import time;
+        # without these patches, publishing any domain event during tests sends
+        # real Telegram messages.
+        for fn in ("send_message", "edit_message_text", "answer_callback_query",
+                   "broadcast_notification", "start_polling"):
+            patch(f"daemon.ui.telegram_client.{fn}").start()
+
         # Guss-Steuerung & einheitlichen Client für Legacy-Tests initialisieren und verdrahten
         from daemon import scheduler
         from daemon.core.event_bus import EventBus
         from daemon.core.watering_controller import WateringController
         from daemon.adapters.database_adapter import DatabaseLoggerAdapter
-        
+
         mqtt_client.start_client()
         watering_ctrl = WateringController(mqtt_client._global_bus, mqtt_client.client_instance.publish)
         scheduler.controller = watering_ctrl
