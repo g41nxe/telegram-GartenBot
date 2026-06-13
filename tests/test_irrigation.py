@@ -105,9 +105,9 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertIsNotNone(scheduler.get_active_cycle())
         
         # Simuliert, dass das Volumenlimit überschritten wird
-        scheduler.controller._active_cycle["current_volume"] = 6.0
-        
-        # Warte kurz, bis der Volumen-Wächter-Thread (schläft 2 Sek) zuschlägt
+        scheduler.controller._active_cycles["garden_valve"]["current_volume"] = 6.0
+
+        # Warte kurz, bis der Volumen-Wächter-Thread (schlägt beim nächsten MQTT-Event zu)
         time.sleep(3)
         
         # Prüfen, ob das Ventil geschlossen wurde
@@ -224,7 +224,7 @@ class TestGardenIrrigation(unittest.TestCase):
         mqtt_client._global_bus.subscribe(WateringCycleFailed, mock_event_handler)
         
         # Simuliere, dass das Volumenlimit vor Ablauf der Zeit nicht erreicht wurde (z.B. nur 3 Liter)
-        scheduler.controller._active_cycle["current_volume"] = 3.0
+        scheduler.controller._active_cycles["garden_valve"]["current_volume"] = 3.0
         
         # Manuelles Auslösen des Timeouts
         scheduler._time_limit_callback()
@@ -251,17 +251,25 @@ class TestGardenIrrigation(unittest.TestCase):
         from datetime import datetime, timedelta
         from daemon import scheduler
         from daemon.adapters.mqtt_client import ValveStatusReported
-        
-        # Starte Bewässerung über Controller
-        scheduler.start_watering(duration_minutes=10, target_volume_liters=20, source="test")
-        
+
+        # Vorherige Zyklen bereinigen
+        scheduler.stop_watering()
+
+        # Starte Bewässerung mit großem Volumenziel, damit der Hintergrund-Simulator es nicht zufällig schließt
+        success, msg = scheduler.start_watering(duration_minutes=10, target_volume_liters=100, source="test")
+        self.assertTrue(success, f"Bewässerung konnte nicht gestartet werden: {msg}")
+
+        # Hintergrund-Simulator pausieren: valve_status auf OFF setzen, damit der Sim-Loop keine
+        # ON-Events feuert, die die künstlich gesetzte _last_flow_update_time konsumieren würden.
+        mqtt_client.valve_status["state"] = "OFF"
+
         # Setze den Controller künstlich auf 10 Liter in die Vergangenheit
-        scheduler.controller._active_cycle["current_volume"] = 10.0
-        scheduler.controller._last_flow_update_time = datetime.now() - timedelta(seconds=75)
-        
+        scheduler.controller._active_cycles["garden_valve"]["current_volume"] = 10.0
+        scheduler.controller._last_flow_update_time["garden_valve"] = datetime.now() - timedelta(seconds=75)
+
         # Simuliere ON-Event mit Flow-Rate 6.0 L/min
-        scheduler.controller.event_bus.publish(ValveStatusReported("ON", 6.0, 95, 120, "normal"))
-        
+        scheduler.controller.event_bus.publish(ValveStatusReported("garden_valve", "ON", 6.0, 95, 120, "normal"))
+
         # Durch die Deckelung auf max. 60 Sek:
         # Zuwachs = 6.0 L/min * (60.0 / 60.0) = 6.0 Liter
         # Erwartetes Gesamtvolumen = 10.0 + 6.0 = 16.0 Liter
@@ -334,50 +342,49 @@ class TestGardenIrrigation(unittest.TestCase):
         """Testet die Generierung des Tagesberichts und das Erkennen von Warnungen."""
         from datetime import datetime, timedelta
         from daemon import scheduler
-        
+
         # Mocke Wetterdaten
         with patch("daemon.adapters.weather.get_weather_data") as mock_weather_data:
-            mock_weather_data.return_value = (1.5, 2.0, 21.0, 3, 12.5, 25.0, 80) # Bedeckt
-            
-            # 1. Fall: Normaler Zustand (Keine Warnungen)
-            mqtt_client.valve_status["battery"] = 90
-            mqtt_client.valve_status["valve_abnormal_state"] = "normal"
-            mqtt_client.valve_status["last_update"] = datetime.now().isoformat()
-            
+            mock_weather_data.return_value = (1.5, 2.0, 21.0, 3, 12.5, 25.0, 80)  # Bedeckt
+
+            # 1. Fall: Normaler Zustand (Keine Warnungen) — Ventil-Status via DB setzen
+            database.update_valve_status("garden_valve", 90, 140, datetime.now().isoformat(), "normal")
+
             report = scheduler.generate_daily_report("2026-06-07")
             self.assertIn("Statusbericht vom 07.06.2026", report)
             self.assertIn("Erfolgreiche Zyklen", report)
             self.assertIn("Temperatur: 21.0 °C (Min: 12.5 °C / Max: 25.0 °C) | ☁️ Bedeckt / Bewölkt", report)
             self.assertIn("Regenwahrscheinlichkeit: 80%", report)
             self.assertNotIn("System-Warnungen", report)
-            
+
             # 2. Fall: Batterie schwach, Offline und abnormaler Zustand (Warnungen)
-            mqtt_client.valve_status["battery"] = 15 # Unter 20%
-            mqtt_client.valve_status["valve_abnormal_state"] = "water_shortage"
-            # Letztes Signal vor 25 Stunden
-            mqtt_client.valve_status["last_update"] = (datetime.now() - timedelta(hours=25)).isoformat()
-            
+            old_time = (datetime.now() - timedelta(hours=25)).isoformat()
+            database.update_valve_status("garden_valve", 15, 140, old_time, "water_shortage")
+
             report_warn = scheduler.generate_daily_report("2026-06-07")
             self.assertIn("System-Warnungen", report_warn)
             self.assertIn("Niedriger Batteriestand", report_warn)
             self.assertIn("Verbindung verloren", report_warn)
             self.assertIn("Ventil-Anomalie erkannt", report_warn)
 
+            # DB-Status für Folgetests zurücksetzen
+            database.update_valve_status("garden_valve", 95, 140, datetime.now().isoformat(), "normal")
+
             # 3. Fall: Broker disconnected, Mittelweg-Dienst offline
             mqtt_client.HAS_PAHO = True
-            
+
             with patch("daemon.adapters.mqtt_client.is_broker_connected", return_value=False), \
                  patch("daemon.adapters.mqtt_client.get_bridge_status", return_value="offline"):
                 report_serv_offline = scheduler.generate_daily_report("2026-06-07")
                 self.assertIn("System-Warnungen", report_serv_offline)
                 self.assertIn("MQTT-Broker ist offline", report_serv_offline)
-                
+
             with patch("daemon.adapters.mqtt_client.is_broker_connected", return_value=True), \
                  patch("daemon.adapters.mqtt_client.get_bridge_status", return_value="offline"):
                 report_z2m_offline = scheduler.generate_daily_report("2026-06-07")
                 self.assertIn("System-Warnungen", report_z2m_offline)
                 self.assertIn("Mittelweg-Dienst (Zigbee2MQTT) ist offline", report_z2m_offline)
-                
+
             # Zurücksetzen für nachfolgende Tests
             mqtt_client.HAS_PAHO = False
 
@@ -397,21 +404,21 @@ class TestGardenIrrigation(unittest.TestCase):
         
         # Meldung 1: Vor 20 Stunden, LQI = 150
         time1 = (now - timedelta(hours=20)).isoformat()
-        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time1, 95, 150))
-        
+        conn.execute("INSERT INTO device_status_log (timestamp, device_name, battery, linkquality) VALUES (?, ?, ?, ?)", (time1, "garden_valve", 95, 150))
+
         # Meldung 2: Vor 12 Stunden, LQI = 120
         time2 = (now - timedelta(hours=12)).isoformat()
-        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time2, 94, 120))
-        
+        conn.execute("INSERT INTO device_status_log (timestamp, device_name, battery, linkquality) VALUES (?, ?, ?, ?)", (time2, "garden_valve", 94, 120))
+
         # Meldung 3: Vor 2 Stunden, LQI = 130
         time3 = (now - timedelta(hours=2)).isoformat()
-        conn.execute("INSERT INTO device_status_log (timestamp, battery, linkquality) VALUES (?, ?, ?)", (time3, 93, 130))
-        
+        conn.execute("INSERT INTO device_status_log (timestamp, device_name, battery, linkquality) VALUES (?, ?, ?, ?)", (time3, "garden_valve", 93, 130))
+
         conn.commit()
         conn.close()
 
         # 3. Statistik abrufen
-        stats = database.get_device_status_stats_last_24h()
+        stats = database.get_device_status_stats_last_24h("garden_valve")
         
         self.assertEqual(stats["count"], 3)
         self.assertEqual(stats["avg_lqi"], 133.3)  # (150 + 120 + 130) / 3 = 133.333...
@@ -463,9 +470,11 @@ class TestGardenIrrigation(unittest.TestCase):
             mock_handler.assert_called_once()
             self.assertIn("Too wet", mock_handler.call_args[0][0].details)
             
-        # Mock weather skip exception
+        # Mock weather skip exception — Ventil-Start schlägt fehl → ScheduleFailed
+        # Patch direkt auf controller.start_watering, da _trigger_scheduled_watering die
+        # Fassaden-Funktion nicht mehr aufruft.
         with patch("daemon.adapters.weather.should_skip_watering", side_effect=Exception("API down")), \
-             patch("daemon.scheduler.start_watering", return_value=(False, "Failed start")):
+             patch.object(scheduler.controller, "start_watering", return_value=(False, "Failed start")):
             mock_fail = MagicMock()
             mqtt_client._global_bus.subscribe(ScheduleFailed, mock_fail)
             scheduler._trigger_scheduled_watering({"name": "Test2", "duration_minutes": 10})
@@ -533,6 +542,139 @@ class TestGardenIrrigation(unittest.TestCase):
         with patch("daemon.adapters.weather.get_weather_data", side_effect=Exception("API error")):
             report = scheduler.generate_daily_report("2026-06-09")
             self.assertIn("Statusbericht vom 09.06.2026", report)
+
+    def test_19_scheduler_sequential_multi_valve(self):
+        """_trigger_scheduled_watering startet mehrere Ventile nacheinander (sequentiell)."""
+        from daemon import scheduler
+        from daemon.core.watering_controller import WateringCycleCompleted
+
+        scheduler.stop_watering()
+
+        # Zweites Test-Ventil anlegen (idempotent: bestehendes holen wenn schon vorhanden)
+        valve2_id = database.add_valve("Terrasse", "valve_seq_test")
+        if valve2_id <= 0:
+            existing = database.get_valve_by_mqtt_name("valve_seq_test")
+            valve2_id = existing["id"] if existing else 1
+        sched_id = database.add_schedule("SeqTest", "03:00", "Mon", 5, 0)
+        database.set_schedule_valves(sched_id, [1, valve2_id])
+
+        started_valves = []
+        original_start = scheduler.controller.start_watering
+
+        def mock_start(duration, volume, source, mqtt_name="garden_valve", valve_topic=None):
+            started_valves.append(mqtt_name)
+            return True, "OK"
+
+        scheduler.controller.start_watering = mock_start
+        try:
+            sched = {"id": sched_id, "name": "SeqTest", "duration_minutes": 5,
+                     "target_volume_liters": 0, "execution_mode": "sequential"}
+
+            with patch("daemon.adapters.weather.should_skip_watering", return_value=(False, "OK")):
+                scheduler._trigger_scheduled_watering(sched)
+
+            # Nur das erste Ventil (garden_valve, id=1) soll sofort starten
+            self.assertEqual(len(started_valves), 1, "Erstes Ventil soll sofort starten")
+            self.assertEqual(started_valves[0], "garden_valve")
+
+            # WateringCycleCompleted feuern → zweites Ventil muss starten
+            mqtt_client._global_bus.publish(WateringCycleCompleted(5, 0.0, "schedule", "done"))
+
+            self.assertEqual(len(started_valves), 2, "Zweites Ventil soll nach Abschluss des ersten starten")
+            self.assertEqual(started_valves[1], "valve_seq_test")
+        finally:
+            scheduler.controller.start_watering = original_start
+            database.delete_schedule(sched_id)
+
+    def test_20_scheduler_parallel_multi_valve(self):
+        """_trigger_scheduled_watering startet mehrere Ventile gleichzeitig (parallel)."""
+        from daemon import scheduler
+
+        scheduler.stop_watering()
+
+        valve2_id = database.add_valve("Rasen", "valve_par_test")
+        if valve2_id <= 0:
+            existing = database.get_valve_by_mqtt_name("valve_par_test")
+            valve2_id = existing["id"] if existing else 1
+        sched_id = database.add_schedule("ParTest", "04:00", "Mon", 5, 0)
+        database.set_schedule_valves(sched_id, [1, valve2_id])
+
+        started_valves = []
+        original_start = scheduler.controller.start_watering
+
+        def mock_start(duration, volume, source, mqtt_name="garden_valve", valve_topic=None):
+            started_valves.append(mqtt_name)
+            return True, "OK"
+
+        scheduler.controller.start_watering = mock_start
+        try:
+            sched = {"id": sched_id, "name": "ParTest", "duration_minutes": 5,
+                     "target_volume_liters": 0, "execution_mode": "parallel"}
+
+            with patch("daemon.adapters.weather.should_skip_watering", return_value=(False, "OK")):
+                scheduler._trigger_scheduled_watering(sched)
+
+            # Beide Ventile müssen sofort gestartet sein
+            self.assertEqual(len(started_valves), 2, "Beide Ventile sollen gleichzeitig starten")
+            self.assertIn("garden_valve", started_valves)
+            self.assertIn("valve_par_test", started_valves)
+        finally:
+            scheduler.controller.start_watering = original_start
+            database.delete_schedule(sched_id)
+
+    def test_22_daily_report_iterates_all_valves(self):
+        """Täglicher Bericht enthält einen Abschnitt pro registriertem Ventil."""
+        from datetime import datetime
+        from daemon import scheduler
+
+        # Zweites Test-Ventil anlegen und DB-Status für beide setzen
+        valve2_id = database.add_valve("Rasen", "valve_report_test")
+        if valve2_id <= 0:
+            existing = database.get_valve_by_mqtt_name("valve_report_test")
+            valve2_id = existing["id"] if existing else 1
+
+        now_str = datetime.now().isoformat()
+        database.update_valve_status("garden_valve", 95, 140, now_str, "normal")
+        database.update_valve_status("valve_report_test", 80, 120, now_str, "normal")
+
+        with patch("daemon.adapters.weather.get_weather_data") as mock_weather:
+            mock_weather.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 10)
+            report = scheduler.generate_daily_report("2026-06-13")
+
+        # Beide Ventile müssen im Bericht erscheinen
+        self.assertIn("garden_valve", report, "Standard-Ventil fehlt im Bericht")
+        self.assertIn("valve_report_test", report, "Zweites Ventil fehlt im Bericht")
+        self.assertIn("Rasen", report, "Wunschname des zweiten Ventils fehlt im Bericht")
+
+    def test_21_scheduler_fallback_garden_valve(self):
+        """_trigger_scheduled_watering fällt auf garden_valve zurück wenn keine Ventile zugewiesen."""
+        from daemon import scheduler
+
+        scheduler.stop_watering()
+        sched_id = database.add_schedule("FallbackTest", "05:00", "Mon", 5, 0)
+        # Absichtlich kein set_schedule_valves → Fallback auf garden_valve
+
+        call_args = []
+        original_start = scheduler.controller.start_watering
+
+        def mock_start(duration, volume, source, mqtt_name="garden_valve", valve_topic=None):
+            call_args.append((mqtt_name, valve_topic))
+            return True, "OK"
+
+        scheduler.controller.start_watering = mock_start
+        try:
+            sched = {"id": sched_id, "name": "FallbackTest", "duration_minutes": 5,
+                     "target_volume_liters": 0, "execution_mode": "sequential"}
+
+            with patch("daemon.adapters.weather.should_skip_watering", return_value=(False, "OK")):
+                scheduler._trigger_scheduled_watering(sched)
+
+            self.assertEqual(len(call_args), 1, "Genau ein Aufruf erwartet")
+            self.assertEqual(call_args[0][0], "garden_valve", "Fallback-Ventil muss garden_valve sein")
+            self.assertEqual(call_args[0][1], "zigbee2mqtt/garden_valve", "Topic muss korrekt gesetzt sein")
+        finally:
+            scheduler.controller.start_watering = original_start
+            database.delete_schedule(sched_id)
 
 if __name__ == "__main__":
     unittest.main()

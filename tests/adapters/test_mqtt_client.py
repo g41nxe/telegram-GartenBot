@@ -33,6 +33,7 @@ class TestMqttClient(unittest.TestCase):
         # There should be status events dispatched
         self.assertGreater(len(status_events), 0)
         self.assertEqual(status_events[-1].state, "ON")
+        self.assertEqual(status_events[-1].mqtt_name, "garden_valve")
         
         # Close valve
         client.publish("zigbee2mqtt/garden_valve/set", '{"state": "OFF"}')
@@ -142,6 +143,7 @@ class TestPahoMqttClient(unittest.TestCase):
         
         mock_handler.assert_called_once()
         event = mock_handler.call_args[0][0]
+        self.assertEqual(event.mqtt_name, "garden_valve")
         self.assertEqual(event.state, "ON")
         self.assertEqual(event.flow_rate, 5.5)
         self.assertEqual(event.battery, 80)

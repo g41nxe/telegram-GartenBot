@@ -10,6 +10,48 @@ from ..adapters.mqtt_client import _global_bus
 logger = logging.getLogger("garden_daily_report")
 
 
+def _lqi_label(avg_lqi: float) -> str:
+    if avg_lqi >= 180:
+        return "Sehr gut"
+    if avg_lqi >= 120:
+        return "Gut"
+    if avg_lqi >= 60:
+        return "Ausreichend"
+    return "Kritisch"
+
+
+def _valve_warnings(valve: dict) -> list[str]:
+    """Gibt Warnungen für ein einzelnes Ventil zurück."""
+    warnings = []
+    wish_name = valve["wish_name"]
+    battery = valve.get("battery") or 100
+    last_update_str = valve.get("last_update")
+    abnormal_state = valve.get("valve_abnormal_state") or "normal"
+
+    if battery <= config.BATTERY_WARNING_THRESHOLD:
+        warnings.append(
+            f"🪫 **Niedriger Batteriestand ({wish_name}):** {battery}%"
+            f" (Grenzwert: {config.BATTERY_WARNING_THRESHOLD}%)"
+        )
+
+    if last_update_str:
+        try:
+            last_up = datetime.fromisoformat(last_update_str)
+            if datetime.now() - last_up > timedelta(hours=24):
+                hours = int((datetime.now() - last_up).total_seconds() / 3600)
+                warnings.append(
+                    f"⚠️ **Verbindung verloren ({wish_name}):** Letzte Rückmeldung vor"
+                    f" {hours} Stunden ({last_up.strftime('%d.%m. %H:%M')})"
+                )
+        except Exception:
+            warnings.append(f"⚠️ **Verbindung verloren ({wish_name}):** Fehler beim Ermitteln des letzten Signals")
+
+    if abnormal_state != "normal":
+        warnings.append(f"🚨 **Ventil-Anomalie erkannt ({wish_name}):** {abnormal_state}")
+
+    return warnings
+
+
 def generate_daily_report(today_str: str) -> str:
     """Generiert den Text für den täglichen Statusbericht."""
     # 1. Guss-Statistiken der letzten 24 Stunden
@@ -24,56 +66,33 @@ def generate_daily_report(today_str: str) -> str:
         rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0
         weather_desc = "Unbekannt"
 
-    # 3. Ventil-Status und Warnungen prüfen
-    status = mqtt_client.get_valve_status()
+    # 3. System-Warnungen (Broker / Mittelweg-Dienst)
     warnings = []
-
     if mqtt_client.HAS_PAHO:
         if not mqtt_client.is_broker_connected():
             warnings.append("🚨 **System-Dienst gestört:** MQTT-Broker ist offline")
         elif mqtt_client.get_bridge_status() != "online":
             warnings.append("🚨 **System-Dienst gestört:** Mittelweg-Dienst (Zigbee2MQTT) ist offline")
 
-    battery = status.get("battery", 100)
-    if battery <= config.BATTERY_WARNING_THRESHOLD:
-        warnings.append(f"🪫 **Niedriger Batteriestand:** {battery}% (Grenzwert: {config.BATTERY_WARNING_THRESHOLD}%)")
+    # 4. Pro-Ventil-Status aus der Datenbank
+    valves = database.get_all_valves()
+    valve_sections = []
+    for valve in valves:
+        warnings.extend(_valve_warnings(valve))
 
-    last_update_str = status.get("last_update")
-    if not last_update_str:
-        warnings.append("⚠️ **Verbindung verloren:** Ventil ist nicht gekoppelt / offline")
-    else:
-        try:
-            last_up = datetime.fromisoformat(last_update_str)
-            if datetime.now() - last_up > timedelta(hours=24):
-                time_diff_hours = int((datetime.now() - last_up).total_seconds() / 3600)
-                warnings.append(f"⚠️ **Verbindung verloren:** Letzte Rückmeldung vor {time_diff_hours} Stunden ({last_up.strftime('%d.%m. %H:%M')})")
-        except Exception:
-            warnings.append("⚠️ **Verbindung verloren:** Fehler beim Ermitteln des letzten Signals")
+        mqtt_name = valve["mqtt_name"]
+        wish_name = valve["wish_name"]
+        conn_stats = database.get_device_status_stats_last_24h(mqtt_name)
+        lqi_desc = "Keine Verbindung" if conn_stats["count"] == 0 else _lqi_label(conn_stats["avg_lqi"])
 
-    abnormal_state = status.get("valve_abnormal_state", "normal")
-    if abnormal_state != "normal":
-        warnings.append(f"🚨 **Ventil-Anomalie erkannt:** {abnormal_state}")
+        valve_sections.append(
+            f"📡 **{wish_name}** (`{mqtt_name}`):\n"
+            f"   - Signalmeldungen: {conn_stats['count']}\n"
+            f"   - Signalstärke: Ø {conn_stats['avg_lqi']} LQI ({lqi_desc})\n"
+            f"   - Längste Funkstille: {conn_stats['max_gap_hours']} Std.\n"
+        )
 
-    # 4. Verbindungsstatistik der letzten 24 Stunden
-    conn_stats = database.get_device_status_stats_last_24h()
-
-    if conn_stats["count"] == 0:
-        lqi_desc = "Keine Verbindung"
-    elif conn_stats["avg_lqi"] >= 180:
-        lqi_desc = "Sehr gut"
-    elif conn_stats["avg_lqi"] >= 120:
-        lqi_desc = "Gut"
-    elif conn_stats["avg_lqi"] >= 60:
-        lqi_desc = "Ausreichend"
-    else:
-        lqi_desc = "Kritisch"
-
-    conn_info = (
-        f"📡 **Verbindung (letzte 24h):**\n"
-        f"   - Signalmeldungen: {conn_stats['count']}\n"
-        f"   - Signalstärke: Ø {conn_stats['avg_lqi']} LQI ({lqi_desc})\n"
-        f"   - Längste Funkstille: {conn_stats['max_gap_hours']} Std.\n"
-    )
+    conn_info = "\n".join(valve_sections) if valve_sections else "Keine Ventile registriert.\n"
 
     warning_text = ""
     if warnings:

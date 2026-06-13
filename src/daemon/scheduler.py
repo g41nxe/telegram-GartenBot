@@ -51,28 +51,77 @@ def _time_limit_callback():
 # --- Scheduler-Schleife (Hintergrund-Thread) ---
 
 def _trigger_scheduled_watering(sched: dict):
-    """Führt einen Zeitplan aus, inklusive Wetter-Check."""
+    """Führt einen Zeitplan aus, inklusive Wetter-Check und Multi-Ventil-Unterstützung."""
     duration = sched.get("duration_minutes", 10)
-    volume = sched.get("target_volume_liters", 0)
     name = sched.get("name", "Zeitplan")
-    
+    execution_mode = sched.get("execution_mode", "sequential")
+
     try:
-        # Wetterdaten abfragen und prüfen
         skip, details = weather.should_skip_watering()
     except Exception as e:
         logger.error(f"Fehler beim Wetter-Check für Zeitplan '{name}': {e}. Führe Bewässerung zur Sicherheit trotzdem durch.")
         skip = False
         details = f"Fehler bei Wetterabfrage: {e}"
-        
+
     if skip:
         database.log_watering(duration, "schedule", "skipped", f"Zeitplan '{name}': {details}")
         _global_bus.publish(WateringSkipped(name, details))
         return
-        
-    success, msg = start_watering(duration, volume, "schedule")
+
+    sched_id = sched.get("id")
+    valves = []
+    if sched_id:
+        for vid in database.get_schedule_valves(sched_id):
+            v = database.get_valve_by_id(vid)
+            if v is not None:
+                valves.append(v)
+
+    if not valves:
+        valves = [{"mqtt_name": "garden_valve", "wish_name": "Ventil"}]
+
+    if execution_mode == "parallel":
+        for valve in valves:
+            _start_single_valve(valve, sched)
+    else:
+        _start_sequential(list(valves), sched)
+
+
+def _start_single_valve(valve: dict, sched: dict) -> tuple[bool, str]:
+    """Startet einen Guss-Zyklus für ein einzelnes Ventil."""
+    global controller
+    name = sched.get("name", "Zeitplan")
+    duration = sched.get("duration_minutes", 10)
+    volume = sched.get("target_volume_liters", 0)
+    mqtt_name = valve["mqtt_name"]
+    valve_topic = f"zigbee2mqtt/{mqtt_name}"
+
+    if not controller:
+        return False, "Domänen-Controller nicht initialisiert."
+
+    success, msg = controller.start_watering(duration, volume, "schedule",
+                                             mqtt_name=mqtt_name, valve_topic=valve_topic)
     if not success:
-        database.log_watering(duration, "schedule", "failed", f"Zeitplan '{name}': {msg}")
+        database.log_watering(duration, "schedule", "failed", f"Zeitplan '{name}' [{mqtt_name}]: {msg}")
         _global_bus.publish(ScheduleFailed(name, msg))
+    return success, msg
+
+
+def _start_sequential(queue: list, sched: dict):
+    """Startet Ventile in der Queue nacheinander; trägt sich nach jedem Abschluss erneut ein."""
+    if not queue:
+        return
+    valve = queue.pop(0)
+    success, _ = _start_single_valve(valve, sched)
+    if success and queue:
+        from .core.watering_controller import WateringCycleCompleted, WateringCycleFailed
+
+        def on_cycle_done(event):
+            _global_bus.unsubscribe(WateringCycleCompleted, on_cycle_done)
+            _global_bus.unsubscribe(WateringCycleFailed, on_cycle_done)
+            _start_sequential(queue, sched)
+
+        _global_bus.subscribe(WateringCycleCompleted, on_cycle_done)
+        _global_bus.subscribe(WateringCycleFailed, on_cycle_done)
 
 def _scheduler_loop():
     """Hintergrund-Schleife, die jede Minute prüft, ob Zeitpläne anstehen."""
