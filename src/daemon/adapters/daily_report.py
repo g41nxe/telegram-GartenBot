@@ -58,11 +58,15 @@ def generate_daily_report(today_str: str) -> str:
     success_count, failed_count, total_volume = database.get_watering_stats_last_24h()
 
     # 2. Wetterdaten abrufen
+    weather_result = None
     try:
-        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob = weather.get_weather_data(config.LATITUDE, config.LONGITUDE)
-        weather_desc = get_wmo_description(weather_code)
+        weather_result = weather.get_weather_data(config.LATITUDE, config.LONGITUDE)
     except Exception as e:
         logger.error(f"Fehler beim Abrufen der Wetterdaten für Statusbericht: {e}")
+    if weather_result is not None:
+        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob = weather_result
+        weather_desc = get_wmo_description(weather_code)
+    else:
         rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0
         weather_desc = "Unbekannt"
 

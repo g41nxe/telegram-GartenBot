@@ -4,17 +4,21 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timedelta
 from .. import config
+from . import database
 from .mqtt_client import _global_bus
 from ..core.scheduler_events import WeatherDataFetched
 
+WEATHER_FORECAST_WINDOW_SECONDS = 86400  # Open-Meteo liefert genau 24h voraus
+
 logger = logging.getLogger("garden_weather")
 
-def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, float, float, int]:
+def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, float, float, int] | None:
     """
     Ruft stündliche Niederschlagsdaten der letzten 24h, der nächsten 24h,
     die aktuelle Temperatur und den aktuellen Wettercode sowie tägliche Min/Max Temperaturen
     und Regenwahrscheinlichkeit aus der Open-Meteo API ab.
-    Gibt ein Tuple (regen_letzte_24h_mm, regen_naechste_24h_mm, temp_c, wetter_code, temp_min, temp_max, rain_prob) zurück.
+    Gibt ein Tuple (regen_letzte_24h_mm, regen_naechste_24h_mm, temp_c, wetter_code, temp_min, temp_max, rain_prob)
+    oder None bei Netzwerk-/Verarbeitungsfehlern zurück.
     """
     # Open-Meteo-Abfrage: past_days=1 (letzte 24h), forecast_days=2 (kommende 24h) sowie aktuelle & tägliche/stündliche Vorhersage
     url = (
@@ -118,19 +122,11 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         logger.error(f"Netzwerkfehler beim Abruf der Wetterdaten: {e}")
     except Exception as e:
         logger.error(f"Unerwarteter Fehler beim Verarbeiten der Wetterdaten: {e}")
-        
-    # Im Fehlerfall geben wir Fallback-Werte zurück, da die DB-Kopplung aufgehoben wurde.
-    return 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0
 
-def should_skip_watering() -> tuple[bool, str]:
-    """
-    Prüft, ob die Summe aus gefallendem Regen (letzte 24h) und
-    erwartetem Regen (nächste 24h) den konfigurierten Schwellenwert überschreitet.
-    Gibt ein Tuple (should_skip, details_text) zurück.
-    """
-    rain_last, rain_next, _, _, _, _, _ = get_weather_data(config.LATITUDE, config.LONGITUDE)
+    return None
+
+def _evaluate_skip(rain_last: float, rain_next: float) -> tuple[bool, str]:
     total_rain = rain_last + rain_next
-    
     if total_rain >= config.RAIN_THRESHOLD_MM:
         details = (
             f"Regenschwelle überschritten: Gesamt {total_rain}mm "
@@ -138,10 +134,54 @@ def should_skip_watering() -> tuple[bool, str]:
         )
         logger.info(f"Bewässerung überspringen: {details}")
         return True, details
-    else:
-        details = (
-            f"Regen liegt unter Grenzwert: Gesamt {total_rain}mm "
-            f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {config.RAIN_THRESHOLD_MM}mm)"
+    details = (
+        f"Regen liegt unter Grenzwert: Gesamt {total_rain}mm "
+        f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {config.RAIN_THRESHOLD_MM}mm)"
+    )
+    logger.info(f"Bewässerung freigegeben: {details}")
+    return False, details
+
+
+def should_skip_watering() -> tuple[bool, str]:
+    """
+    Cache-first: liest Wetterdaten aus dem DB-Cache, ruft die Live-API nur bei
+    veraltetem oder fehlendem Cache ab. Fallback-Kette siehe ADR 0020.
+    """
+    max_age = timedelta(seconds=4 * config.WEATHER_REFRESH_INTERVAL_SECONDS)
+    forecast_window = timedelta(seconds=WEATHER_FORECAST_WINDOW_SECONDS)
+    now = datetime.now()
+
+    cached = database.get_last_weather()
+    cache_age = None
+    if cached:
+        try:
+            cache_time = datetime.fromisoformat(cached["timestamp"])
+            cache_age = now - cache_time
+        except (KeyError, ValueError):
+            cached = None
+
+    # 1. Frischer Cache
+    if cached and cache_age is not None and cache_age < max_age:
+        logger.info(f"Wetter-Skip-Check nutzt DB-Cache (Alter: {cache_age}).")
+        return _evaluate_skip(cached["rain_last_24h_mm"], cached["rain_next_24h_mm"])
+
+    # 2. Cache veraltet oder fehlend — Live-API versuchen
+    live_data = None
+    try:
+        live_data = get_weather_data(config.LATITUDE, config.LONGITUDE)
+    except Exception as e:
+        logger.error(f"Live-Wetterabfrage fehlgeschlagen: {e}")
+
+    if live_data is not None:
+        return _evaluate_skip(live_data[0], live_data[1])
+
+    # 3. Live fehlgeschlagen — stale Cache nutzen falls Vorhersagefenster noch gültig
+    if cached and cache_age is not None and cache_age < forecast_window:
+        logger.warning(
+            f"Live-Wetterabfrage nicht erreichbar. Nutze veralteten Cache (Alter: {cache_age})."
         )
-        logger.info(f"Bewässerung freigegeben: {details}")
-        return False, details
+        return _evaluate_skip(cached["rain_last_24h_mm"], cached["rain_next_24h_mm"])
+
+    # 4. Kein verwertbarer Cache und kein Live-Zugriff
+    logger.error("Keine Wetterdaten verfügbar (kein Cache, kein Netz). Bewässerung wird durchgeführt.")
+    return False, "Keine Wetterdaten verfügbar — Bewässerung zur Sicherheit durchgeführt."
