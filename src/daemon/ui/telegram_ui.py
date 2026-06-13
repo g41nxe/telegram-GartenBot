@@ -23,21 +23,25 @@ logger = logging.getLogger("garden_telegram_ui")
 # Zustandsbasierter Zeitplan-Assistent (Wizard) und manuelle Bewässerung
 wizard_states = {}  # { chat_id: { "step": int/str, "name": str, ..., "last_active": datetime } }
 manual_states = {}  # { chat_id: { "step": int/str, "duration": int, "volume": int, "last_active": datetime } }
+delete_states = {}  # { chat_id: { "schedule_id": int, "name": str, "last_active": datetime } }
 
 _state_lock = threading.Lock()
 WIZARD_TTL_SECONDS = 600  # 10 minutes of inactivity expires a wizard session
 
 
 def _cleanup_expired_states():
-    """Remove wizard/manual sessions that have been inactive for longer than WIZARD_TTL_SECONDS."""
+    """Remove wizard/manual/delete sessions that have been inactive for longer than WIZARD_TTL_SECONDS."""
     cutoff = datetime.now() - timedelta(seconds=WIZARD_TTL_SECONDS)
     with _state_lock:
         expired_wizard = [cid for cid, s in wizard_states.items() if s.get("last_active", datetime.min) < cutoff]
         expired_manual = [cid for cid, s in manual_states.items() if s.get("last_active", datetime.min) < cutoff]
+        expired_delete = [cid for cid, s in delete_states.items() if s.get("last_active", datetime.min) < cutoff]
         for cid in expired_wizard:
             del wizard_states[cid]
         for cid in expired_manual:
             del manual_states[cid]
+        for cid in expired_delete:
+            del delete_states[cid]
 
 
 def _state_get(d: dict, chat_id: int) -> dict | None:
@@ -86,6 +90,18 @@ def get_schedules_keyboard() -> dict:
             [{"text": "➕ Neuer Zeitplan", "callback_data": "wiz_start"}]
         ]
     }
+
+def get_schedules_inline_keyboard(schedules: list) -> dict:
+    """Erstellt ein Inline-Keyboard mit Toggle- und Lösch-Button pro Zeitplan."""
+    rows = []
+    for s in schedules:
+        icon = "🟢" if s['is_active'] == 1 else "🔴"
+        rows.append([
+            {"text": f"{icon} {s['name']} ({s['time']})", "callback_data": f"sched_toggle_{s['id']}"},
+            {"text": "🗑️", "callback_data": f"sched_delete_ask_{s['id']}"}
+        ])
+    rows.append([{"text": "➕ Neuer Zeitplan", "callback_data": "wiz_start"}])
+    return {"inline_keyboard": rows}
 
 def get_hour_keyboard() -> dict:
     """Erstellt ein kompaktes 6x4 Grid für alle 24 Stunden."""
@@ -414,11 +430,10 @@ def handle_schedules(chat_id: int):
             f"   - ⏳ Dauer: {s['duration_minutes']} Min\n"
             f"   - 💧 Menge: {vol_str}\n"
             f"   - Status: {status}\n"
-            f"   - Löschen: `/delete {s['id']}` | Umschalten: `/toggle {s['id']}`\n"
         )
 
     msg = "📅 **Aktuelle Zeitsteuerung (Zeitpläne):**\n\n" + "\n".join(lines)
-    telegram_client.send_message(chat_id, msg, get_schedules_keyboard())
+    telegram_client.send_message(chat_id, msg, get_schedules_inline_keyboard(schedules))
 
 def handle_add_schedule(chat_id: int, text: str):
     try:
@@ -486,6 +501,25 @@ def _process_message(msg_obj: dict):
     _cleanup_expired_states()
     chat_id = msg_obj["chat"]["id"]
     text = msg_obj.get("text", "").strip()
+
+    del_state = _state_get(delete_states, chat_id)
+    if del_state is not None:
+        if text == "✅ Ja, löschen":
+            sched_id = del_state["schedule_id"]
+            name = del_state["name"]
+            _state_del(delete_states, chat_id)
+            if database.delete_schedule(sched_id):
+                telegram_client.send_message(chat_id, f"🗑️ Zeitplan **'{name}'** wurde gelöscht.", get_main_keyboard())
+                handle_schedules(chat_id)
+            else:
+                telegram_client.send_message(chat_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.", get_main_keyboard())
+            return
+        elif text == "❌ Nein, abbrechen":
+            _state_del(delete_states, chat_id)
+            telegram_client.send_message(chat_id, "❌ Löschvorgang abgebrochen.", get_main_keyboard())
+            return
+        else:
+            _state_del(delete_states, chat_id)
 
     state = _state_get(wizard_states, chat_id)
     if state is not None:
@@ -885,6 +919,41 @@ def _process_callback_query(cb_obj: dict):
     elif data == "setup_cancel":
         telegram_client.answer_callback_query(cb_id, "Abgebrochen")
         telegram_client.send_message(chat_id, "❌ Ventil-Kopplung abgebrochen.", get_main_keyboard())
+
+    elif data.startswith("sched_toggle_"):
+        sched_id = int(data.split("_")[2])
+        schedules = database.get_schedules()
+        target = next((s for s in schedules if s["id"] == sched_id), None)
+        if target:
+            new_active = 0 if target["is_active"] == 1 else 1
+            database.update_schedule(
+                sched_id, target["name"], target["time"],
+                target["days"], target["duration_minutes"], target.get("target_volume_liters", 0), new_active
+            )
+            status_text = "aktiviert" if new_active == 1 else "deaktiviert"
+            telegram_client.answer_callback_query(cb_id, f"'{target['name']}' {status_text}")
+            handle_schedules(chat_id)
+        else:
+            telegram_client.answer_callback_query(cb_id, "Zeitplan nicht gefunden", show_alert=True)
+
+    elif data.startswith("sched_delete_ask_"):
+        sched_id = int(data.split("_")[3])
+        schedules = database.get_schedules()
+        target = next((s for s in schedules if s["id"] == sched_id), None)
+        if target:
+            _state_set(delete_states, chat_id, {"schedule_id": sched_id, "name": target["name"]})
+            telegram_client.answer_callback_query(cb_id)
+            telegram_client.send_message(
+                chat_id,
+                f"🗑️ **Zeitplan löschen**\n\nMöchtest du den Zeitplan **'{target['name']}'** wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.",
+                {
+                    "keyboard": [[{"text": "✅ Ja, löschen"}, {"text": "❌ Nein, abbrechen"}]],
+                    "resize_keyboard": True,
+                    "one_time_keyboard": True
+                }
+            )
+        else:
+            telegram_client.answer_callback_query(cb_id, "Zeitplan nicht gefunden", show_alert=True)
 
     else:
         telegram_client.answer_callback_query(cb_id)

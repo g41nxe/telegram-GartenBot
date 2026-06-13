@@ -8,14 +8,20 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from daemon.core.weather_codes import get_wmo_description
+from unittest.mock import patch
+
 from daemon.ui.telegram_ui import (
     wizard_states,
     manual_states,
+    delete_states,
     _state_get,
     _state_set,
     _state_del,
     _state_touch,
     _cleanup_expired_states,
+    get_schedules_inline_keyboard,
+    _process_message,
+    _process_callback_query,
     WIZARD_TTL_SECONDS,
 )
 
@@ -128,6 +134,165 @@ class TestWizardTTLCleanup(unittest.TestCase):
             t.join()
 
         self.assertEqual(errors, [], f"Thread-safety errors: {errors}")
+
+
+class TestDeleteStatesCleanup(unittest.TestCase):
+
+    def setUp(self):
+        delete_states.clear()
+
+    def tearDown(self):
+        delete_states.clear()
+
+    def test_cleanup_removes_expired_delete_states(self):
+        past = datetime.now() - timedelta(seconds=WIZARD_TTL_SECONDS + 10)
+        delete_states[100] = {"schedule_id": 1, "name": "Test", "last_active": past}
+        _cleanup_expired_states()
+        self.assertNotIn(100, delete_states)
+
+    def test_cleanup_preserves_fresh_delete_states(self):
+        _state_set(delete_states, 200, {"schedule_id": 2, "name": "Frisch"})
+        _cleanup_expired_states()
+        self.assertIn(200, delete_states)
+
+
+class TestSchedulesInlineKeyboard(unittest.TestCase):
+
+    def _s(self, id, name, time, is_active):
+        return {"id": id, "name": name, "time": time, "is_active": is_active}
+
+    def test_active_schedule_shows_green_icon(self):
+        kb = get_schedules_inline_keyboard([self._s(1, "Morgen", "07:00", 1)])
+        btn = kb["inline_keyboard"][0][0]
+        self.assertIn("🟢", btn["text"])
+        self.assertEqual(btn["callback_data"], "sched_toggle_1")
+
+    def test_inactive_schedule_shows_red_icon(self):
+        kb = get_schedules_inline_keyboard([self._s(2, "Abend", "20:00", 0)])
+        btn = kb["inline_keyboard"][0][0]
+        self.assertIn("🔴", btn["text"])
+
+    def test_delete_button_callback_data(self):
+        kb = get_schedules_inline_keyboard([self._s(3, "Test", "08:00", 1)])
+        btn = kb["inline_keyboard"][0][1]
+        self.assertEqual(btn["callback_data"], "sched_delete_ask_3")
+
+    def test_add_button_is_last_row(self):
+        kb = get_schedules_inline_keyboard([self._s(1, "Test", "07:00", 1)])
+        self.assertEqual(kb["inline_keyboard"][-1][0]["callback_data"], "wiz_start")
+
+    def test_multiple_schedules_generate_correct_row_count(self):
+        schedules = [self._s(1, "A", "07:00", 1), self._s(2, "B", "20:00", 0)]
+        kb = get_schedules_inline_keyboard(schedules)
+        self.assertEqual(len(kb["inline_keyboard"]), 3)  # 2 schedule rows + add row
+
+
+class TestScheduleToggleCallback(unittest.TestCase):
+
+    def _cb(self, data, chat_id=100, msg_id=1):
+        return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
+
+    def _schedule(self, id=1, name="Test", time="07:00", days="everyday", dur=10, vol=0, active=1):
+        return {"id": id, "name": name, "time": time, "days": days,
+                "duration_minutes": dur, "target_volume_liters": vol, "is_active": active}
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_toggle_activates_inactive_schedule(self, mock_client, mock_db):
+        mock_db.get_schedules.return_value = [self._schedule(active=0)]
+        _process_callback_query(self._cb("sched_toggle_1"))
+        mock_db.update_schedule.assert_called_once_with(1, "Test", "07:00", "everyday", 10, 0, 1)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_toggle_deactivates_active_schedule(self, mock_client, mock_db):
+        mock_db.get_schedules.return_value = [self._schedule(active=1)]
+        _process_callback_query(self._cb("sched_toggle_1"))
+        mock_db.update_schedule.assert_called_once_with(1, "Test", "07:00", "everyday", 10, 0, 0)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_toggle_unknown_id_shows_alert(self, mock_client, mock_db):
+        mock_db.get_schedules.return_value = []
+        _process_callback_query(self._cb("sched_toggle_99"))
+        mock_client.answer_callback_query.assert_called_once_with("cb1", "Zeitplan nicht gefunden", show_alert=True)
+
+
+class TestScheduleDeleteFlow(unittest.TestCase):
+
+    def setUp(self):
+        delete_states.clear()
+        wizard_states.clear()
+        manual_states.clear()
+
+    def tearDown(self):
+        delete_states.clear()
+        wizard_states.clear()
+        manual_states.clear()
+
+    def _cb(self, data, chat_id=100):
+        return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": 1}}
+
+    def _msg(self, text, chat_id=100):
+        return {"chat": {"id": chat_id}, "text": text}
+
+    def _schedule(self, id=5, name="Morgen", time="07:00"):
+        return {"id": id, "name": name, "time": time, "days": "everyday",
+                "duration_minutes": 10, "target_volume_liters": 0, "is_active": 1}
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_delete_ask_sets_delete_state(self, mock_client, mock_db):
+        mock_db.get_schedules.return_value = [self._schedule()]
+        _process_callback_query(self._cb("sched_delete_ask_5"))
+        state = _state_get(delete_states, 100)
+        self.assertIsNotNone(state)
+        self.assertEqual(state["schedule_id"], 5)
+        self.assertEqual(state["name"], "Morgen")
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_delete_ask_sends_reply_keyboard(self, mock_client, mock_db):
+        mock_db.get_schedules.return_value = [self._schedule()]
+        _process_callback_query(self._cb("sched_delete_ask_5"))
+        sent_kb = mock_client.send_message.call_args[0][2]
+        self.assertIn("keyboard", sent_kb)
+        texts = [btn["text"] for btn in sent_kb["keyboard"][0]]
+        self.assertIn("✅ Ja, löschen", texts)
+        self.assertIn("❌ Nein, abbrechen", texts)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_confirm_delete_calls_db_and_clears_state(self, mock_client, mock_db):
+        mock_db.delete_schedule.return_value = True
+        mock_db.get_schedules.return_value = []
+        _state_set(delete_states, 100, {"schedule_id": 5, "name": "Morgen"})
+        _process_message(self._msg("✅ Ja, löschen"))
+        mock_db.delete_schedule.assert_called_once_with(5)
+        self.assertIsNone(_state_get(delete_states, 100))
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_cancel_delete_does_not_call_db(self, mock_client, mock_db):
+        _state_set(delete_states, 100, {"schedule_id": 5, "name": "Morgen"})
+        _process_message(self._msg("❌ Nein, abbrechen"))
+        mock_db.delete_schedule.assert_not_called()
+        self.assertIsNone(_state_get(delete_states, 100))
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_unrelated_text_clears_delete_state(self, mock_client, mock_db):
+        _state_set(delete_states, 100, {"schedule_id": 5, "name": "Morgen"})
+        _process_message(self._msg("irgendwas"))
+        self.assertIsNone(_state_get(delete_states, 100))
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_delete_ask_unknown_id_shows_alert(self, mock_client, mock_db):
+        mock_db.get_schedules.return_value = []
+        _process_callback_query(self._cb("sched_delete_ask_99"))
+        mock_client.answer_callback_query.assert_called_once_with("cb1", "Zeitplan nicht gefunden", show_alert=True)
+        self.assertIsNone(_state_get(delete_states, 100))
 
 
 class TestTelegramBotStartup(unittest.TestCase):
