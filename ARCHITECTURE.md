@@ -23,3 +23,19 @@ Modules inside `core/` MUST NOT import anything from `adapters/` or `ui/`.
 Any code path that calls `event_bus.subscribe()` inside a function scope (not at module load time) MUST call `event_bus.unsubscribe()` in a corresponding `finally` block.
 - Subscriptions that outlive their intended scope are reference leaks; in a long-running daemon they accumulate and fire stale callbacks.
 - `EventBus` exposes `unsubscribe(event_type, callback)` for this purpose.
+
+## 5. Test Isolation at Transport Boundaries
+Modules that subscribe to the `EventBus` at **module load time** (e.g. `telegram_ui.py`) install their handlers into the global bus the moment they are imported — including during test discovery. Any domain event published in an integration test will therefore fire those handlers and make real outbound calls (HTTP, MQTT) unless the transport layer is mocked.
+
+- `setUpClass` of every integration test suite MUST mock all outbound I/O functions on `telegram_client` (`send_message`, `edit_message_text`, `answer_callback_query`, `broadcast_notification`, `start_polling`) before any event is published.
+- The same principle applies to any future module that subscribes at import time.
+
+**Enforcement:** `grep -r "telegram_client" tests/` must show patches for all five sending functions in every `setUpClass` that publishes domain events.
+
+## 6. Wiring Functions Must Have Smoke Tests
+Functions whose sole job is to wire modules together (e.g. `telegram_bot.start_bot()`) call functions on imported modules by name. If the target function is renamed or removed, the failure is silent until the daemon starts on the Pi.
+
+- Every wiring function MUST have a smoke test that calls it under mocked I/O and asserts it does not raise `AttributeError`.
+- When a function is removed from an adapter or core module, search for all callers before deleting it.
+
+**Enforcement:** `tests/ui/test_telegram_ui.py::TestTelegramBotStartup.test_start_bot_does_not_raise` is the reference pattern.
