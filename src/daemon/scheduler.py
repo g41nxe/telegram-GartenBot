@@ -3,7 +3,7 @@ import logging
 import threading
 from datetime import datetime
 from . import config
-from .adapters import database, weather
+from .adapters import database, weather, watchdog
 from .adapters.mqtt_client import _global_bus
 from .core.scheduler_events import WateringSkipped, ScheduleFailed
 from .adapters.daily_report import generate_daily_report, send_daily_report  # noqa: F401 (generate_daily_report re-exported for telegram_ui)
@@ -137,7 +137,8 @@ def _scheduler_loop():
     # Delay the first background weather fetch by 60 s so the Pi Zero W's
     # WiFi stack has time to resolve DNS before we hit the network.
     last_weather_update = time.time() - config.WEATHER_REFRESH_INTERVAL_SECONDS + 60
-    
+    last_watchdog_check = 0.0
+
     while scheduler_running:
         try:
             now = datetime.now()
@@ -153,8 +154,15 @@ def _scheduler_loop():
                     t_report = threading.Thread(target=send_daily_report, args=(today_str,), daemon=True)
                     t_report.start()
             
-            # Stündliches Wetter-Pre-Polling (Wärmt den lokalen Cache auf)
+            # Stündliche Hintergrundprüfungen
             current_timestamp = time.time()
+
+            if current_timestamp - last_watchdog_check >= 3600:
+                last_watchdog_check = current_timestamp
+                t_watchdog = threading.Thread(target=watchdog.run_watchdog_check, daemon=True)
+                t_watchdog.start()
+
+            # Stündliches Wetter-Pre-Polling (Wärmt den lokalen Cache auf)
             if current_timestamp - last_weather_update >= config.WEATHER_REFRESH_INTERVAL_SECONDS:
                 last_weather_update = current_timestamp
                 logger.info("Hintergrund-Wetterabfrage (Cache-Update) ausgelöst...")

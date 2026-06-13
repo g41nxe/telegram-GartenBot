@@ -1,6 +1,6 @@
 import logging
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 from .. import config
 from . import database, weather, mqtt_client
 from ..core.weather_codes import get_wmo_description
@@ -25,7 +25,6 @@ def _valve_warnings(valve: dict) -> list[str]:
     warnings = []
     wish_name = valve["wish_name"]
     battery = valve.get("battery") or 100
-    last_update_str = valve.get("last_update")
     abnormal_state = valve.get("valve_abnormal_state") or "normal"
 
     if battery <= config.BATTERY_WARNING_THRESHOLD:
@@ -33,18 +32,6 @@ def _valve_warnings(valve: dict) -> list[str]:
             f"🪫 **Niedriger Batteriestand ({wish_name}):** {battery}%"
             f" (Grenzwert: {config.BATTERY_WARNING_THRESHOLD}%)"
         )
-
-    if last_update_str:
-        try:
-            last_up = datetime.fromisoformat(last_update_str)
-            if datetime.now() - last_up > timedelta(hours=24):
-                hours = int((datetime.now() - last_up).total_seconds() / 3600)
-                warnings.append(
-                    f"⚠️ **Verbindung verloren ({wish_name}):** Letzte Rückmeldung vor"
-                    f" {hours} Stunden ({last_up.strftime('%d.%m. %H:%M')})"
-                )
-        except Exception:
-            warnings.append(f"⚠️ **Verbindung verloren ({wish_name}):** Fehler beim Ermitteln des letzten Signals")
 
     if abnormal_state != "normal":
         warnings.append(f"🚨 **Ventil-Anomalie erkannt ({wish_name}):** {abnormal_state}")
@@ -97,6 +84,14 @@ def generate_daily_report(today_str: str) -> str:
         )
 
     conn_info = "\n".join(valve_sections) if valve_sections else "Keine Ventile registriert.\n"
+
+    # Watchdog-Flags aus system_metadata auslesen (einzige Quelle für Inaktivitätswarnungen)
+    for valve in valves:
+        flag_key = f"watchdog_alert_active_valve_{valve['id']}"
+        if database.get_metadata(flag_key) == "1":
+            warnings.append(
+                f"📡 **Watchdog-Warnung ({valve['wish_name']}):** Ventil ist inaktiv (kein Signal seit >{config.WATCHDOG_VALVE_TIMEOUT_HOURS:.0f}h)."
+            )
 
     warning_text = ""
     if warnings:

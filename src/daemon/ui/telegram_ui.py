@@ -17,6 +17,7 @@ from ..core.scheduler_events import (
     WateringSkipped,
     ScheduleFailed
 )
+from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
 
 logger = logging.getLogger("garden_telegram_ui")
 
@@ -1063,6 +1064,17 @@ def _on_watering_skipped(event: WateringSkipped):
 def _on_schedule_failed(event: ScheduleFailed):
     telegram_client.broadcast_notification(f"⚠️ **Fehler bei Zeitplan '{event.schedule_name}'!**\n{event.details}")
 
+def _on_inactivity_alert(event: InactivityAlertTriggered):
+    msg = (
+        f"⚠️ *Verbindung verloren:* Ventil \"{event.device_name}\" "
+        f"hat seit {event.hours_silent:.1f} Stunden kein Signal gesendet."
+    )
+    telegram_client.broadcast_notification(msg)
+
+def _on_inactivity_resolved(event: InactivityAlertResolved):
+    msg = f"🟢 *Verbindung wiederhergestellt:* Ventil \"{event.device_name}\" sendet wieder Signale."
+    telegram_client.broadcast_notification(msg)
+
 _global_bus.subscribe(WateringCycleStarted, _on_watering_started)
 _global_bus.subscribe(WateringCycleCompleted, _on_watering_completed)
 _global_bus.subscribe(WateringCycleFailed, _on_watering_failed)
@@ -1070,3 +1082,5 @@ _global_bus.subscribe(WateringCycleStopped, _on_watering_stopped)
 _global_bus.subscribe(DailyReportTriggered, _on_daily_report)
 _global_bus.subscribe(WateringSkipped, _on_watering_skipped)
 _global_bus.subscribe(ScheduleFailed, _on_schedule_failed)
+_global_bus.subscribe(InactivityAlertTriggered, _on_inactivity_alert)
+_global_bus.subscribe(InactivityAlertResolved, _on_inactivity_resolved)
