@@ -1,5 +1,7 @@
 # Implementierungsplan: Multi-Ventil-Unterstützung und flexible Zeitpläne
 
+**Status:** ✅ Abgeschlossen (2026-06-13) — alle 9 Schritte implementiert, 79/79 Tests grün
+
 Wir erweitern das Gartenbewässerungs-System um die Unterstützung mehrerer Ventile. Die Ventile können dynamisch über den Bot registriert, Zeitplänen zugewiesen und manuell oder automatisch (sequentiell/parallel) bewässert werden.
 
 ## Design-Entscheidungen

@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from ..core.event_bus import EventBus
 from . import database
 from ..core.watering_controller import (
@@ -43,7 +44,9 @@ class DatabaseLoggerAdapter:
         database.log_watering(event.duration_run, event.source, "stopped", event.details, watered_volume=event.volume_run)
 
     def _on_valve_status_reported(self, event: ValveStatusReported):
+        now = datetime.now().isoformat()
         database.log_device_status(event.mqtt_name, event.battery, event.linkquality)
+        database.update_valve_status(event.mqtt_name, event.battery, event.linkquality, now, event.valve_abnormal_state)
 
     def _on_weather_data_fetched(self, event: WeatherDataFetched):
         database.log_weather(
