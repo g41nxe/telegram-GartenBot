@@ -7,6 +7,8 @@ from . import database
 logger = logging.getLogger("garden_chart")
 
 QUICKCHART_URL = "https://quickchart.io/chart"
+# QuickChart.io defaults to Chart.js v2 — "version": "4" is required for v3+ syntax
+# (scales as objects with ID-keys, per-dataset type overrides). Omitting it causes HTTP 400.
 
 
 def generate_weather_chart() -> bytes | None:
