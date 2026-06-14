@@ -543,6 +543,12 @@ class TestBatteryDescription(unittest.TestCase):
         self.assertIn("Voll", self.desc(100))
         self.assertIn("Voll", self.desc(61))
 
+    def test_100_percent_hides_percentage(self):
+        self.assertNotIn("100%", self.desc(100))
+
+    def test_non_100_full_shows_percentage(self):
+        self.assertIn("61%", self.desc(61))
+
     def test_medium_battery_between_20_and_60(self):
         self.assertIn("Mittel", self.desc(60))
         self.assertIn("Mittel", self.desc(21))

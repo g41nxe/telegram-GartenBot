@@ -244,12 +244,13 @@ def _get_battery_description(battery_val) -> str:
         b = int(battery_val)
     except (TypeError, ValueError):
         b = 0
+    suffix = "" if b == 100 else f" ({b}%)"
     if b > 60:
-        return f"🔋 Voll ({b}%)"
+        return f"🔋 Voll{suffix}"
     if b > 20:
-        return f"🔋 Mittel ({b}%)"
+        return f"🔋 Mittel{suffix}"
     if b > 0:
-        return f"🪫 Schwach ({b}%)"
+        return f"🪫 Schwach{suffix}"
     return "🪫 Unbekannt"
 
 def _get_lqi_description(lqi_val) -> str:
