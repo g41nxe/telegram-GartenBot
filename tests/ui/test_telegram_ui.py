@@ -349,15 +349,15 @@ class TestStatusWeatherBlock(unittest.TestCase):
     def _msg(self, text, chat_id=100):
         return {"chat": {"id": chat_id}, "text": text}
 
-    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_status_shows_jetzt_line(self, mock_client, mock_db, mock_scheduler):
+    def test_status_shows_jetzt_line(self, mock_client, mock_db, mock_ctrl):
         from daemon.adapters import mqtt_client as mc
         mock_db.get_last_weather.return_value = _make_weather_row()
         mock_db.get_all_valves.return_value = []
         mock_db.get_recent_history.return_value = []
-        mock_scheduler.get_active_cycle.return_value = None
+        mock_ctrl.get_active_cycle.return_value = None
         with patch.object(mc, "HAS_PAHO", False), \
              patch.object(mc, "request_valve_status"), \
              patch.object(mc, "is_broker_connected", return_value=True), \
@@ -367,15 +367,15 @@ class TestStatusWeatherBlock(unittest.TestCase):
         sent_text = mock_client.send_message.call_args[0][1]
         self.assertIn("Jetzt", sent_text)
 
-    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_status_shows_next_hour_line(self, mock_client, mock_db, mock_scheduler):
+    def test_status_shows_next_hour_line(self, mock_client, mock_db, mock_ctrl):
         from daemon.adapters import mqtt_client as mc
         mock_db.get_last_weather.return_value = _make_weather_row(with_forecast=True)
         mock_db.get_all_valves.return_value = []
         mock_db.get_recent_history.return_value = []
-        mock_scheduler.get_active_cycle.return_value = None
+        mock_ctrl.get_active_cycle.return_value = None
         with patch.object(mc, "HAS_PAHO", False), \
              patch.object(mc, "request_valve_status"), \
              patch.object(mc, "is_broker_connected", return_value=True), \
@@ -385,15 +385,15 @@ class TestStatusWeatherBlock(unittest.TestCase):
         sent_text = mock_client.send_message.call_args[0][1]
         self.assertIn("15:00", sent_text)  # nächste Stunde aus Forecast-Index 1
 
-    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_status_without_forecast_shows_no_next_hour(self, mock_client, mock_db, mock_scheduler):
+    def test_status_without_forecast_shows_no_next_hour(self, mock_client, mock_db, mock_ctrl):
         from daemon.adapters import mqtt_client as mc
         mock_db.get_last_weather.return_value = _make_weather_row(with_forecast=False)
         mock_db.get_all_valves.return_value = []
         mock_db.get_recent_history.return_value = []
-        mock_scheduler.get_active_cycle.return_value = None
+        mock_ctrl.get_active_cycle.return_value = None
         with patch.object(mc, "HAS_PAHO", False), \
              patch.object(mc, "request_valve_status"), \
              patch.object(mc, "is_broker_connected", return_value=True), \
@@ -405,15 +405,15 @@ class TestStatusWeatherBlock(unittest.TestCase):
         self.assertIn("Jetzt", sent_text)
         self.assertNotIn("🔜", sent_text)
 
-    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_status_no_weather_shows_fallback(self, mock_client, mock_db, mock_scheduler):
+    def test_status_no_weather_shows_fallback(self, mock_client, mock_db, mock_ctrl):
         from daemon.adapters import mqtt_client as mc
         mock_db.get_last_weather.return_value = None
         mock_db.get_all_valves.return_value = []
         mock_db.get_recent_history.return_value = []
-        mock_scheduler.get_active_cycle.return_value = None
+        mock_ctrl.get_active_cycle.return_value = None
         with patch.object(mc, "HAS_PAHO", False), \
              patch.object(mc, "request_valve_status"), \
              patch.object(mc, "is_broker_connected", return_value=True), \
@@ -430,17 +430,18 @@ class TestReportChartIntegration(unittest.TestCase):
     def _msg(self, text, chat_id=100):
         return {"chat": {"id": chat_id}, "text": text}
 
-    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui._generate_daily_report")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.adapters.chart.generate_weather_chart", return_value=(b"\x89PNG", "🌤 Wetterverlauf — nächste 24h\n🌱 Gießen empfohlen — trocken bis morgen"))
-    def test_report_sends_photo_when_chart_available(self, mock_chart, mock_client, mock_db, mock_sched):
+    def test_report_sends_photo_when_chart_available(self, mock_chart, mock_client, mock_db, mock_ctrl, mock_generate):
         from daemon.adapters import mqtt_client as mc
         mock_db.get_last_weather.return_value = _make_weather_row()
         mock_db.get_all_valves.return_value = []
         mock_db.get_recent_history.return_value = []
-        mock_sched.get_active_cycle.return_value = None
-        mock_sched.generate_daily_report.return_value = "Tagesbericht"
+        mock_ctrl.get_active_cycle.return_value = None
+        mock_generate.return_value = "Tagesbericht"
         with patch.object(mc, "HAS_PAHO", False), \
              patch.object(mc, "request_valve_status"), \
              patch.object(mc, "is_broker_connected", return_value=True), \
@@ -451,17 +452,18 @@ class TestReportChartIntegration(unittest.TestCase):
         args = mock_client.send_photo.call_args[0]
         self.assertEqual(args[1], b"\x89PNG")
 
-    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui._generate_daily_report")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.adapters.chart.generate_weather_chart", return_value=None)
-    def test_report_sends_no_photo_when_chart_fails(self, mock_chart, mock_client, mock_db, mock_sched):
+    def test_report_sends_no_photo_when_chart_fails(self, mock_chart, mock_client, mock_db, mock_ctrl, mock_generate):
         from daemon.adapters import mqtt_client as mc
         mock_db.get_last_weather.return_value = _make_weather_row(with_forecast=True)
         mock_db.get_all_valves.return_value = []
         mock_db.get_recent_history.return_value = []
-        mock_sched.get_active_cycle.return_value = None
-        mock_sched.generate_daily_report.return_value = "Tagesbericht"
+        mock_ctrl.get_active_cycle.return_value = None
+        mock_generate.return_value = "Tagesbericht"
         with patch.object(mc, "HAS_PAHO", False), \
              patch.object(mc, "request_valve_status"), \
              patch.object(mc, "is_broker_connected", return_value=True), \
@@ -472,17 +474,18 @@ class TestReportChartIntegration(unittest.TestCase):
         # Tagesbericht wird trotzdem gesendet
         mock_client.send_message.assert_called()
 
-    @patch("daemon.ui.telegram_ui.scheduler")
+    @patch("daemon.ui.telegram_ui._generate_daily_report")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.adapters.chart.generate_weather_chart", return_value=None)
-    def test_report_sends_daily_report_regardless_of_chart(self, mock_chart, mock_client, mock_db, mock_sched):
+    def test_report_sends_daily_report_regardless_of_chart(self, mock_chart, mock_client, mock_db, mock_ctrl, mock_generate):
         from daemon.adapters import mqtt_client as mc
         mock_db.get_last_weather.return_value = None
         mock_db.get_all_valves.return_value = []
         mock_db.get_recent_history.return_value = []
-        mock_sched.get_active_cycle.return_value = None
-        mock_sched.generate_daily_report.return_value = "Tagesbericht"
+        mock_ctrl.get_active_cycle.return_value = None
+        mock_generate.return_value = "Tagesbericht"
         with patch.object(mc, "HAS_PAHO", False), \
              patch.object(mc, "request_valve_status"), \
              patch.object(mc, "is_broker_connected", return_value=True), \

@@ -6,12 +6,12 @@ from . import config
 from .adapters import database, weather, watchdog, mqtt_client
 from .adapters.mqtt_client import _global_bus
 from .core.scheduler_events import WateringSkipped, ScheduleFailed
-from .adapters.daily_report import generate_daily_report, send_daily_report  # noqa: F401 (generate_daily_report re-exported for telegram_ui)
+from .adapters.daily_report import send_daily_report
 
 logger = logging.getLogger("garden_scheduler")
 
 # Globale Steuerung des Controllers für abwärtskompatible Aufrufe
-controller = None
+_controller = None
 
 # Steuerung des Scheduler-Hintergrundthreads
 scheduler_running = False
@@ -19,32 +19,10 @@ scheduler_thread = None
 
 # Event-basierte Entkopplung der Benachrichtigungen (siehe scheduler_events)
 
-def get_active_cycle():
-    """Gibt Details zum aktuell laufenden Bewässerungszyklus zurück (Fassaden-Methode)."""
-    global controller
-    if controller:
-        return controller.get_active_cycle()
-    return None
-
-def start_watering(duration_minutes: int, target_volume_liters: int, source: str) -> tuple[bool, str]:
-    """Startet die Bewässerung (Fassaden-Methode)."""
-    global controller
-    if controller:
-        return controller.start_watering(duration_minutes, target_volume_liters, source)
-    return False, "Domänen-Controller nicht initialisiert."
-
-def stop_watering() -> tuple[bool, str]:
-    """Stoppt die aktive Bewässerung sofort (Fassaden-Methode)."""
-    global controller
-    if controller:
-        return controller.stop_watering()
-    return False, "Domänen-Controller nicht initialisiert."
-
-def _time_limit_callback():
-    """Löst das Zeitlimit manuell über den Controller aus (Abwärtskompatibilität für Tests)."""
-    global controller
-    if controller:
-        controller._time_limit_callback()
+def set_controller(ctrl) -> None:
+    """Verdrahtet die Guss-Steuerung. Einmalig von main.py beim Daemon-Start aufrufen."""
+    global _controller
+    _controller = ctrl
 
 
 
@@ -88,17 +66,17 @@ def _trigger_scheduled_watering(sched: dict):
 
 def _start_single_valve(valve: dict, sched: dict) -> tuple[bool, str]:
     """Startet einen Guss-Zyklus für ein einzelnes Ventil."""
-    global controller
+    global _controller
     name = sched.get("name", "Zeitplan")
     duration = sched.get("duration_minutes", 10)
     volume = sched.get("target_volume_liters", 0)
     mqtt_name = valve["mqtt_name"]
     valve_topic = f"zigbee2mqtt/{mqtt_name}"
 
-    if not controller:
+    if not _controller:
         return False, "Domänen-Controller nicht initialisiert."
 
-    success, msg = controller.start_watering(duration, volume, "schedule",
+    success, msg = _controller.start_watering(duration, volume, "schedule",
                                              mqtt_name=mqtt_name, valve_topic=valve_topic)
     if not success:
         database.log_watering(duration, "schedule", "failed", f"Zeitplan '{name}' [{mqtt_name}]: {msg}")
@@ -209,11 +187,11 @@ def _scheduler_loop():
 
 def check_startup_safety() -> bool:
     """Prüft beim Systemstart, ob das Ventil unüberwacht offen steht, und schließt es gegebenenfalls."""
-    global controller
+    global _controller
     from .adapters import mqtt_client
     status = mqtt_client.get_valve_status()
     if status.get("state") == "ON":
-        if controller and controller.get_active_cycle() is None:
+        if _controller and _controller.get_active_cycle() is None:
             logger.warning("Sicherheits-Schließung: Unerwartet geöffnetes Ventil beim Systemstart erkannt!")
             mqtt_client.close_valve()
             _global_bus.publish(ScheduleFailed("Systemstart", "Unerwartet geöffnetes Ventil erkannt. Sicherheits-Schließung durchgeführt."))

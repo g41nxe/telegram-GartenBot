@@ -1,0 +1,38 @@
+{
+  "id": "714d4aba-4f4d-4043-b072-dcd3123dd4e6",
+  "name": "garden",
+  "projectResources": {
+    "resources": [
+      {
+        "gitFolder": {
+          "folderUri": "file:///c%3A/Users/g41nx/Repositories/garden",
+          "defaultBranch": "master"
+        }
+      }
+    ]
+  },
+  "permissionGrants": {
+    "permissionGrants": {
+      "allow": [
+        "command(git clone)",
+        "write_file(C:\\Users\\g41nx\\.gemini\\config\\plugins\\matt-pocock-skills\\plugin.json)",
+        "command(Remove-Item)",
+        "command(git diff)",
+        "command(git checkout)",
+        "command(git)",
+        "read_file(C:\\Users\\g41nx\\Repositories\\garden\\.env)",
+        "command(powershell)",
+        "command(copy)",
+        "command(.\\deploy.ps1)",
+        "command(pytest)",
+        "command(pi)"
+      ]
+    }
+  },
+  "settings": {
+    "fileAccessPolicy": "AGENT_SETTING_POLICY_ASK",
+    "internetPolicy": "AGENT_SETTING_POLICY_ASK",
+    "autoExecutionPolicy": "CASCADE_COMMANDS_AUTO_EXECUTION_OFF",
+    "artifactReviewMode": "ARTIFACT_REVIEW_MODE_ALWAYS"
+  }
+}

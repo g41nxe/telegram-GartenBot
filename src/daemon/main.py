@@ -3,7 +3,6 @@ import logging
 import sys
 from . import config, scheduler
 from .adapters import database, mqtt_client
-from .ui import telegram_bot
 
 # Zentrales Logging konfigurieren
 logging.basicConfig(
@@ -41,7 +40,7 @@ def main():
     
     # Erzeuge Guss-Steuerung und weise sie dem Scheduler zu (Fassaden-Kopplung)
     watering_ctrl = WateringController(mqtt_client._global_bus, mqtt_client.client_instance.publish)
-    scheduler.controller = watering_ctrl
+    scheduler.set_controller(watering_ctrl)
     
     # Initialisiere den DB-Logger Adapter zur Event-Archivierung
     db_adapter = DatabaseLoggerAdapter(mqtt_client._global_bus)
@@ -57,6 +56,7 @@ def main():
     # 6. Telegram-UI-Event-Handler verdrahten und Bot starten
     logger.info("Initialisiere Telegram-Bot...")
     from .ui import telegram_ui as _telegram_ui
+    _telegram_ui.set_watering_controller(watering_ctrl)
     _telegram_ui.subscribe_event_handlers()
     if not config.TELEGRAM_BOT_TOKEN:
         logger.warning(
@@ -64,7 +64,10 @@ def main():
             "Der Bot steht nicht zur Verfügung!"
         )
     else:
-        telegram_bot.start_bot()
+        from .ui import telegram_client
+        telegram_client.register_update_callback(_telegram_ui.on_telegram_update)
+        telegram_client.start_polling()
+        logger.info("Telegram-Bot-System (entkoppelter Client & UI-Controller) erfolgreich initialisiert.")
 
     logger.info("----------------------------------------------")
     logger.info("System läuft erfolgreich. Drücken Sie Strg+C zum Beenden.")

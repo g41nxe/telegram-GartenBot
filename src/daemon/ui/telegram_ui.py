@@ -6,11 +6,12 @@ import urllib.request
 import urllib.error
 from datetime import datetime, timedelta
 from pathlib import Path
-from .. import config, scheduler
+from .. import config
 from ..adapters import database
 from . import telegram_client
 
 _VERSION_FILE = Path(__file__).resolve().parent.parent.parent.parent / "VERSION"
+from ..adapters.daily_report import generate_daily_report as _generate_daily_report
 from ..adapters.mqtt_client import _global_bus
 from ..core.weather_codes import get_wmo_description as _get_wmo_description
 from ..core.watering_controller import (
@@ -25,8 +26,15 @@ from ..core.scheduler_events import (
     ScheduleFailed
 )
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
-
 logger = logging.getLogger("garden_telegram_ui")
+
+# Module-level controller reference — set once at daemon startup by main.py
+_watering_ctrl = None
+
+def set_watering_controller(ctrl) -> None:
+    """Verdrahtet die Guss-Steuerung für manuelle Bewässerungsbefehle. Einmalig von main.py aufrufen."""
+    global _watering_ctrl
+    _watering_ctrl = ctrl
 
 # Zustandsbasierter Zeitplan-Assistent (Wizard) und manuelle Bewässerung
 wizard_states = {}  # { chat_id: { "step": int/str, "name": str, ..., "last_active": datetime } }
@@ -396,7 +404,7 @@ def handle_status(chat_id: int):
         services_status = "🟢 Aktiv"
         services_ok = True
 
-    active = scheduler.get_active_cycle()
+    active = _watering_ctrl.get_active_cycle() if _watering_ctrl else None
     active_text = ""
     if active:
         active_text = (
@@ -718,7 +726,10 @@ def _process_message(msg_obj: dict):
                     dur = man_state["duration"]
                     _state_del(manual_states, chat_id)
 
-                    success, response = scheduler.start_watering(dur, vol, "manual")
+                    if _watering_ctrl:
+                        success, response = _watering_ctrl.start_watering(dur, vol, "manual")
+                    else:
+                        success, response = False, "Guss-Steuerung nicht initialisiert."
                     if not success:
                         telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
                 except ValueError:
@@ -748,7 +759,7 @@ def _process_message(msg_obj: dict):
             telegram_client.send_photo(chat_id, image_bytes, caption=caption)
 
         today_str = datetime.now().strftime("%Y-%m-%d")
-        report_text = scheduler.generate_daily_report(today_str)
+        report_text = _generate_daily_report(today_str)
         telegram_client.send_message(chat_id, report_text, get_main_keyboard())
     elif text == "📅 Zeitsteuerung" or text == "📅 Zeitpläne" or text.startswith("/zeitplan"):
         handle_schedules(chat_id)
@@ -762,7 +773,10 @@ def _process_message(msg_obj: dict):
             get_duration_wizard_keyboard("man")
         )
     elif text == "🔴 Sofort Stopp" or text.startswith("/stop"):
-        success, response = scheduler.stop_watering()
+        if _watering_ctrl:
+            success, response = _watering_ctrl.stop_watering()
+        else:
+            success, response = False, "Guss-Steuerung nicht initialisiert."
         if not success:
             telegram_client.send_message(chat_id, f"ℹ️ {response}")
     elif text.startswith("/add"):
@@ -793,7 +807,10 @@ def _process_callback_query(cb_obj: dict):
     elif data.startswith("water_"):
         duration = int(data.split("_")[1])
         telegram_client.answer_callback_query(cb_id, "Starte Bewässerung...")
-        success, response = scheduler.start_watering(duration, 0, "manual")
+        if _watering_ctrl:
+            success, response = _watering_ctrl.start_watering(duration, 0, "manual")
+        else:
+            success, response = False, "Guss-Steuerung nicht initialisiert."
         if not success:
             telegram_client.send_message(chat_id, f"❌ Fehler: {response}", get_main_keyboard())
 
