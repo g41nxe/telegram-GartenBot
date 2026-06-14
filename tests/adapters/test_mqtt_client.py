@@ -148,6 +148,29 @@ class TestPahoMqttClient(unittest.TestCase):
         self.assertEqual(event.flow_rate, 5.5)
         self.assertEqual(event.battery, 80)
         
+    def test_on_message_reads_real_time_irrigation_volume(self):
+        """_on_message liest real_time_irrigation_volume und gibt es als irrigation_volume im Event weiter."""
+        from unittest.mock import MagicMock
+        import json
+        from daemon import config
+        mock_handler = MagicMock()
+        self.bus.subscribe(ValveStatusReported, mock_handler)
+
+        class MockMsg:
+            def __init__(self, topic, payload):
+                self.topic = topic
+                self.payload = payload
+
+        msg = MockMsg(config.MQTT_VALVE_TOPIC, json.dumps({
+            "state": "ON", "battery": 95, "linkquality": 120,
+            "real_time_irrigation_volume": 4.7
+        }).encode())
+
+        self.adapter._on_message(None, None, msg)
+
+        event = mock_handler.call_args[0][0]
+        self.assertAlmostEqual(event.irrigation_volume, 4.7, places=2)
+
     def test_on_message_device_joined(self):
         from unittest.mock import MagicMock
         import json

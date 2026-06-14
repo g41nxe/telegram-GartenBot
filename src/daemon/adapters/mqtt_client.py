@@ -200,8 +200,12 @@ class PahoMqttAdapter(MqttClient):
                     linkquality = int(data.get("linkquality", valve_status["linkquality"]))
                     valve_abnormal_state = data.get("valve_abnormal_state", valve_status.get("valve_abnormal_state", "normal"))
 
+                irrigation_volume = float(data.get("real_time_irrigation_volume", 0.0))
                 mqtt_name = msg.topic.split("/")[-1]
-                self.event_bus.publish(ValveStatusReported(mqtt_name, state, flow_rate, battery, linkquality, valve_abnormal_state))
+                self.event_bus.publish(ValveStatusReported(
+                    mqtt_name, state, flow_rate, battery, linkquality, valve_abnormal_state,
+                    irrigation_volume=irrigation_volume
+                ))
 
             elif msg.topic == "zigbee2mqtt/bridge/event":
                 if data.get("type") == "device_joined":

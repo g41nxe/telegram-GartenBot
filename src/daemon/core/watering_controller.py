@@ -175,6 +175,34 @@ class WateringController:
                     f"Volumenlimit von {target_volume}l erreicht in {duration_run} Min."
                 ))
 
+    def _apply_device_volume(self, irrigation_volume: float, mqtt_name: str = "garden_valve"):
+        """Übernimmt das kumulative Volumen direkt vom Gerät (SWV-ZFE: real_time_irrigation_volume)."""
+        with self._lock:
+            if mqtt_name not in self._active_cycles:
+                return
+
+            cycle = self._active_cycles[mqtt_name]
+            new_volume = max(cycle.get("current_volume", 0.0), irrigation_volume)
+            cycle["current_volume"] = new_volume
+            current_volume = round(new_volume, 2)
+            target_volume = cycle["target_volume"]
+
+            logger.debug(f"Guss-Steuerung [{mqtt_name}]: Gerätevolumen = {current_volume:.2f}l")
+
+            if target_volume > 0 and current_volume >= target_volume:
+                logger.info(f"Guss-Steuerung [{mqtt_name}]: Volumenlimit von {target_volume}l erreicht. Schließe Ventil...")
+                cycle["timer"].cancel()
+                valve_topic = cycle.get("valve_topic", f"zigbee2mqtt/{mqtt_name}")
+                self.publish_fn(f"{valve_topic}/set", '{"state": "OFF"}')
+                duration_run = max(1, int((datetime.now() - cycle["start_time"]).total_seconds() / 60))
+                source = cycle["source"]
+                del self._active_cycles[mqtt_name]
+                self._last_flow_update_time.pop(mqtt_name, None)
+                self.event_bus.publish(WateringCycleCompleted(
+                    duration_run, current_volume, source,
+                    f"Volumenlimit von {target_volume}l erreicht in {duration_run} Min."
+                ))
+
     def _on_valve_status_reported(self, event: ValveStatusReported):
         """Callback beim Empfang eines neuen Ventil-Zustands — filtert nach mqtt_name."""
         mqtt_name = event.mqtt_name
@@ -185,10 +213,14 @@ class WateringController:
                 return
             last_update = self._last_flow_update_time.get(mqtt_name)
 
-        if event.state == "ON" and last_update is not None:
-            elapsed = (now - last_update).total_seconds()
-            if elapsed > 0:
-                self._integrate_flow(event.flow_rate, elapsed, mqtt_name)
+        if event.state == "ON":
+            if event.irrigation_volume > 0:
+                # Gerät meldet kumulatives Volumen direkt (z.B. Sonoff SWV-ZFE)
+                self._apply_device_volume(event.irrigation_volume, mqtt_name)
+            elif last_update is not None:
+                elapsed = (now - last_update).total_seconds()
+                if elapsed > 0:
+                    self._integrate_flow(event.flow_rate, elapsed, mqtt_name)
 
         with self._lock:
             if mqtt_name in self._active_cycles:
