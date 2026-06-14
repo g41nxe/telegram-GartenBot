@@ -11,17 +11,17 @@ Die Steuerung erfolgt weltweit gesichert über einen whitelist-basierten **Teleg
 *   **🟢 Kombinierter Guss (First-to-Hit Limit):** Ultimativer Überflutungsschutz. Jeder Bewässerungslauf (sowohl manuell als auch geplant) überwacht *parallel* ein **Zeitlimit** (Minuten) und ein **Volumenlimit** (Liter). Das Ventil schließt automatisch, sobald der *erste* Grenzwert erreicht wird (z. B. 50 Liter fließen ODER 15 Minuten verstreichen).
 *   **📡 Mehrfach-Ventil-Unterstützung:** Koppeln und benennen Sie beliebig viele Sonoff Hydro ONE Ventile über den Telegram-Bot (`🔧 Ventil koppeln`). Zeitpläne können mehrere Ventile **sequentiell** (nacheinander, druckschonend) oder **parallel** (gleichzeitig, jedes mit eigenem Grenzwert) steuern. Live-Status und Tagesbericht zeigen Batterie, Signalstärke und letztes Lebenszeichen pro Ventil separat an.
 *   **📅 Geführter Zeitplan-Assistent (Guided Wizard):** Erstellen Sie komplexe Zeitpläne Schritt-für-Schritt direkt im Telegram-Chat über intuitive Inline-Tastaturen (freie Namenseingabe, Stundenraster, 5-Minuten-Schritte, Kleingarten-Presets und Multi-Select-Wochentage).
-*   **🛢️ Füllstandsauswertung & Alarmierung (In Arbeit):** Der Daemon empfängt Messwerte des Füllstandssensors (Abstand in cm) per MQTT, berechnet den prozentualen Füllstand der Klärgrube und speichert ihn in SQLite. Bei erstmaliger Überschreitung eines Schwellenwerts (z. B. 80 %) erfolgt ein Sofort-Alarm via Telegram. Der Füllstand wird in den täglichen Statusbericht integriert.
-*   **🐕 Inaktivitäts-Watchdog (In Arbeit):** Proaktive Überwachung von batteriebetriebenen Geräten. Bleibt eine Füllstands-Meldung des Füllstandssensors (z. B. > 18 Stunden) oder ein Lebenszeichen eines Ventils (z. B. > 24 Stunden) aus, warnt der Bot sofort vor einem Verbindungs- oder Batterieausfall.
+*   **🛢️ Füllstandsauswertung & Alarmierung (Geplant):** Der Daemon empfängt Messwerte des Füllstandssensors (Abstand in cm) per MQTT, berechnet den prozentualen Füllstand der Klärgrube und speichert ihn in SQLite. Bei erstmaliger Überschreitung eines Schwellenwerts (z. B. 80 %) erfolgt ein Sofort-Alarm via Telegram. Der Füllstand wird in den täglichen Statusbericht integriert.
+*   **🐕 Inaktivitäts-Watchdog:** Proaktive Überwachung von batteriebetriebenen Geräten. Bleibt eine Füllstands-Meldung des Füllstandssensors (z. B. > 18 Stunden, sobald integriert) oder ein Lebenszeichen eines Ventils (z. B. > 24 Stunden) aus, warnt der Bot sofort vor einem Verbindungs- oder Batterieausfall.
 *   **🌦️ Intelligenter Wetter-Skip (Offline-first):** Open-Meteo API-Anbindung prüft stündlich im Hintergrund den Regen (letzte 24h Historie + nächste 24h Vorhersage). Überschreitet die Summe Ihren Grenzwert (z. B. 3.0 mm), wird die geplante Bewässerung übersprungen und protokolliert. Durch lokale SQLite-Zwischenspeicherung funktioniert dies auch bei temporärem Internetausfall.
 *   **🔌 Live-Verbindungsanzeige:** Der Status-Bildschirm (`/status`) visualisiert in Echtzeit, ob die MQTT-Brokerverbindung steht und zeigt für jedes registrierte Ventil separat: Verbindungsstatus, Batteriestand und Signalqualität.
-*   **⚡ 100 % Abhängigkeitsfrei (Telegram & API):** Entwickelt komplett auf Basis der Python-Standardbibliotheken (`urllib.request`). Keine schweren Frameworks – perfekt optimiert für den ressourcenschwachen Single-Core-Prozessor des Pi Zero W.
+*   **⚡ 100 % Abhängigkeitsfrei (Telegram & API):** Entwickelt komplett auf Basis der Python-Standardbibliotheken (`urllib.request`). Keine schweren Frameworks – perfekt optimiert für den ressourcenschwachen Single-Core-Prozessor der Steuerzentrale (Pi Zero W).
 
 ---
 
 ## 🛠️ Systemarchitektur & Ablauf
 
-Das System arbeitet vollkommen lokal auf Ihrem Raspberry Pi Zero W:
+Das System arbeitet vollkommen lokal auf Ihrer Steuerzentrale (Raspberry Pi Zero W):
 
 ```mermaid
 graph TD
@@ -46,10 +46,10 @@ graph TD
 ├── ARCHITECTURE.md          # Architekturregeln (Hexagonal Architecture, EventBus)
 ├── README.md                # Diese Dokumentation
 ├── deploy.ps1               # PowerShell Bereitstellungsskript für Windows
-├── setup.sh                 # Vollautomatisches Pi-Installationsskript (alle Dienste)
+├── setup.sh                 # Vollautomatisches Installationsskript für die Steuerzentrale (alle Dienste)
 ├── garden.db                # Lokale SQLite-Datenbank (Zeitpläne, Ventile, Verlauf)
 ├── docs/
-│   ├── adr/                 # Architekturentscheidungen (ADRs 0001–0017)
+│   ├── adr/                 # Architekturentscheidungen (ADRs 0001–0023)
 │   ├── features/            # Feature-Spezifikationen
 │   ├── hardware/            # Pläne zur Geräteverkabelung
 │   └── plans/               # Detaillierte Umsetzungspläne (completed/ für abgeschlossene)
@@ -61,13 +61,18 @@ graph TD
 │       ├── core/            # Domänenlogik (kein I/O)
 │       │   ├── event_bus.py             # Thread-sicherer synchroner Ereignis-Kanal
 │       │   ├── watering_controller.py   # Guss-Steuerung mit Multi-Ventil-Support
-│       │   └── scheduler_events.py      # Domänen-Ereignistypen
+│       │   ├── scheduler_events.py      # Domänen-Ereignistypen (Zeitsteuerung, Reports)
+│       │   ├── valve_events.py          # Ventil-Ereignistypen (Kopplung, Status)
+│       │   ├── watchdog_events.py       # Inaktivitäts-Ereignistypen
+│       │   └── weather_codes.py         # WMO-Wettercode-Definitionen
 │       ├── adapters/        # Äußere Grenze — kein Cross-Adapter-Import
 │       │   ├── database.py              # SQLite CRUD (Zeitpläne, Ventile, Verlauf)
 │       │   ├── database_adapter.py      # Domänen-Events → Datenbank-Archivierung
 │       │   ├── mqtt_client.py           # MQTT-Schnittstelle + Simulations-Adapter
 │       │   ├── weather.py               # Open-Meteo HTTP-Adapter & Skip-Logik
 │       │   ├── daily_report.py          # Täglicher Statusbericht (pro Ventil)
+│       │   ├── watchdog.py              # Überwachung inaktiver Ventile
+│       │   ├── chart.py                 # Generierung des grafischen Wettercharts
 │       │   └── pairing.py               # Ventil-Kopplung (Zigbee-Join + DB-Registrierung)
 │       └── ui/              # Benutzeroberfläche (Telegram)
 │           ├── telegram_bot.py          # Bot-Hauptschleife & Event-Dispatcher
@@ -83,16 +88,16 @@ graph TD
 
 ---
 
-## 🚀 Installation & Bereitstellung auf dem Pi Zero W
+## 🚀 Installation & Bereitstellung auf der Steuerzentrale
 
 ### Voraussetzungen
 
 #### 1. Hardware
 *   **Steuerzentrale**: Raspberry Pi Zero W (oder neuer)
-*   **Funk-Koordinator**: Sonoff Zigbee 3.0 USB Dongle Plus (am Pi eingesteckt)
+*   **Funk-Koordinator**: Sonoff Zigbee 3.0 USB Dongle Plus (an der Steuerzentrale eingesteckt)
 *   **Ventil**: Sonoff Hydro ONE Smart-Wasserlaufventil (griffbereit für die Kopplung)
 
-#### 2. System- & Software-Bibliotheken (auf dem Raspberry Pi)
+#### 2. System- & Software-Bibliotheken (auf der Steuerzentrale)
 Das automatische Installationsskript `setup.sh` richtet diese Versionen und Pakete selbstständig ein:
 
 | Komponente / Bibliothek | Benötigte Version | Installationsquelle | Zweck |
@@ -125,13 +130,13 @@ Erstelle eine `.env`-Datei aus der Vorlage `.env.template` im Projektverzeichnis
    RAIN_THRESHOLD_MM=3.0
    ```
 
-### 1. Projektdateien übertragen (Windows → Pi)
+### 1. Projektdateien übertragen (Windows → Steuerzentrale)
 ```powershell
 .\deploy.ps1
 ```
-*IP-Adresse und SSH-Benutzernamen des Pi eingeben, wenn gefragt.*
+*IP-Adresse und SSH-Benutzernamen der Steuerzentrale eingeben, wenn gefragt.*
 
-### 2. Vollautomatisches Setup auf dem Pi starten
+### 2. Vollautomatisches Setup auf der Steuerzentrale starten
 ```bash
 ssh <user>@<pi-ip>
 cd ~/garden && bash setup.sh
@@ -173,7 +178,7 @@ Der Bot bietet ein permanentes Tastenmenü am unteren Bildschirmrand:
 
 Der Mittelweg-Dienst (Zigbee2MQTT) wird als lokaler Quellcode im Verzeichnis `vendor/zigbee2mqtt/` verwaltet („gevendort“). Dies war aus zwei Gründen notwendig:
 
-1. **Ressourcenschonung (Vorkompilierung):** Die TypeScript-Kompilierung (`npm run build` bzw. `tsc`) überlastet den Raspberry Pi Zero W (ARMv6, 512 MB RAM) und führt ohne großen Swap-Speicher zu Abstürzen. Durch das Vendoring wird der Dienst lokal auf dem Windows-Host gebaut (`deploy.ps1`) und als komprimiertes Archiv (`zigbee2mqtt.tar.gz`) auf den Pi übertragen.
+1. **Ressourcenschonung (Vorkompilierung):** Die TypeScript-Kompilierung (`npm run build` bzw. `tsc`) überlastet die Steuerzentrale (Raspberry Pi Zero W mit ARMv6, 512 MB RAM) und führt ohne großen Swap-Speicher zu Abstürzen. Durch das Vendoring wird der Dienst lokal auf dem Windows-Host gebaut (`deploy.ps1`) und als komprimiertes Archiv (`zigbee2mqtt.tar.gz`) auf die Steuerzentrale übertragen.
 2. **CommonJS-Kompatibilität (Debounce-Downgrade):** Die höchste für die ARMv6-Architektur verfügbare Node.js-Version (`v20.11.1`) unterstützt kein `require()` von reinen ES-Modulen. Da die neuere Bibliothek `debounce@^3.0.0` ein reines ES-Modul ist, scheiterte der Start von Zigbee2MQTT. In `vendor/zigbee2mqtt/package.json` wurde `debounce` daher auf die CommonJS-kompatible Version `^1.2.1` downgegradet.
 
 Detaillierte Informationen findest du in der Architekturentscheidung [ADR 0010](docs/adr/0010-vorkompilierte-bereitstellung-des-mittelweg-dienstes.md).

@@ -83,3 +83,11 @@ _Avoid_: Regen-Periode, Niederschlags-Fenster, Rain-Window
 **Inaktivitäts-Watchdog**:
 Die Überwachungslogik im Bewässerungs-Daemon, die das Ausbleiben regelmäßiger Lebenszeichen von batteriebetriebenen Geräten (z. B. mehr als 18 Stunden beim Füllstandssensor oder mehr als 24 Stunden bei einem Ventil) erkennt und proaktiv über den Telegram-Bot warnt.
 _Avoid_: Offline-Timer, Connection-Checker, Heartbeat-Sensor
+
+**Tagesbericht**:
+Der automatisch generierte Statusbericht, der täglich um 08:00 Uhr per Telegram-Bot versendet wird und den Systemzustand, die Wetterlage sowie die Zyklenhistorie der letzten 24 Stunden für den Benutzer zusammenfasst.
+_Avoid_: Status-Report, Update-Meldung, Daily-Report
+
+**Software-Update (OTA)**:
+Das Over-the-Air Update-Verfahren, das dem Benutzer über den Telegram-Bot ermöglicht, neue Releases direkt von GitHub herunterzuladen und auf der Steuerzentrale vollautomatisch zu installieren.
+_Avoid_: Patching, Neu-Installation, Upgrade-Skript
