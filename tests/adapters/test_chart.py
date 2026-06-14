@@ -20,7 +20,7 @@ _VALID_FORECAST = json.dumps({
 _RAINY_FORECAST = json.dumps({
     "times":      ["2026-06-13T14:00", "2026-06-13T15:00", "2026-06-13T16:00"],
     "temp":       [18.0, 17.0, 16.0],
-    "precip_mm":  [1.5, 2.0, 1.0],   # Summe 4.5mm ≥ RAIN_THRESHOLD_MM (3.0)
+    "precip_mm":  [1.5, 2.0, 1.0],   # Summe 4.5mm ≥ RAIN_THRESHOLD_MM (2.0)
     "precip_prob":[70, 90, 80],
     "wmo":        [61, 63, 61],
 })
@@ -43,7 +43,7 @@ _LAST_WEATHER_RAINY = {
 # Viel Regen gestern, trockene Vorhersage — rain_last_24h allein überschreitet Schwellwert
 _LAST_WEATHER_RAINED_YESTERDAY = {
     **_LAST_WEATHER_WITH_FORECAST,
-    "rain_last_24h_mm": 5.0,   # ≥ RAIN_THRESHOLD_MM (3.0)
+    "rain_last_24h_mm": 5.0,   # ≥ RAIN_THRESHOLD_MM (2.0)
     "rain_next_24h_mm": 0.0,
     "hourly_forecast_json": _VALID_FORECAST,  # Vorhersage trocken (0.8mm gesamt)
 }

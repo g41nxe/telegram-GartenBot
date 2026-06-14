@@ -56,9 +56,9 @@ except ValueError:
     LONGITUDE = 0.0
 
 try:
-    RAIN_THRESHOLD_MM = float(os.getenv("RAIN_THRESHOLD_MM", "3.0"))
+    RAIN_THRESHOLD_MM = float(os.getenv("RAIN_THRESHOLD_MM", "2.0"))
 except ValueError:
-    RAIN_THRESHOLD_MM = 3.0
+    RAIN_THRESHOLD_MM = 2.0
 
 try:
     SAFETY_TIMEOUT_MINUTES = int(os.getenv("SAFETY_TIMEOUT_MINUTES", "30"))

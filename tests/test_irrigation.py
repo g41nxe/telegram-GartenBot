@@ -36,7 +36,7 @@ class TestGardenIrrigation(unittest.TestCase):
         
     def test_01_config_defaults(self):
         """Überprüft, ob Standard-Konfigurationswerte korrekt geladen werden."""
-        self.assertEqual(config.RAIN_THRESHOLD_MM, 3.0)
+        self.assertEqual(config.RAIN_THRESHOLD_MM, 2.0)
         self.assertEqual(config.SAFETY_TIMEOUT_MINUTES, 30)
         self.assertEqual(config.MQTT_BROKER_PORT, 1883)
         
