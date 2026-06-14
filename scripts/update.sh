@@ -8,6 +8,7 @@ TMP_EXTRACT="/tmp/garden-update-extract"
 ENV_FILE="$GARDEN_DIR/.env"
 Z2M_DIR="/opt/zigbee2mqtt"
 Z2M_UPDATED=false
+NOTIFY_FILE="/tmp/garden-ota-notify"
 
 log() { echo "[update] $*"; }
 die() { log "FEHLER: $*"; exit 1; }
@@ -127,6 +128,10 @@ sleep 15
 
 if systemctl is-active --quiet garden-irrigation; then
     log "Update auf $RELEASE_TAG erfolgreich."
+    if [ -f "$NOTIFY_FILE" ]; then
+        CHAT_ID=$(head -1 "$NOTIFY_FILE")
+        printf '%s\nsuccess\n%s\n' "$CHAT_ID" "$RELEASE_TAG" > "$NOTIFY_FILE"
+    fi
     rm -rf "$TMP_ARCHIVE" "$TMP_EXTRACT"
     exit 0
 fi
@@ -149,6 +154,10 @@ if [ "$Z2M_UPDATED" = "true" ] && [ -d "$BACKUP_DIR/zigbee2mqtt_backup" ]; then
 fi
 
 sudo systemctl restart garden-irrigation
+if [ -f "$NOTIFY_FILE" ]; then
+    CHAT_ID=$(head -1 "$NOTIFY_FILE")
+    printf '%s\nfailed\n%s\n' "$CHAT_ID" "$LOCAL_VERSION" > "$NOTIFY_FILE"
+fi
 rm -rf "$TMP_ARCHIVE" "$TMP_EXTRACT"
 log "Rollback abgeschlossen. Läuft wieder auf $LOCAL_VERSION."
 exit 1

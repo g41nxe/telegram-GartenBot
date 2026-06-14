@@ -29,10 +29,20 @@ jobs:
         run: |
           VERSION=$(git describe --tags --exact-match 2>/dev/null || echo "v0.0.0-$(git rev-parse --short HEAD)")
           Z2M_VERSION=$(node -p "require('./vendor/zigbee2mqtt/package.json').version")
-          echo "VERSION=$VERSION"         >> $GITHUB_OUTPUT
-          echo "Z2M_VERSION=$Z2M_VERSION" >> $GITHUB_OUTPUT
+          RELEASE_DATE=$(date +%Y-%m-%d)
+          echo "VERSION=$VERSION"             >> $GITHUB_OUTPUT
+          echo "Z2M_VERSION=$Z2M_VERSION"     >> $GITHUB_OUTPUT
+          echo "RELEASE_DATE=$RELEASE_DATE"   >> $GITHUB_OUTPUT
           echo "$VERSION"     > VERSION
           echo "$Z2M_VERSION" > Z2M_VERSION
+
+      - name: Release-Notes extrahieren
+        id: notes
+        run: |
+          NOTES=$(awk '/^## /{found=1; next} found && /^---/{exit} found{print}' CHANGELOG.md | sed '/^[[:space:]]*$/d' | head -50)
+          echo "NOTES<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES"     >> $GITHUB_OUTPUT
+          echo "EOF"        >> $GITHUB_OUTPUT
 
       - name: Release-Archiv bauen
         run: |
@@ -60,7 +70,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.VERSION }}
-          name: ${{ steps.version.outputs.VERSION }}
+          name: "${{ steps.version.outputs.RELEASE_DATE }} — ${{ steps.version.outputs.VERSION }}"
+          body: ${{ steps.notes.outputs.NOTES }}
           files: garden-${{ steps.version.outputs.VERSION }}.tar.gz
           generate_release_notes: false
         env:
