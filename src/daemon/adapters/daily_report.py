@@ -125,10 +125,10 @@ def _format_valve_line(
 
 def generate_daily_report(today_str: str) -> str:
     """Generiert den Text für den täglichen Statusbericht."""
-    # 1. Guss-Statistiken der letzten 24 Stunden
+    # 1. Guss-Statistiken der letzten 24h
     success_count, failed_count, total_volume = database.get_watering_stats_last_24h()
 
-    # 2. Wetterdaten abrufen
+    # 2. Wetterdaten (Live-Abfrage)
     weather_result = None
     try:
         weather_result = weather.get_weather_data(config.LATITUDE, config.LONGITUDE)
@@ -141,7 +141,11 @@ def generate_daily_report(today_str: str) -> str:
         rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0
         weather_desc = "Unbekannt"
 
-    # 3. System-Warnungen (Broker / Mittelweg-Dienst)
+    # 3. Gestrige Regenvorhersage für Abweichungsvergleich
+    yesterday_weather = database.get_weather_around_hours_ago(24)
+    yesterday_rain_next = yesterday_weather["rain_next_24h_mm"] if yesterday_weather else None
+
+    # 4. System-Warnungen
     warnings = []
     if mqtt_client.HAS_PAHO:
         if not mqtt_client.is_broker_connected():
@@ -149,37 +153,28 @@ def generate_daily_report(today_str: str) -> str:
         elif mqtt_client.get_bridge_status() != "online":
             warnings.append("🚨 **System-Dienst gestört:** Mittelweg-Dienst (Zigbee2MQTT) ist offline")
 
-    # 4. Pro-Ventil-Status aus der Datenbank
+    # 5. Pro-Ventil-Status
     valves = database.get_all_valves()
-    valve_sections = []
+    valve_lines = []
     for valve in valves:
-        warnings.extend(_valve_warnings(valve))
-
         mqtt_name = valve["mqtt_name"]
         wish_name = valve["wish_name"]
         conn_stats = database.get_device_status_stats_last_24h(mqtt_name)
-        lqi_desc = "Keine Verbindung" if conn_stats["count"] == 0 else _lqi_label(conn_stats["avg_lqi"])
-
-        valve_sections.append(
-            f"📡 **{wish_name}** (`{mqtt_name}`):\n"
-            f"   - Signalmeldungen: {conn_stats['count']}\n"
-            f"   - Signalstärke: Ø {conn_stats['avg_lqi']} LQI ({lqi_desc})\n"
-            f"   - Längste Funkstille: {conn_stats['max_gap_hours']} Std.\n"
-        )
-
-    conn_info = "\n".join(valve_sections) if valve_sections else "Keine Ventile registriert.\n"
-
-    # Watchdog-Flags aus system_metadata auslesen (einzige Quelle für Inaktivitätswarnungen)
-    for valve in valves:
         flag_key = f"watchdog_alert_active_valve_{valve['id']}"
-        if database.get_metadata(flag_key) == "1":
-            warnings.append(
-                f"📡 **Watchdog-Warnung ({valve['wish_name']}):** Ventil ist inaktiv (kein Signal seit >{config.WATCHDOG_VALVE_TIMEOUT_HOURS:.0f}h)."
-            )
+        has_watchdog_alert = database.get_metadata(flag_key) == "1"
+        battery = valve.get("battery") or 100
+        abnormal_state = valve.get("valve_abnormal_state") or "normal"
 
-    warning_text = ""
-    if warnings:
-        warning_text = "\n⚠️ **System-Warnungen:**\n" + "\n".join([f"- {w}" for w in warnings]) + "\n"
+        valve_lines.append(_format_valve_line(
+            wish_name=wish_name,
+            mqtt_name=mqtt_name,
+            count=conn_stats["count"],
+            avg_lqi=conn_stats["avg_lqi"],
+            max_gap_hours=conn_stats["max_gap_hours"],
+            has_watchdog_alert=has_watchdog_alert,
+            battery=battery,
+            abnormal_state=abnormal_state,
+        ))
 
     try:
         date_obj = datetime.strptime(today_str, "%Y-%m-%d")
@@ -187,18 +182,24 @@ def generate_daily_report(today_str: str) -> str:
     except Exception:
         display_date = today_str
 
+    watering_text = _format_watering_section(success_count, failed_count, total_volume)
+    weather_text = _format_weather_section(
+        temp=temp, temp_min=temp_min, temp_max=temp_max,
+        weather_desc=weather_desc,
+        rain_last=rain_last, rain_next=rain_next, rain_prob=rain_prob,
+        yesterday_rain_next=yesterday_rain_next,
+    )
+    valve_text = "\n".join(valve_lines) if valve_lines else "Keine Ventile registriert."
+
+    warning_text = ""
+    if warnings:
+        warning_text = "\n\n⚠️ **System-Warnungen:**\n" + "\n".join([f"- {w}" for w in warnings])
+
     return (
         f"📊 **Täglicher Statusbericht vom {display_date}**\n\n"
-        f"💧 **Bewässerung (letzte 24h):**\n"
-        f"   - Erfolgreiche Zyklen: {success_count}\n"
-        f"   - Fehlgeschlagene Zyklen: {failed_count}\n"
-        f"   - Gesamtvolumen: {total_volume} Liter\n\n"
-        f"🌤️ **Wetter:**\n"
-        f"   - Temperatur: {temp} °C (Min: {temp_min} °C / Max: {temp_max} °C) | {weather_desc}\n"
-        f"   - Regenwahrscheinlichkeit: {rain_prob}%\n"
-        f"   - Regen (letzte 24h): {rain_last} mm\n"
-        f"   - Vorhersage (nächste 24h): {rain_next} mm\n\n"
-        f"{conn_info}"
+        f"{watering_text}\n"
+        f"{weather_text}\n"
+        f"{valve_text}"
         f"{warning_text}"
     )
 

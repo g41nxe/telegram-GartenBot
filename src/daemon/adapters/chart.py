@@ -3,6 +3,7 @@ import logging
 import urllib.request
 import urllib.error
 from . import database
+from .. import config
 
 logger = logging.getLogger("garden_chart")
 
@@ -11,11 +12,28 @@ QUICKCHART_URL = "https://quickchart.io/chart"
 # (scales as objects with ID-keys, per-dataset type overrides). Omitting it causes HTTP 400.
 
 
-def generate_weather_chart() -> bytes | None:
+def _bar_color(prob: int) -> str:
+    """Berechnet rgba-Farbe für einen Niederschlagsbalken basierend auf der Wahrscheinlichkeit.
+
+    alpha = 0.15 (Minimum) + 0.75 * (prob / 100), sodass auch unsichere Stunden
+    sichtbar bleiben, aber klarer Regen (100%) deutlich dunkler erscheint.
+    """
+    alpha = round(0.15 + 0.75 * (max(0, min(100, prob)) / 100), 3)
+    return f"rgba(54, 162, 235, {alpha})"
+
+
+def _build_caption(precip_mm: list) -> str:
+    total = sum(precip_mm)
+    if total >= config.RAIN_THRESHOLD_MM:
+        return f"🌤 Wetterverlauf — nächste 24h\n☔ Kein Gießen nötig — Regen erwartet ({total:.1f}mm)"
+    return "🌤 Wetterverlauf — nächste 24h\n🌱 Gießen empfohlen — trocken bis morgen"
+
+
+def generate_weather_chart() -> tuple[bytes, str] | None:
     """
     Liest hourly_forecast_json aus dem letzten weather_history-Eintrag,
     baut eine Chart.js-Konfiguration und sendet diese per POST an QuickChart.io.
-    Gibt PNG-Bytes zurück oder None bei Fehler / fehlenden Daten (→ Textfallback).
+    Gibt (PNG-Bytes, Caption-String) zurück oder None bei Fehler / fehlenden Daten.
     """
     last_weather = database.get_last_weather()
     if not last_weather:
@@ -29,8 +47,8 @@ def generate_weather_chart() -> bytes | None:
 
     try:
         forecast = json.loads(raw_json)
-    except (json.JSONDecodeError, TypeError) as e:
-        logger.error(f"Chart-Generierung fehlgeschlagen: ungültiges JSON. Nutze Textfallback.")
+    except (json.JSONDecodeError, TypeError):
+        logger.error("Chart-Generierung fehlgeschlagen: ungültiges JSON. Nutze Textfallback.")
         return None
 
     times = forecast.get("times", [])
@@ -42,8 +60,12 @@ def generate_weather_chart() -> bytes | None:
         logger.warning("Keine Stundendaten für Chart verfügbar.")
         return None
 
-    # Zeitachse: nur HH:MM anzeigen
     labels = [t[11:16] if len(t) >= 16 else t for t in times]
+
+    bar_colors = [
+        _bar_color(precip_prob[i] if i < len(precip_prob) else 0)
+        for i in range(len(times))
+    ]
 
     chart_config = {
         "type": "bar",
@@ -64,18 +86,8 @@ def generate_weather_chart() -> bytes | None:
                     "type": "bar",
                     "label": "Niederschlag (mm)",
                     "data": precip_mm,
-                    "backgroundColor": "rgba(54, 162, 235, 0.7)",
+                    "backgroundColor": bar_colors,
                     "yAxisID": "yPrecip",
-                },
-                {
-                    "type": "line",
-                    "label": "Regenwahrscheinlichkeit (%)",
-                    "data": precip_prob,
-                    "borderColor": "rgb(75, 192, 192)",
-                    "backgroundColor": "rgba(75, 192, 192, 0.1)",
-                    "yAxisID": "yProb",
-                    "tension": 0.3,
-                    "pointRadius": 2,
                 },
             ],
         },
@@ -98,20 +110,16 @@ def generate_weather_chart() -> bytes | None:
                     "title": {"display": True, "text": "mm"},
                     "grid": {"drawOnChartArea": False},
                 },
-                "yProb": {
-                    "type": "linear",
-                    "position": "right",
-                    "title": {"display": True, "text": "%"},
-                    "min": 0,
-                    "max": 100,
-                    "grid": {"drawOnChartArea": False},
-                    "display": False,
-                },
             },
         },
     }
 
-    payload = json.dumps({"chart": chart_config, "width": 600, "height": 300, "version": "4"}).encode("utf-8")
+    payload = json.dumps({
+        "chart": chart_config,
+        "width": 700,
+        "height": 350,
+        "version": "4",
+    }).encode("utf-8")
 
     try:
         req = urllib.request.Request(
@@ -122,7 +130,8 @@ def generate_weather_chart() -> bytes | None:
         )
         with urllib.request.urlopen(req, timeout=10) as response:
             image_bytes = response.read()
-        return image_bytes
+        caption = _build_caption(precip_mm)
+        return image_bytes, caption
     except Exception as e:
         logger.error(f"Chart-Generierung fehlgeschlagen: {e}. Nutze Textfallback.")
         return None

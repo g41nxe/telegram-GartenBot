@@ -433,7 +433,7 @@ class TestReportChartIntegration(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.scheduler")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
-    @patch("daemon.adapters.chart.generate_weather_chart", return_value=b"\x89PNG")
+    @patch("daemon.adapters.chart.generate_weather_chart", return_value=(b"\x89PNG", "🌤 Wetterverlauf — nächste 24h\n🌱 Gießen empfohlen — trocken bis morgen"))
     def test_report_sends_photo_when_chart_available(self, mock_chart, mock_client, mock_db, mock_sched):
         from daemon.adapters import mqtt_client as mc
         mock_db.get_last_weather.return_value = _make_weather_row()
@@ -502,7 +502,7 @@ class TestDailyReportEventHandler(unittest.TestCase):
         return DailyReportTriggered("2026-06-14", text)
 
     @patch("daemon.ui.telegram_ui.telegram_client")
-    @patch("daemon.adapters.chart.generate_weather_chart", return_value=b"\x89PNG")
+    @patch("daemon.adapters.chart.generate_weather_chart", return_value=(b"\x89PNG", "🌤 Wetterverlauf — nächste 24h\n🌱 Gießen empfohlen — trocken bis morgen"))
     def test_daily_report_sends_chart_photo_when_available(self, mock_chart, mock_client):
         from daemon.ui.telegram_ui import _on_daily_report
         _on_daily_report(self._make_event())
@@ -518,7 +518,7 @@ class TestDailyReportEventHandler(unittest.TestCase):
         mock_client.broadcast_photo.assert_not_called()
 
     @patch("daemon.ui.telegram_ui.telegram_client")
-    @patch("daemon.adapters.chart.generate_weather_chart", return_value=b"\x89PNG")
+    @patch("daemon.adapters.chart.generate_weather_chart", return_value=(b"\x89PNG", "🌤 caption"))
     def test_daily_report_always_sends_text(self, mock_chart, mock_client):
         from daemon.ui.telegram_ui import _on_daily_report
         _on_daily_report(self._make_event("Mein Bericht"))
