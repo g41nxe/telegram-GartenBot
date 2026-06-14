@@ -239,6 +239,19 @@ def get_duration_keyboard() -> dict:
         ]
     }
 
+def _get_battery_description(battery_val) -> str:
+    try:
+        b = int(battery_val)
+    except (TypeError, ValueError):
+        b = 0
+    if b > 60:
+        return f"🔋 Voll ({b}%)"
+    if b > 20:
+        return f"🔋 Mittel ({b}%)"
+    if b > 0:
+        return f"🪫 Schwach ({b}%)"
+    return "🪫 Unbekannt"
+
 def _get_lqi_description(lqi_val) -> str:
     """Übersetzt den LQI-Wert (0-255) in eine menschenlesbare Beschreibung."""
     try:
@@ -330,7 +343,7 @@ def handle_status(chat_id: int):
         battery = valve.get("battery") or 0
         lqi = valve.get("linkquality") or 0
         last_update_str = valve.get("last_update")
-        battery_icon = "🔋" if battery > 20 else "🪫"
+        battery_label = _get_battery_description(battery)
 
         if not services_ok:
             conn_text = "🔴 Offline (Dienste gestört)"
@@ -347,7 +360,7 @@ def handle_status(chat_id: int):
         valve_sections.append(
             f"📡 **{wish_name}** (`{mqtt_name}`):\n"
             f"   - Verbindung: {conn_text}\n"
-            f"   - {battery_icon} Batterie: {battery}%\n"
+            f"   - Batterie: {battery_label}\n"
             f"   - Signalqualität: {_get_lqi_description(lqi)}\n"
         )
 
