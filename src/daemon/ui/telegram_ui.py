@@ -1,9 +1,16 @@
+import json
 import logging
+import subprocess
 import threading
+import urllib.request
+import urllib.error
 from datetime import datetime, timedelta
-from .. import scheduler
+from pathlib import Path
+from .. import config, scheduler
 from ..adapters import database
 from . import telegram_client
+
+_VERSION_FILE = Path(__file__).resolve().parent.parent.parent.parent / "VERSION"
 from ..adapters.mqtt_client import _global_bus
 from ..core.weather_codes import get_wmo_description as _get_wmo_description
 from ..core.watering_controller import (
@@ -28,6 +35,55 @@ delete_states = {}  # { chat_id: { "schedule_id": int, "name": str, "last_active
 
 _state_lock = threading.Lock()
 WIZARD_TTL_SECONDS = 600  # 10 minutes of inactivity expires a wizard session
+
+
+def _read_local_version() -> str:
+    if _VERSION_FILE.exists():
+        return _VERSION_FILE.read_text().strip()
+    return "unbekannt"
+
+
+def _fetch_latest_release_tag() -> str:
+    if not config.GITHUB_PAT or not config.GITHUB_REPO:
+        return "?"
+    url = f"https://api.github.com/repos/{config.GITHUB_REPO}/releases/latest"
+    try:
+        req = urllib.request.Request(url, headers={
+            "Authorization": f"Bearer {config.GITHUB_PAT}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "GardenIrrigationDaemon/1.0",
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.loads(resp.read())["tag_name"]
+    except Exception:
+        return "?"
+
+
+def handle_update(chat_id: int):
+    local = _read_local_version()
+    remote = _fetch_latest_release_tag()
+
+    if local == remote:
+        telegram_client.send_message(
+            chat_id,
+            f"✅ Bereits aktuell ({local}). Kein Update verfügbar."
+        )
+        return
+
+    telegram_client.send_message(
+        chat_id,
+        f"🔄 **Software-Update verfügbar**\n\n"
+        f"Installiert: `{local}`\n"
+        f"Verfügbar:   `{remote}`\n\n"
+        f"Soll das Update jetzt installiert werden?\n"
+        f"_(Dauer: ca. 1–5 Minuten. Der Daemon startet neu.)_",
+        {
+            "inline_keyboard": [[
+                {"text": "✓ Jetzt installieren", "callback_data": "update_confirm"},
+                {"text": "✗ Abbrechen",          "callback_data": "update_cancel"},
+            ]]
+        }
+    )
 
 
 def _cleanup_expired_states():
@@ -698,6 +754,8 @@ def _process_message(msg_obj: dict):
         handle_delete_schedule(chat_id, text)
     elif text.startswith("/toggle"):
         handle_toggle_schedule(chat_id, text)
+    elif text.startswith("/update"):
+        handle_update(chat_id)
     else:
         telegram_client.send_message(
             chat_id,
@@ -989,6 +1047,19 @@ def _process_callback_query(cb_obj: dict):
             )
         else:
             telegram_client.answer_callback_query(cb_id, "Zeitplan nicht gefunden", show_alert=True)
+
+    elif data == "update_confirm":
+        telegram_client.answer_callback_query(cb_id, "Update wird gestartet...")
+        scripts_dir = Path(__file__).resolve().parent.parent.parent.parent / "scripts"
+        subprocess.Popen(["bash", str(scripts_dir / "update.sh")])
+        telegram_client.send_message(
+            chat_id,
+            "⏳ Update gestartet. Bitte 1–5 Minuten warten, dann `/status` prüfen."
+        )
+
+    elif data == "update_cancel":
+        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
+        telegram_client.send_message(chat_id, "❌ Update abgebrochen.", get_main_keyboard())
 
     else:
         telegram_client.answer_callback_query(cb_id)
