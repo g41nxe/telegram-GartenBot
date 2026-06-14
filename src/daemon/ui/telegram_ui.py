@@ -670,9 +670,10 @@ def _process_message(msg_obj: dict):
         time.sleep(1.5)
 
         # Wetterchart als PNG versuchen; bei Fehler stündlichen Textfallback senden
-        image_bytes = chart.generate_weather_chart()
-        if image_bytes:
-            telegram_client.send_photo(chat_id, image_bytes, caption="🌤 Wetterverlauf — nächste 24h")
+        chart_result = chart.generate_weather_chart()
+        if chart_result:
+            image_bytes, caption = chart_result
+            telegram_client.send_photo(chat_id, image_bytes, caption=caption)
         else:
             last_weather = database.get_last_weather()
             if last_weather and last_weather.get("hourly_forecast_json"):
@@ -1071,9 +1072,10 @@ def _on_watering_stopped(event: WateringCycleStopped):
 
 def _on_daily_report(event: DailyReportTriggered):
     from ..adapters import chart
-    image_bytes = chart.generate_weather_chart()
-    if image_bytes:
-        telegram_client.broadcast_photo(image_bytes, caption="🌤 Wetterverlauf — nächste 24h")
+    chart_result = chart.generate_weather_chart()
+    if chart_result:
+        image_bytes, caption = chart_result
+        telegram_client.broadcast_photo(image_bytes, caption=caption)
     telegram_client.broadcast_notification(event.report_text)
 
 def _on_watering_skipped(event: WateringSkipped):
