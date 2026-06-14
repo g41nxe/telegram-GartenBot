@@ -123,6 +123,19 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
                 },
                 "legend": {"display": False},
                 "datalabels": {"display": False},
+                "annotation": {
+                    "annotations": {
+                        "zeroLine": {
+                            "type": "line",
+                            "yMin": 0,
+                            "yMax": 0,
+                            "yScaleID": "yTemp",
+                            "borderColor": "rgba(0,0,0,0.25)",
+                            "borderWidth": 1,
+                            "borderDash": [4, 4],
+                        }
+                    }
+                },
             },
             "scales": {
                 "yTemp": {

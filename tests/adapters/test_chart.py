@@ -231,6 +231,29 @@ class TestGenerateWeatherChart(unittest.TestCase):
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
     @patch("daemon.adapters.chart.urllib.request.urlopen")
+    def test_zero_degree_annotation_present(self, mock_urlopen, _):
+        """Horizontale Linie bei 0°C muss als Annotation vorhanden sein."""
+        side_effect, captured = _capture_and_return()
+        mock_urlopen.side_effect = side_effect
+        chart_module.generate_weather_chart()
+        body = json.loads(captured["data"].decode("utf-8"))
+        annotations = (
+            body["chart"]["options"]
+            .get("plugins", {})
+            .get("annotation", {})
+            .get("annotations", {})
+        )
+        zero_lines = [
+            a for a in annotations.values()
+            if a.get("type") == "line"
+            and a.get("yMin") == 0
+            and a.get("yMax") == 0
+            and a.get("yScaleID") == "yTemp"
+        ]
+        self.assertTrue(zero_lines, "Keine 0°-Linie in annotations gefunden")
+
+    @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
+    @patch("daemon.adapters.chart.urllib.request.urlopen")
     def test_payload_includes_version_4(self, mock_urlopen, _):
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
