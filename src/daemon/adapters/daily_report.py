@@ -62,7 +62,7 @@ def _format_weather_section(
     rain_last: float, rain_next: float, rain_prob: int,
     yesterday_rain_next: float | None,
 ) -> str:
-    parts = [f"🌤️ {weather_desc}, heute {temp_min}–{temp_max} °C."]
+    parts = [f"{weather_desc}, heute {temp_min}–{temp_max} °C."]
 
     if yesterday_rain_next is not None:
         deviation = rain_last - yesterday_rain_next
