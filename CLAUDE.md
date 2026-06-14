@@ -12,7 +12,7 @@ This is a Python daemon for a smart garden irrigation system running on a **Rasp
 
 ### Run all tests (no hardware required)
 ```bash
-python -m unittest discover tests
+python -m unittest discover -v tests
 ```
 
 ### Run a single test

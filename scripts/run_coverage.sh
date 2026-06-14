@@ -3,7 +3,7 @@
 # Führt die Unit-Tests mit coverage aus und generiert einen Report.
 
 echo "Running tests with coverage..."
-python3 -m coverage run --source=src/daemon -m unittest discover tests
+python3 -m coverage run --source=src/daemon -m unittest discover -v tests
 
 echo ""
 echo "Coverage Report:"

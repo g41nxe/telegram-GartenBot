@@ -2,7 +2,7 @@
 # Führt die Unit-Tests mit coverage aus und generiert einen Report.
 
 Write-Host "Running tests with coverage..." -ForegroundColor Cyan
-python -m coverage run --source=src/daemon -m unittest discover tests
+python -m coverage run --source=src/daemon -m unittest discover -v tests
 
 Write-Host ""
 Write-Host "Coverage Report:" -ForegroundColor Cyan
