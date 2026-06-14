@@ -125,8 +125,8 @@ Erstelle eine `.env`-Datei aus der Vorlage `.env.template` im Projektverzeichnis
    ```ini
    TELEGRAM_BOT_TOKEN="DEIN_BOT_TOKEN_VOM_BOTFATHER"
    TELEGRAM_ALLOWED_USER_IDS="DEINE_TELEGRAM_USER_ID"
-   LATITUDE=0.0
-   LONGITUDE=0.0
+   LATITUDE=YOUR_LATITUDE
+   LONGITUDE=YOUR_LONGITUDE
    RAIN_THRESHOLD_MM=3.0
    ```
 
