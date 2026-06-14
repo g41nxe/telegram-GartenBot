@@ -105,14 +105,15 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         else:
             rain_prob = 0
             
-        # Stündliche Vorhersage für die nächsten 24 Stunden ab aktueller Stunde aufbauen
-        forecast_end = min(current_idx + 24, len(times))
+        # Stündliche Vorhersage: 2h vor aktueller Stunde bis +22h (= 24 Einträge gesamt)
+        chart_start = max(0, current_idx - 2)
+        forecast_end = min(chart_start + 24, len(times))
         hourly_forecast_json = json.dumps({
-            "times": times[current_idx:forecast_end],
-            "temp": hourly_temps[current_idx:forecast_end],
-            "precip_mm": precip[current_idx:forecast_end],
-            "precip_prob": precip_probs[current_idx:forecast_end],
-            "wmo": hourly_wmo[current_idx:forecast_end],
+            "times": times[chart_start:forecast_end],
+            "temp": hourly_temps[chart_start:forecast_end],
+            "precip_mm": precip[chart_start:forecast_end],
+            "precip_prob": precip_probs[chart_start:forecast_end],
+            "wmo": hourly_wmo[chart_start:forecast_end],
         })
 
         # Werte runden

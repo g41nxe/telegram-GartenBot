@@ -113,12 +113,13 @@ class TestHourlyForecastJson(unittest.TestCase):
             self.assertIn(key, fc, f"Schlüssel '{key}' fehlt in hourly_forecast_json")
 
     @patch("urllib.request.urlopen")
-    def test_hourly_forecast_json_starts_at_current_hour(self, mock_urlopen):
+    def test_hourly_forecast_json_starts_2h_before_current_hour(self, mock_urlopen):
+        """Forecast-Fenster startet 2 Stunden vor der aktuellen Stunde."""
         event = self._call_and_capture_event(_make_api_response(), mock_urlopen)
         fc = json.loads(event.hourly_forecast_json)
-        expected_hour = datetime.now().strftime("%Y-%m-%dT%H:00")
-        self.assertEqual(fc["times"][0], expected_hour,
-                         "Erster Forecast-Eintrag muss die aktuelle Stunde sein, nicht die Vergangenheit")
+        expected_start = (datetime.now() - timedelta(hours=2)).strftime("%Y-%m-%dT%H:00")
+        self.assertEqual(fc["times"][0], expected_start,
+                         "Erster Forecast-Eintrag muss 2 Stunden vor der aktuellen Stunde liegen")
 
     @patch("urllib.request.urlopen")
     def test_hourly_forecast_json_max_24_entries(self, mock_urlopen):
