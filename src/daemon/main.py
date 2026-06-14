@@ -1,6 +1,7 @@
 import time
 import logging
 import sys
+from pathlib import Path
 from . import config, scheduler
 from .adapters import database, mqtt_client
 from .ui import telegram_bot
@@ -15,6 +16,28 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("garden_main")
+
+_OTA_NOTIFY_FILE = Path("/tmp/garden-ota-notify")
+
+
+def _check_ota_notify():
+    if not _OTA_NOTIFY_FILE.exists():
+        return
+    try:
+        lines = _OTA_NOTIFY_FILE.read_text().splitlines()
+        chat_id = int(lines[0])
+        status = lines[1] if len(lines) > 1 else "unknown"
+        version = lines[2] if len(lines) > 2 else "?"
+        from .ui import telegram_client
+        if status == "success":
+            telegram_client.send_message(chat_id, f"✅ Update auf `{version}` erfolgreich installiert.")
+        elif status == "failed":
+            telegram_client.send_message(chat_id, f"❌ Update fehlgeschlagen — Rollback auf `{version}` durchgeführt.")
+    except Exception as e:
+        logger.warning(f"OTA-Notify konnte nicht verarbeitet werden: {e}")
+    finally:
+        _OTA_NOTIFY_FILE.unlink(missing_ok=True)
+
 
 def main():
     logger.info("==============================================")
@@ -64,7 +87,9 @@ def main():
         )
     else:
         telegram_bot.start_bot()
-        
+
+    _check_ota_notify()
+
     logger.info("----------------------------------------------")
     logger.info("System läuft erfolgreich. Drücken Sie Strg+C zum Beenden.")
     logger.info("----------------------------------------------")

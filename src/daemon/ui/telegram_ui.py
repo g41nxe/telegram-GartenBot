@@ -43,9 +43,10 @@ def _read_local_version() -> str:
     return "unbekannt"
 
 
-def _fetch_latest_release_tag() -> str:
+def _fetch_latest_release_info() -> dict:
+    """Gibt {"tag": str, "name": str, "notes": str} zurück. Felder sind "?" / "" bei Fehler."""
     if not config.GITHUB_PAT or not config.GITHUB_REPO:
-        return "?"
+        return {"tag": "?", "name": "?", "notes": ""}
     url = f"https://api.github.com/repos/{config.GITHUB_REPO}/releases/latest"
     try:
         req = urllib.request.Request(url, headers={
@@ -54,27 +55,40 @@ def _fetch_latest_release_tag() -> str:
             "User-Agent": "GardenIrrigationDaemon/1.0",
         })
         with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read())["tag_name"]
+            data = json.loads(resp.read())
+            return {
+                "tag":   data.get("tag_name", "?"),
+                "name":  data.get("name", "?"),
+                "notes": data.get("body", ""),
+            }
     except Exception:
-        return "?"
+        return {"tag": "?", "name": "?", "notes": ""}
 
 
 def handle_update(chat_id: int):
     local = _read_local_version()
-    remote = _fetch_latest_release_tag()
+    info = _fetch_latest_release_info()
+    remote_tag = info["tag"]
+    remote_name = info["name"]
+    notes_raw = info["notes"] or ""
 
-    if local == remote:
+    if local == remote_tag:
         telegram_client.send_message(
             chat_id,
             f"✅ Bereits aktuell ({local}). Kein Update verfügbar."
         )
         return
 
+    if len(notes_raw) > 800:
+        notes_raw = notes_raw[:800] + "…"
+    notes_section = f"\n\n📋 **Was ist neu:**\n{notes_raw}" if notes_raw else ""
+
     telegram_client.send_message(
         chat_id,
         f"🔄 **Software-Update verfügbar**\n\n"
         f"Installiert: `{local}`\n"
-        f"Verfügbar:   `{remote}`\n\n"
+        f"Verfügbar:   `{remote_name}`"
+        f"{notes_section}\n\n"
         f"Soll das Update jetzt installiert werden?\n"
         f"_(Dauer: ca. 1–5 Minuten. Der Daemon startet neu.)_",
         {
@@ -1053,6 +1067,7 @@ def _process_callback_query(cb_obj: dict):
 
     elif data == "update_confirm":
         telegram_client.answer_callback_query(cb_id, "Update wird gestartet...")
+        Path("/tmp/garden-ota-notify").write_text(str(chat_id))
         scripts_dir = Path(__file__).resolve().parent.parent.parent.parent / "scripts"
         subprocess.Popen(["bash", str(scripts_dir / "update.sh")])
         telegram_client.send_message(
