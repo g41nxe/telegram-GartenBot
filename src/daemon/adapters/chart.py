@@ -23,8 +23,9 @@ def _bar_color(prob: int) -> str:
     return f"rgba(54, 162, 235, {alpha})"
 
 
-def _build_caption(precip_mm: list) -> str:
-    total = sum(precip_mm)
+def _build_caption(precip_mm: list, rain_last_24h_mm: float = 0.0) -> str:
+    rain_next = sum(precip_mm)
+    total = rain_last_24h_mm + rain_next
     if total >= config.RAIN_THRESHOLD_MM:
         return f"🌤 Wetterverlauf — nächste 24h\n☔ Kein Gießen nötig — Regen erwartet ({total:.1f}mm)"
     return "🌤 Wetterverlauf — nächste 24h\n🌱 Gießen empfohlen — trocken bis morgen"
@@ -169,7 +170,8 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
         )
         with urllib.request.urlopen(req, timeout=10) as response:
             image_bytes = response.read()
-        caption = _build_caption(precip_mm)
+        rain_last = last_weather.get("rain_last_24h_mm", 0.0) or 0.0
+        caption = _build_caption(precip_mm, rain_last)
         return image_bytes, caption
     except Exception as e:
         logger.error(f"Chart-Generierung fehlgeschlagen: {e}. Nutze Textfallback.")
