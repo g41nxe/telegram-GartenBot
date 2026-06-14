@@ -5,36 +5,40 @@ Python imports this file before any module in the tests/ package (including
 subdirectories), so the patches below are active for every test regardless of
 execution order or which test class a test inherits from.
 
-Individual test methods that need to inspect what was sent (e.g. assert_called_with)
-should still apply their own @patch("daemon.ui.telegram_ui.telegram_client") decorator
-to get a fresh mock object they can introspect — that decorator just replaces the
-module reference inside telegram_ui's namespace, and the global safety-net patches
-here remain as a fallback for anything that bypasses that.
+Primary defense — architectural (telegram_ui.py):
+    Event handlers are registered only via telegram_ui.subscribe_event_handlers(),
+    which is called exclusively by main.py. Tests never call it, so the handlers
+    are never wired to _global_bus and no Telegram messages can be triggered by
+    domain events (WateringCycleStarted, WateringSkipped, InactivityAlert*, etc.).
+
+Secondary defense — token guard (this file):
+    config.TELEGRAM_BOT_TOKEN is blanked out so send_message() and send_photo()
+    short-circuit before making any HTTP call. This catches any remaining path
+    that might reach telegram_client functions directly (e.g. command handlers
+    invoked by test_telegram_ui.py via _process_message).
+
+    Tests that need a token (test_telegram_client.py) override this per-test
+    with @patch.object(config, "TELEGRAM_BOT_TOKEN", "123:FAKE") — nested patches
+    take precedence over this session-wide patch.
+
+Individual test methods that need to assert what was sent should apply their own
+@patch("daemon.ui.telegram_ui.telegram_client") to get an inspectable mock object.
 """
 
 import sys
 from pathlib import Path
 from unittest.mock import patch
 
-# src/ must be on sys.path before we can import daemon.ui.telegram_client.
+# src/ must be on sys.path before we can import daemon modules.
 # Individual test files do this themselves, but __init__.py runs first.
 _SRC = Path(__file__).resolve().parent.parent / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-# Only patch the two functions that event handlers call directly:
-#   - broadcast_notification: called by all telegram_ui event handlers
-#     (inactivity watchdog, watering events, daily report, etc.)
-#   - start_polling: prevents the background long-poll thread from starting
-#
-# send_message / send_photo / edit_message_text / answer_callback_query are
-# NOT patched here because:
-#   a) they are only reachable through broadcast_notification (already mocked)
-#      or through command handlers in telegram_ui
-#   b) test_telegram_ui.py patches daemon.ui.telegram_ui.telegram_client at the
-#      module-reference level for every test that calls _process_message(), so
-#      command-handler paths are also covered
-#   c) test_telegram_client.py tests the real send_photo/send_message logic and
-#      must not have those functions globally replaced by mocks
-for _fn in ("broadcast_notification", "start_polling"):
-    patch(f"daemon.ui.telegram_client.{_fn}").start()
+# Blank out the bot token — send_message() and send_photo() guard-return on
+# empty token without making any HTTP call.
+from daemon import config as _config
+patch.object(_config, "TELEGRAM_BOT_TOKEN", "").start()
+
+# Block the background long-poll thread from starting.
+patch("daemon.ui.telegram_client.start_polling").start()
