@@ -217,14 +217,17 @@ class TestGenerateWeatherChart(unittest.TestCase):
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
     @patch("daemon.adapters.chart.urllib.request.urlopen")
-    def test_labels_are_hhmm_format(self, mock_urlopen, _):
+    def test_labels_every_third_hour(self, mock_urlopen, _):
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
         chart_module.generate_weather_chart()
         body = json.loads(captured["data"].decode("utf-8"))
         labels = body["chart"]["data"]["labels"]
-        for label in labels:
-            self.assertRegex(label, r"^\d{2}:\d{2}$", f"Label '{label}' ist kein HH:MM-Format")
+        for i, label in enumerate(labels):
+            if i % 3 == 0:
+                self.assertRegex(label, r"^\d{2}:\d{2}$", f"Label [{i}] '{label}' ist kein HH:MM-Format")
+            else:
+                self.assertEqual(label, "", f"Label [{i}] sollte leer sein")
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
     @patch("daemon.adapters.chart.urllib.request.urlopen")
