@@ -33,6 +33,14 @@ Sobald einer der beiden Wächter anschlägt, wird das Schließen des Ventils aus
 - **Volumenlimit zuerst erreicht**: Der Guss war erfolgreich. Das Ventil schließt planmäßig.
 - **Zeitlimit erreicht bei aktivem Volumenlimit**: Dies deutet auf einen Fehler hin (Sensor blockiert, verstopfter Schlauch, Druckabfall). Das Ventil wird sofort geschlossen, und es wird eine Notfall-Warnung per Telegram-Push versendet: `⚠️ Notfall-Abschaltung nach X Minuten ausgelöst! Zielwassermenge von Y Litern wurde nicht erreicht (geflossen: Z Liter).` Dieser Lauf wird in der Historie als `failed` markiert.
 
+### Volumen-Quelle: kumulativer Gerätezähler statt Durchflussrate
+
+Das Sonoff SWV-ZFE meldet **kein** instantanes `flow_rate`-Feld (L/min). Stattdessen liefert es `real_time_irrigation_volume` — einen kumulativen Zähler in Litern, der beim Öffnen des Ventils bei 0 beginnt und während des Laufs wächst.
+
+Der `WateringController` liest diesen Wert daher **direkt** aus dem `ValveStatusReported`-Event (`irrigation_volume`-Feld) und übernimmt ihn als `current_volume`, ohne zeitbasierte Integration. Die `_integrate_flow()`-Methode (flow_rate × elapsed_time) bleibt als Fallback für den `SimulatedMqttAdapter` und potenzielle zukünftige Geräte erhalten, die tatsächlich eine Durchflussrate melden.
+
+Die oben beschriebene "Volumen-Deckelung" (60-Sekunden-Cap) gilt nur für den flow_rate-Pfad und ist beim kumulativen Pfad nicht relevant.
+
 ## Konsequenzen
 
 - **Vorteile**:
