@@ -158,6 +158,41 @@ class TestGenerateWeatherChart(unittest.TestCase):
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
     @patch("daemon.adapters.chart.urllib.request.urlopen")
+    def test_bar_dataset_has_no_datalabels(self, mock_urlopen, _):
+        """Balken-Dataset darf kein datalabels-Objekt enthalten — verhindert '0'-Spam."""
+        side_effect, captured = _capture_and_return()
+        mock_urlopen.side_effect = side_effect
+        chart_module.generate_weather_chart()
+        body = json.loads(captured["data"].decode("utf-8"))
+        datasets = body["chart"]["data"]["datasets"]
+        bar_ds = next(d for d in datasets if d.get("type") == "bar")
+        self.assertNotIn("datalabels", bar_ds, "Bar-Dataset enthält datalabels — erzeugt '0'-Spam")
+
+    @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
+    @patch("daemon.adapters.chart.urllib.request.urlopen")
+    def test_zero_line_is_dark_gray(self, mock_urlopen, _):
+        """0°-Linie soll dunkelgrau sein, nicht blau."""
+        side_effect, captured = _capture_and_return()
+        mock_urlopen.side_effect = side_effect
+        chart_module.generate_weather_chart()
+        body = json.loads(captured["data"].decode("utf-8"))
+        annotations = (
+            body["chart"]["options"]
+            .get("plugins", {})
+            .get("annotation", {})
+            .get("annotations", {})
+        )
+        zero_line = next(
+            (a for a in annotations.values()
+             if a.get("yMin") == 0 and a.get("yScaleID") == "yTemp"),
+            None
+        )
+        self.assertIsNotNone(zero_line)
+        color = zero_line.get("borderColor", "")
+        self.assertNotIn("130, 220", color, "0°-Linie ist noch blau — soll grau sein")
+
+    @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
+    @patch("daemon.adapters.chart.urllib.request.urlopen")
     def test_no_probability_dataset(self, mock_urlopen, _):
         """Wahrscheinlichkeits-Dataset darf nicht mehr im Chart sein."""
         side_effect, captured = _capture_and_return()

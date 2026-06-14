@@ -72,12 +72,6 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
         for i in range(len(times))
     ]
 
-    # Daten-Labels: Wahrscheinlichkeit auf Balken ab >30%
-    prob_labels = [
-        f"{precip_prob[i]}%" if i < len(precip_prob) and precip_prob[i] > 30 else ""
-        for i in range(len(times))
-    ]
-
     precip_max = max(precip_mm) if precip_mm else 0
 
     chart_config = {
@@ -103,14 +97,6 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
                     "data": precip_mm,
                     "backgroundColor": bar_colors,
                     "yAxisID": "yPrecip",
-                    "datalabels": {
-                        "display": True,
-                        "formatter": "function(v, ctx) { var labels = " + json.dumps(prob_labels) + "; return labels[ctx.dataIndex] || ''; }",
-                        "color": "rgba(30, 100, 200, 0.85)",
-                        "font": {"size": 10},
-                        "anchor": "end",
-                        "align": "top",
-                    },
                 },
             ],
         },
@@ -130,9 +116,9 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
                             "yMin": 0,
                             "yMax": 0,
                             "yScaleID": "yTemp",
-                            "borderColor": "rgba(0,0,0,0.25)",
+                            "borderColor": "rgba(60, 60, 60, 0.35)",
                             "borderWidth": 1,
-                            "borderDash": [4, 4],
+                            "borderDash": [6, 3],
                         }
                     }
                 },
