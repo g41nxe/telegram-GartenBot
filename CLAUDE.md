@@ -87,9 +87,8 @@ src/daemon/
 │   └── pairing.py         # Ventil-Kopplung logic
 │
 └── ui/
-    ├── telegram_bot.py    # Bot command handlers + inline keyboard wizards
     ├── telegram_client.py # Raw HTTP Telegram API (stdlib only — no external SDK)
-    └── telegram_ui.py     # UI helpers / formatters
+    └── telegram_ui.py     # Bot commands, wizards, notifications & event handlers
 ```
 
 ### Architecture rules (enforced by `.agents/rules/architecture.md`)

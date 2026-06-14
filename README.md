@@ -25,11 +25,12 @@ Das System arbeitet vollkommen lokal auf Ihrer Steuerzentrale (Raspberry Pi Zero
 
 ```mermaid
 graph TD
-    User[📱 Telegram App] <-->|Natives Long-Polling| Bot[🤖 Telegram Bot Thread]
+    User[📱 Telegram App] <-->|Natives Long-Polling| Bot[🤖 Telegram-UI Thread]
     Bot <-->|SQLite CRUD| DB[(💾 SQLite Database)]
-    Bot -->|Steuerbefehle| Scheduler[⏰ Scheduler Thread]
-    Scheduler -->|MQTT Publish| Valve[💧 Sonoff Hydro ONE]
-    Scheduler <-->|Volumen- & Inaktivitäts-Watchdog| MQTT[📡 MQTT Client Thread]
+    Bot -->|Manuelle Steuerbefehle| Ctrl[🌊 Guss-Steuerung]
+    Scheduler[⏰ Scheduler Thread] -->|Geplante Steuerbefehle| Ctrl
+    Ctrl -->|MQTT Publish| Valve[💧 Sonoff Hydro ONE]
+    Ctrl <-->|Volumen- & Inaktivitäts-Watchdog| MQTT[📡 MQTT Client Thread]
     MQTT <-->|Status-Updates / Flow Rate| Valve
     MQTT -->|Füllstands- & Statusdaten| DB
     Sensor[🛢️ Füllstandssensor] -->|MQTT Publish| MQTT
@@ -75,9 +76,8 @@ graph TD
 │       │   ├── chart.py                 # Generierung des grafischen Wettercharts
 │       │   └── pairing.py               # Ventil-Kopplung (Zigbee-Join + DB-Registrierung)
 │       └── ui/              # Benutzeroberfläche (Telegram)
-│           ├── telegram_bot.py          # Bot-Hauptschleife & Event-Dispatcher
 │           ├── telegram_client.py       # Raw HTTP Telegram API (nur Stdlib)
-│           └── telegram_ui.py           # Bot-Handler, Wizards & Benachrichtigungen
+│           └── telegram_ui.py           # Bot-Befehle, Wizards, Benachrichtigungen & Event-Handler
 ├── vendor/
 │   └── zigbee2mqtt/         # Lokale, modifizierte Zigbee2MQTT-Quellen (Mittelweg-Dienst)
 └── tests/
