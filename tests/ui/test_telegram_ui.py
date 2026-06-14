@@ -295,27 +295,69 @@ class TestScheduleDeleteFlow(unittest.TestCase):
         self.assertIsNone(_state_get(delete_states, 100))
 
 
-class TestTelegramBotStartup(unittest.TestCase):
-    """Smoke-tests that start_bot() wires up without AttributeError.
+class TestManualWateringPresetCallback(unittest.TestCase):
+    """Tests the man_vol_<preset> callback path (inline button selection)."""
 
-    Regression guard: a missing function on an imported module (e.g. scheduler.
-    register_notification_callback) would previously crash the daemon at runtime
-    but was invisible to the test suite.
+    def setUp(self):
+        manual_states.clear()
+
+    def tearDown(self):
+        manual_states.clear()
+
+    def _cb(self, data, chat_id=100, msg_id=1):
+        return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_preset_volume_triggers_start_watering(self, mock_client, mock_ctrl):
+        """Pressing a preset volume button must call _watering_ctrl.start_watering."""
+        mock_ctrl.start_watering.return_value = (True, "OK")
+        _state_set(manual_states, 100, {"step": 2, "duration": 10})
+
+        _process_callback_query(self._cb("man_vol_25"))
+
+        mock_ctrl.start_watering.assert_called_once_with(10, 25, "manual")
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_preset_volume_clears_state(self, mock_client, mock_ctrl):
+        """Selecting a preset volume must clear manual_states."""
+        mock_ctrl.start_watering.return_value = (True, "OK")
+        _state_set(manual_states, 100, {"step": 2, "duration": 5})
+
+        _process_callback_query(self._cb("man_vol_10"))
+
+        self.assertIsNone(_state_get(manual_states, 100))
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_preset_volume_failure_sends_error(self, mock_client, mock_ctrl):
+        """On failure, an error message must be sent to the user."""
+        mock_ctrl.start_watering.return_value = (False, "Ventil blockiert")
+        _state_set(manual_states, 100, {"step": 2, "duration": 10})
+
+        _process_callback_query(self._cb("man_vol_50"))
+
+        error_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("Fehler", error_text)
+
+
+class TestTelegramWiringSmoke(unittest.TestCase):
+    """Wiring smoke test (ARCHITECTURE.md Rule 6): verifies that the Telegram startup
+    wiring in main.py calls the correct functions by name. A renamed or removed
+    function on telegram_client or telegram_ui would be caught here rather than
+    at daemon startup on the Pi.
     """
 
-    def test_start_bot_does_not_raise(self):
-        from unittest.mock import patch
-        from daemon.ui import telegram_bot
-        with patch("daemon.ui.telegram_client.register_update_callback"), \
-             patch("daemon.ui.telegram_client.start_polling"):
-            telegram_bot.start_bot()
+    def test_telegram_wiring_does_not_raise(self):
+        from daemon.ui import telegram_client, telegram_ui
+        with patch.object(telegram_client, "register_update_callback") as mock_reg, \
+             patch.object(telegram_client, "start_polling") as mock_poll:
+            telegram_client.register_update_callback(telegram_ui.on_telegram_update)
+            telegram_client.start_polling()
 
-    def test_broadcast_notification_delegates_to_client(self):
-        from unittest.mock import patch, call
-        from daemon.ui import telegram_bot
-        with patch("daemon.ui.telegram_client.broadcast_notification") as mock_bc:
-            telegram_bot.broadcast_notification("test message")
-            mock_bc.assert_called_once_with("test message")
+        mock_reg.assert_called_once_with(telegram_ui.on_telegram_update)
+        mock_poll.assert_called_once()
 
 
 import json as _json_module

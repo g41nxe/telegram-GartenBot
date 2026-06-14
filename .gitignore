@@ -126,4 +126,7 @@ zigbee2mqtt.tar.gz
 # Scratch dir
 scratch/
 
+# Gemini CLI project config (local tooling only)
+.gemini_project_config.json
+
 # End of file

@@ -1024,7 +1024,10 @@ def _process_callback_query(cb_obj: dict):
                 dur = state["duration"]
                 _state_del(manual_states, chat_id)
 
-                success, response = scheduler.start_watering(dur, vol, "manual")
+                if _watering_ctrl:
+                    success, response = _watering_ctrl.start_watering(dur, vol, "manual")
+                else:
+                    success, response = False, "Guss-Steuerung nicht initialisiert."
                 if not success:
                     telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
                 else:

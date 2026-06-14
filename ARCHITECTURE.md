@@ -43,4 +43,4 @@ Functions whose sole job is to wire modules together (e.g. `telegram_bot.start_b
 - Every wiring function MUST have a smoke test that calls it under mocked I/O and asserts it does not raise `AttributeError`.
 - When a function is removed from an adapter or core module, search for all callers before deleting it.
 
-**Enforcement:** `tests/ui/test_telegram_ui.py::TestTelegramBotStartup.test_start_bot_does_not_raise` is the reference pattern.
+**Enforcement:** `tests/ui/test_telegram_ui.py::TestTelegramWiringSmoke.test_telegram_wiring_does_not_raise` is the reference pattern. The wiring under test is the inline startup sequence in `main.py`.

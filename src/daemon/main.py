@@ -38,7 +38,6 @@ def main():
     from .core.watering_controller import WateringController
     from .adapters.database_adapter import DatabaseLoggerAdapter
     
-    # Erzeuge Guss-Steuerung und weise sie dem Scheduler zu (Fassaden-Kopplung)
     watering_ctrl = WateringController(mqtt_client._global_bus, mqtt_client.client_instance.publish)
     scheduler.set_controller(watering_ctrl)
     

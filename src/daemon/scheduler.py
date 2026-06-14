@@ -10,7 +10,6 @@ from .adapters.daily_report import send_daily_report
 
 logger = logging.getLogger("garden_scheduler")
 
-# Globale Steuerung des Controllers für abwärtskompatible Aufrufe
 _controller = None
 
 # Steuerung des Scheduler-Hintergrundthreads
