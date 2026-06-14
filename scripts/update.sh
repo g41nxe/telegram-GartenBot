@@ -18,6 +18,18 @@ get_env() {
     grep -E "^\s*$1\s*=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]'
 }
 
+tg_notify() {
+    local chat_id="$1" text="$2"
+    local token
+    token="$(get_env TELEGRAM_BOT_TOKEN)"
+    [ -z "$token" ] && return
+    curl -sf -X POST \
+        "https://api.telegram.org/bot${token}/sendMessage" \
+        -d "chat_id=${chat_id}" \
+        -d "parse_mode=Markdown" \
+        --data-urlencode "text=${text}" > /dev/null || true
+}
+
 [ -f "$ENV_FILE" ] || die ".env nicht gefunden unter $ENV_FILE"
 
 GITHUB_PAT="$(get_env GITHUB_PAT)"
@@ -130,7 +142,8 @@ if systemctl is-active --quiet garden-irrigation; then
     log "Update auf $RELEASE_TAG erfolgreich."
     if [ -f "$NOTIFY_FILE" ]; then
         CHAT_ID=$(head -1 "$NOTIFY_FILE")
-        printf '%s\nsuccess\n%s\n' "$CHAT_ID" "$RELEASE_TAG" > "$NOTIFY_FILE"
+        rm -f "$NOTIFY_FILE"
+        tg_notify "$CHAT_ID" "✅ Update auf \`${RELEASE_TAG}\` erfolgreich installiert."
     fi
     rm -rf "$TMP_ARCHIVE" "$TMP_EXTRACT"
     exit 0
@@ -156,7 +169,8 @@ fi
 sudo systemctl restart garden-irrigation
 if [ -f "$NOTIFY_FILE" ]; then
     CHAT_ID=$(head -1 "$NOTIFY_FILE")
-    printf '%s\nfailed\n%s\n' "$CHAT_ID" "$LOCAL_VERSION" > "$NOTIFY_FILE"
+    rm -f "$NOTIFY_FILE"
+    tg_notify "$CHAT_ID" "❌ Update fehlgeschlagen — Rollback auf \`${LOCAL_VERSION}\` durchgeführt."
 fi
 rm -rf "$TMP_ARCHIVE" "$TMP_EXTRACT"
 log "Rollback abgeschlossen. Läuft wieder auf $LOCAL_VERSION."
