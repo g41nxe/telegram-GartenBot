@@ -179,6 +179,46 @@ class TestWateringController(unittest.TestCase):
         """get_active_cycle() ohne Argument gibt None zurück wenn kein Zyklus läuft."""
         self.assertIsNone(self.controller.get_active_cycle())
 
+    # --- irrigation_volume (Gerät meldet kumulatives Volumen direkt) ---
+
+    def test_irrigation_volume_used_directly_from_device(self):
+        """WateringController übernimmt irrigation_volume direkt; kein Integrieren nötig."""
+        from daemon.core.valve_events import ValveStatusReported
+
+        success, _ = self.controller.start_watering(
+            duration_minutes=10, target_volume_liters=20, source="manual",
+            mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve"
+        )
+        self.assertTrue(success)
+
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=3.5))
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 3.5, places=2)
+
+        # Kumulativer Wert wächst weiter → Controller übernimmt den neuen Wert
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=7.2))
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 7.2, places=2)
+
+    def test_volume_limit_triggers_from_irrigation_volume(self):
+        """Volumenlimit löst aus wenn irrigation_volume das Target überschreitet."""
+        from daemon.core.valve_events import ValveStatusReported
+
+        events = []
+        self.bus.subscribe(WateringCycleCompleted, lambda e: events.append(e))
+
+        success, _ = self.controller.start_watering(
+            duration_minutes=10, target_volume_liters=5, source="manual",
+            mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve"
+        )
+        self.assertTrue(success)
+
+        # Gerät meldet 5.3 L — überschreitet Limit von 5 L
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=5.3))
+
+        self.assertIsNone(self.controller.get_active_cycle("garden_valve"))
+        self.assertEqual(len(events), 1)
+        self.assertAlmostEqual(events[0].volume_run, 5.3, places=2)
+        self.assertIn("Volumenlimit", events[0].details)
+
 
 if __name__ == "__main__":
     unittest.main()
