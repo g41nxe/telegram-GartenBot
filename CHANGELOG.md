@@ -1,3 +1,12 @@
+## v1.1.2 — 2026-06-14
+
+- Architektur-Bereinigung: Scheduler-Fassade über Guss-Steuerung aufgelöst
+- `telegram_bot.py` Pass-Through entfernt, Verdrahtung direkt in `main.py`
+- `send_daily_report()` entkoppelt: kein sleep/MQTT-Prefetch mehr im Adapter
+- README und CLAUDE.md auf aktuellen Modulstand gebracht
+
+---
+
 ## v1.1.1 — 2026-06-14
 
 - OTA-Bestätigung per Telegram nach erfolgreichem Update
