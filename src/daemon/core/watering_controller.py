@@ -98,6 +98,7 @@ class WateringController:
 
             duration_seconds = duration_minutes * 60
             timer = threading.Timer(duration_seconds, self._time_limit_callback, args=(mqtt_name, valve_topic))
+            timer.daemon = True
 
             start_time = datetime.now()
             self._last_flow_update_time[mqtt_name] = start_time
