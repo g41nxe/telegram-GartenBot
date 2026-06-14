@@ -88,3 +88,6 @@ try:
     WATCHDOG_VALVE_TIMEOUT_HOURS = float(os.getenv("WATCHDOG_VALVE_TIMEOUT_HOURS", "24"))
 except ValueError:
     WATCHDOG_VALVE_TIMEOUT_HOURS = 24.0
+
+GITHUB_PAT = os.getenv("GITHUB_PAT", "")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "")
