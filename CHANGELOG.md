@@ -1,3 +1,9 @@
+## v1.0.1 — 2026-06-14
+
+- Wassermengenmessung korrigiert (SWV-ZFE meldet Liter, nicht L/min)
+
+---
+
 ## 2026-06-14
 
 - Release-Notes im /update-Dialog (aus CHANGELOG.md)
