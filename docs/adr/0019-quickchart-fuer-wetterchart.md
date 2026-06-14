@@ -25,6 +25,11 @@ Bei Nichtverfügbarkeit von QuickChart.io (Netzwerkfehler, Timeout) fällt der A
 - Das Free-Tier von QuickChart.io (1.000 Charts/Monat) ist bei einem täglichen `/report` ausreichend.
 - Wetterdaten (Temperatur, Niederschlag, Wahrscheinlichkeit) werden bei jedem Chart-Aufruf an einen Drittanbieter übermittelt.
 
+## Bekannte Einschränkungen
+
+- **`"version": "4"` ist Pflicht:** QuickChart.io verwendet standardmäßig Chart.js v2. Chart.js v3-Syntax (Achsen als Objekte mit ID-Keys, gemischte Dataset-Typen) erfordert `"version": "4"` im POST-Body — ohne diesen Parameter antwortet die API mit HTTP 400.
+- **JavaScript-Formatter werden nicht ausgeführt:** `datalabels`-Callbacks mit `"formatter": "function(v, ctx) { ... }"` werden von QuickChart.io nicht als JavaScript interpretiert — der rohe Datenwert wird stattdessen angezeigt. Nur statische Werte oder kein `datalabels` verwenden.
+
 ## Verworfene Alternativen
 
 - **matplotlib via apt**: Paketversion ist an das OS-Repository gekoppelt, keine pip-Kontrolle, kein `requirements.txt`-Eintrag möglich.
