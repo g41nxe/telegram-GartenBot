@@ -197,8 +197,8 @@ def generate_daily_report(today_str: str) -> str:
 
     return (
         f"📊 **Täglicher Statusbericht vom {display_date}**\n\n"
-        f"{watering_text}\n"
-        f"{weather_text}\n"
+        f"{watering_text}\n\n"
+        f"{weather_text}\n\n"
         f"{valve_text}"
         f"{warning_text}"
     )
