@@ -532,6 +532,41 @@ class TestDailyReportEventHandler(unittest.TestCase):
         mock_client.broadcast_notification.assert_called_once_with("Kein Chart")
 
 
+class TestBatteryDescription(unittest.TestCase):
+    """Testet die verbale Übersetzung des Batteriestands."""
+
+    def setUp(self):
+        from daemon.ui.telegram_ui import _get_battery_description
+        self.desc = _get_battery_description
+
+    def test_full_battery_above_60(self):
+        self.assertIn("Voll", self.desc(100))
+        self.assertIn("Voll", self.desc(61))
+
+    def test_medium_battery_between_20_and_60(self):
+        self.assertIn("Mittel", self.desc(60))
+        self.assertIn("Mittel", self.desc(21))
+
+    def test_low_battery_at_or_below_20(self):
+        self.assertIn("Schwach", self.desc(20))
+        self.assertIn("Schwach", self.desc(1))
+
+    def test_zero_battery_shows_unknown(self):
+        self.assertIn("Unbekannt", self.desc(0))
+
+    def test_none_battery_shows_unknown(self):
+        self.assertIn("Unbekannt", self.desc(None))
+
+    def test_full_battery_shows_full_icon(self):
+        self.assertIn("🔋", self.desc(100))
+
+    def test_low_battery_shows_empty_icon(self):
+        self.assertIn("🪫", self.desc(10))
+
+    def test_unknown_shows_empty_icon(self):
+        self.assertIn("🪫", self.desc(0))
+
+
 class TestWatchdogUiHandlers(unittest.TestCase):
     """Testet die telegram_ui-Handler für InactivityAlertTriggered / InactivityAlertResolved."""
 
