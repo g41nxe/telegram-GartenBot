@@ -476,6 +476,8 @@ def handle_status(chat_id: int):
         history_lines.append(f"{status_char} {time_str} ({h['duration_minutes']} Min, {h['source']})")
     history_text = "\n".join(history_lines) if history_lines else "Keine Einträge vorhanden"
 
+    version_line = f"\n\n🔧 **Version:** `{_read_local_version()}`"
+
     msg = (
         f"📊 **System-Status Gartenbewässerung**\n\n"
         f"🔌 **System-Dienste:** {services_status}\n"
@@ -484,6 +486,7 @@ def handle_status(chat_id: int):
         f"🌤️ **Wetter:**\n"
         f"{weather_text}\n\n"
         f"📜 **Letzte Zyklen:**\n{history_text}"
+        f"{version_line}"
     )
 
     telegram_client.send_message(chat_id, msg, get_main_keyboard())
