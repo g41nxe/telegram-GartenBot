@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Agent Memory
+
+Persistent memory for this project lives in `.claude/memory/`. Read `MEMORY.md` there at the start of each session for context on past decisions, feedback, and project state. Update it when you learn something worth remembering.
+
 ## Project Overview
 
 This is a Python daemon for a smart garden irrigation system running on a **Raspberry Pi Zero W**. It controls a Sonoff Hydro ONE Zigbee water valve via Telegram bot, with weather-based skip logic, scheduled watering, and flood-prevention safety features.
