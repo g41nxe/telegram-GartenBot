@@ -148,5 +148,85 @@ class TestVerbalValveSection(unittest.TestCase):
         self.assertIn("🚨", result)
 
 
+class TestSendDailyReport(unittest.TestCase):
+
+    def _make_patches(self):
+        patches = {
+            "db": patch("daemon.adapters.daily_report.database"),
+            "weather": patch("daemon.adapters.daily_report.weather"),
+            "mqtt": patch("daemon.adapters.daily_report.mqtt_client"),
+            "bus": patch("daemon.adapters.daily_report._global_bus"),
+        }
+        mocks = {k: p.start() for k, p in patches.items()}
+        mocks["db"].get_weather_around_hours_ago.return_value = None
+        for p in patches.values():
+            self.addCleanup(p.stop)
+        return mocks
+
+    def test_send_daily_report_does_not_sleep(self):
+        """send_daily_report() must not block — scheduler thread owns the wait."""
+        from daemon.adapters.daily_report import send_daily_report
+
+        mocks = self._make_patches()
+        mocks["db"].get_watering_stats_last_24h.return_value = (1, 0, 5.0)
+        mocks["db"].get_all_valves.return_value = []
+        mocks["db"].get_metadata.return_value = None
+        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5)
+        mocks["mqtt"].HAS_PAHO = False
+
+        send_daily_report("2026-06-14")
+        # Function completes immediately without blocking
+
+    def test_send_daily_report_does_not_request_valve_status(self):
+        """send_daily_report() must not trigger MQTT side-effects — caller's responsibility."""
+        from daemon.adapters.daily_report import send_daily_report
+
+        mocks = self._make_patches()
+        mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
+        mocks["db"].get_all_valves.return_value = []
+        mocks["db"].get_metadata.return_value = None
+        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5)
+        mocks["mqtt"].HAS_PAHO = False
+
+        send_daily_report("2026-06-14")
+
+        mocks["mqtt"].request_valve_status.assert_not_called()
+
+    def test_send_daily_report_publishes_event(self):
+        """send_daily_report() must publish DailyReportTriggered on the EventBus."""
+        from daemon.adapters.daily_report import send_daily_report
+        from daemon.core.scheduler_events import DailyReportTriggered
+
+        mocks = self._make_patches()
+        mocks["db"].get_watering_stats_last_24h.return_value = (2, 1, 8.5)
+        mocks["db"].get_all_valves.return_value = []
+        mocks["db"].get_metadata.return_value = None
+        mocks["db"].get_weather_around_hours_ago.return_value = None
+        mocks["weather"].get_weather_data.return_value = (3.0, 1.0, 18.0, 61, 14.0, 22.0, 80)
+        mocks["mqtt"].HAS_PAHO = False
+
+        send_daily_report("2026-06-14")
+
+        mocks["bus"].publish.assert_called_once()
+        published_event = mocks["bus"].publish.call_args[0][0]
+        self.assertIsInstance(published_event, DailyReportTriggered)
+        self.assertEqual(published_event.today_str, "2026-06-14")
+
+    def test_send_daily_report_sets_metadata(self):
+        """send_daily_report() must mark the report date as sent."""
+        from daemon.adapters.daily_report import send_daily_report
+
+        mocks = self._make_patches()
+        mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
+        mocks["db"].get_all_valves.return_value = []
+        mocks["db"].get_metadata.return_value = None
+        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5)
+        mocks["mqtt"].HAS_PAHO = False
+
+        send_daily_report("2026-06-14")
+
+        mocks["db"].set_metadata.assert_called_once_with("last_daily_report_date", "2026-06-14")
+
+
 if __name__ == "__main__":
     unittest.main()

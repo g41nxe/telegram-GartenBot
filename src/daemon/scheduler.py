@@ -3,7 +3,7 @@ import logging
 import threading
 from datetime import datetime
 from . import config
-from .adapters import database, weather, watchdog
+from .adapters import database, weather, watchdog, mqtt_client
 from .adapters.mqtt_client import _global_bus
 from .core.scheduler_events import WateringSkipped, ScheduleFailed
 from .adapters.daily_report import generate_daily_report, send_daily_report  # noqa: F401 (generate_daily_report re-exported for telegram_ui)
@@ -123,6 +123,19 @@ def _start_sequential(queue: list, sched: dict):
         _global_bus.subscribe(WateringCycleCompleted, on_cycle_done)
         _global_bus.subscribe(WateringCycleFailed, on_cycle_done)
 
+def _send_daily_report_with_prefetch(today_str: str):
+    """Fordert frische Ventil-Status an, wartet und delegiert an send_daily_report().
+
+    Ist der Thread-Target für den täglichen Bericht. Die Wartezeit liegt hier,
+    weil der Scheduler die Zeitsteuerung verantwortet — nicht der Report-Adapter.
+    """
+    try:
+        mqtt_client.request_valve_status()
+    except Exception as e:
+        logger.warning(f"Konnte Ventil-Statusaktualisierung nicht anfordern: {e}")
+    time.sleep(5.0)
+    send_daily_report(today_str)
+
 def _scheduler_loop():
     """Hintergrund-Schleife, die jede Minute prüft, ob Zeitpläne anstehen."""
     global scheduler_running
@@ -151,7 +164,7 @@ def _scheduler_loop():
                 last_report = database.get_metadata("last_daily_report_date")
                 if last_report != today_str:
                     logger.info(f"Täglicher Statusbericht für heute ({today_str}) steht aus. Starte Versand...")
-                    t_report = threading.Thread(target=send_daily_report, args=(today_str,), daemon=True)
+                    t_report = threading.Thread(target=_send_daily_report_with_prefetch, args=(today_str,), daemon=True)
                     t_report.start()
             
             # Stündliche Hintergrundprüfungen

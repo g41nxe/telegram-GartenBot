@@ -1,5 +1,4 @@
 import logging
-import time
 from datetime import datetime
 from .. import config
 from . import database, weather, mqtt_client
@@ -205,17 +204,12 @@ def generate_daily_report(today_str: str) -> str:
 
 
 def send_daily_report(today_str: str):
-    """Generiert den täglichen Bericht und publiziert ihn als Event; markiert ihn als versendet."""
+    """Generiert den täglichen Bericht und publiziert ihn als Event; markiert ihn als versendet.
+
+    Voraussetzung: Der Aufrufer hat vorab mqtt_client.request_valve_status() aufgerufen
+    und ausreichend Zeit für die Antwort der Ventile abgewartet.
+    """
     database.set_metadata("last_daily_report_date", today_str)
-
-    try:
-        mqtt_client.request_valve_status()
-    except Exception as e:
-        logger.warning(f"Konnte Ventil-Statusaktualisierung nicht anfordern: {e}")
-
-    # Warte kurz, damit das Ventil Zeit hat zu antworten
-    time.sleep(5.0)
-
     try:
         report_text = generate_daily_report(today_str)
         _global_bus.publish(DailyReportTriggered(today_str, report_text))
