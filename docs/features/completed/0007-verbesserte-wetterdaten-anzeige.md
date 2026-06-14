@@ -86,7 +86,7 @@ Die stündlichen Wetterdaten werden im bestehenden Hintergrund-Wetter-Abruf (`sc
     - `core/scheduler_events.py` — `WeatherDataFetched` erhält zwei neue Felder: `current_precipitation: float` und `hourly_forecast_json: str`.
     - `adapters/database.py` — Migration: neue Spalten `current_precipitation_mm REAL` und `hourly_forecast_json TEXT` in `weather_history`; `log_weather_data()` und `get_last_weather()` entsprechend angepasst.
     - `adapters/database_adapter.py` — Neuen Felder aus dem Event an `log_weather_data()` weiterleiten.
-    - `adapters/chart.py` — Neu: liest `hourly_forecast_json` aus der DB, baut Chart.js-Konfiguration, sendet POST an QuickChart.io, gibt `bytes | None` zurück (None = Textfallback).
+    - `adapters/chart.py` — Neu: liest `hourly_forecast_json` und `rain_last_24h_mm` aus der DB, baut Chart.js-Konfiguration, sendet POST an QuickChart.io, gibt `(bytes, caption) | None` zurück (None = Textfallback). Die Gieß-Empfehlung in der Caption verwendet dasselbe 48h-Rollup wie der Scheduler-Skip: `rain_last_24h_mm + Σ precip_mm_forecast ≥ RAIN_THRESHOLD_MM` → kein Gießen.
     - `ui/telegram_client.py` — Neue Methode `send_photo(chat_id, image_bytes, caption)` via `sendPhoto`-Multipart-Upload.
     - `ui/telegram_ui.py` — `/status`: Wetter-Block auf Label-Stil umgestellt; `/report`: Chart-Adapter aufrufen, Bild oder Textfallback senden.
 

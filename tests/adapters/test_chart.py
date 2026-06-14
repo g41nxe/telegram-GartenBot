@@ -40,6 +40,14 @@ _LAST_WEATHER_RAINY = {
     "hourly_forecast_json": _RAINY_FORECAST,
 }
 
+# Viel Regen gestern, trockene Vorhersage — rain_last_24h allein überschreitet Schwellwert
+_LAST_WEATHER_RAINED_YESTERDAY = {
+    **_LAST_WEATHER_WITH_FORECAST,
+    "rain_last_24h_mm": 5.0,   # ≥ RAIN_THRESHOLD_MM (3.0)
+    "rain_next_24h_mm": 0.0,
+    "hourly_forecast_json": _VALID_FORECAST,  # Vorhersage trocken (0.8mm gesamt)
+}
+
 
 def _make_mock_urlopen(png_bytes=b"\x89PNG\r\nfake"):
     fake = MagicMock()
@@ -142,6 +150,14 @@ class TestGenerateWeatherChart(unittest.TestCase):
     @patch("daemon.adapters.chart.urllib.request.urlopen")
     def test_caption_skips_watering_when_rain_expected(self, mock_urlopen, _):
         """Niederschlagsumme ≥ RAIN_THRESHOLD_MM → Kein Gießen nötig."""
+        mock_urlopen.return_value = _make_mock_urlopen()
+        _, caption = chart_module.generate_weather_chart()
+        self.assertIn("Kein Gießen", caption)
+
+    @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_RAINED_YESTERDAY)
+    @patch("daemon.adapters.chart.urllib.request.urlopen")
+    def test_caption_skips_watering_when_much_rain_yesterday(self, mock_urlopen, _):
+        """Viel Regen gestern (rain_last_24h ≥ THRESHOLD) → Kein Gießen, auch wenn Vorhersage trocken."""
         mock_urlopen.return_value = _make_mock_urlopen()
         _, caption = chart_module.generate_weather_chart()
         self.assertIn("Kein Gießen", caption)
