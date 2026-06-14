@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - release
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js Setup
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Zigbee2MQTT kompilieren
+        working-directory: vendor/zigbee2mqtt
+        run: npm ci && npm run build
+
+      - name: Versionsdateien generieren
+        id: version
+        run: |
+          VERSION=$(git describe --tags --exact-match 2>/dev/null || echo "v0.0.0-$(git rev-parse --short HEAD)")
+          Z2M_VERSION=$(node -p "require('./vendor/zigbee2mqtt/package.json').version")
+          echo "VERSION=$VERSION"         >> $GITHUB_OUTPUT
+          echo "Z2M_VERSION=$Z2M_VERSION" >> $GITHUB_OUTPUT
+          echo "$VERSION"     > VERSION
+          echo "$Z2M_VERSION" > Z2M_VERSION
+
+      - name: Release-Archiv bauen
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+
+          # Zigbee2MQTT ohne node_modules und .git in Staging-Ordner kopieren
+          mkdir -p /tmp/z2m-stage/zigbee2mqtt
+          rsync -a \
+            --exclude=node_modules \
+            --exclude=.git \
+            --exclude=test \
+            --exclude=docker \
+            --exclude=images \
+            vendor/zigbee2mqtt/ /tmp/z2m-stage/zigbee2mqtt/
+
+          # Alles in ein Archiv packen
+          tar -czf "garden-${VERSION}.tar.gz" \
+            src/ scripts/ tools/ \
+            VERSION Z2M_VERSION \
+            -C /tmp/z2m-stage zigbee2mqtt
+
+          echo "Archivgröße: $(du -sh garden-${VERSION}.tar.gz | cut -f1)"
+
+      - name: GitHub Release anlegen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: ${{ steps.version.outputs.VERSION }}
+          files: garden-${{ steps.version.outputs.VERSION }}.tar.gz
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Telegram Benachrichtigung
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          curl -s -X POST \
+            "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d "parse_mode=Markdown" \
+            --data-urlencode "text=🌱 Build \`${VERSION}\` fertig — bereit zum Installieren. Tippe /update zum Starten."
