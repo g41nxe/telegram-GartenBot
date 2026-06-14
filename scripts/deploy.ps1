@@ -73,7 +73,8 @@ Write-Host "Ggf. werden Sie gleich nach dem SSH-Passwort des Pi gefragt." -Foreg
 Write-Host ""
 
 # Ausführung der Übertragung der notwendigen Ordner und Dateien (ohne .git, garden.db, etc. zur Vermeidung von Konflikten)
-$TransferItems = @("src", "scripts", ".env", "tools")
+$EnvSource = if (Test-Path ".env.prod") { ".env.prod" } else { ".env" }
+$TransferItems = @("src", "scripts", "tools")
 if (Test-Path "zigbee2mqtt.tar.gz") {
     $TransferItems += "zigbee2mqtt.tar.gz"
 }
@@ -82,6 +83,12 @@ foreach ($Item in $TransferItems) {
     if (Test-Path $Item) {
         scp -r $Item "${PiUser}@${PiHost}:/home/${PiUser}/garden/"
     }
+}
+
+# .env.prod als .env übertragen (enthält Produktions-Secrets)
+if (Test-Path $EnvSource) {
+    scp $EnvSource "${PiUser}@${PiHost}:/home/${PiUser}/garden/.env"
+    Write-Host "Konfigurationsdatei '$EnvSource' als '.env' übertragen." -ForegroundColor Cyan
 }
 
 

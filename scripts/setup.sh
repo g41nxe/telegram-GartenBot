@@ -288,6 +288,20 @@ check_service zigbee2mqtt
 check_service garden-irrigation
 
 # ══════════════════════════════════════════════════════════════
+# OTA-VERSIONSDATEIEN
+# ══════════════════════════════════════════════════════════════
+if [ ! -f "${CURRENT_HOME}/garden/VERSION" ]; then
+    echo "v0.0.0-initial" > "${CURRENT_HOME}/garden/VERSION"
+    ok "Initiale VERSION-Datei angelegt"
+fi
+
+if [ ! -f "${CURRENT_HOME}/garden/Z2M_VERSION" ]; then
+    node -p "require('/opt/zigbee2mqtt/package.json').version" > "${CURRENT_HOME}/garden/Z2M_VERSION" 2>/dev/null \
+        || echo "unbekannt" > "${CURRENT_HOME}/garden/Z2M_VERSION"
+    ok "Initiale Z2M_VERSION-Datei angelegt"
+fi
+
+# ══════════════════════════════════════════════════════════════
 # ABSCHLUSS
 # ══════════════════════════════════════════════════════════════
 echo ""
