@@ -327,6 +327,31 @@ def get_last_weather():
     finally:
         conn.close()
 
+def get_weather_around_hours_ago(hours: int, max_offset_hours: int = 6) -> dict | None:
+    """Gibt den Wettereintrag zurück, dessen Zeitstempel am nächsten an `hours` Stunden zurückliegt.
+    Gibt None zurück, wenn kein Eintrag innerhalb von max_offset_hours existiert."""
+    from datetime import timedelta
+    target = datetime.now() - timedelta(hours=hours)
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT * FROM weather_history ORDER BY ABS(JULIANDAY(timestamp) - JULIANDAY(?)) LIMIT 1",
+            (target.isoformat(),)
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        record_time = datetime.fromisoformat(row["timestamp"])
+        if abs((record_time - target).total_seconds()) > max_offset_hours * 3600:
+            return None
+        return dict(row)
+    except Exception as e:
+        logger.error(f"Fehler beim Laden des Wettereintrags vor {hours}h: {e}")
+        return None
+    finally:
+        conn.close()
+
 # --- Operationen für System-Metadaten ---
 
 def get_metadata(key: str, default: str = None) -> str:
