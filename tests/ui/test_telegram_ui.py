@@ -455,7 +455,7 @@ class TestReportChartIntegration(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.adapters.chart.generate_weather_chart", return_value=None)
-    def test_report_sends_text_fallback_when_chart_fails(self, mock_chart, mock_client, mock_db, mock_sched):
+    def test_report_sends_no_photo_when_chart_fails(self, mock_chart, mock_client, mock_db, mock_sched):
         from daemon.adapters import mqtt_client as mc
         mock_db.get_last_weather.return_value = _make_weather_row(with_forecast=True)
         mock_db.get_all_valves.return_value = []
@@ -469,9 +469,8 @@ class TestReportChartIntegration(unittest.TestCase):
             _process_message(self._msg("/report"))
 
         mock_client.send_photo.assert_not_called()
-        # Textfallback must contain hourly data
-        all_texts = " ".join(str(c) for c in mock_client.send_message.call_args_list)
-        self.assertIn("Wetterverlauf", all_texts)
+        # Tagesbericht wird trotzdem gesendet
+        mock_client.send_message.assert_called()
 
     @patch("daemon.ui.telegram_ui.scheduler")
     @patch("daemon.ui.telegram_ui.database")

@@ -423,8 +423,8 @@ def handle_status(chat_id: int):
     msg = (
         f"📊 **System-Status Gartenbewässerung**\n\n"
         f"🔌 **System-Dienste:** {services_status}\n"
-        f"{active_text}\n"
-        f"{valves_text}\n"
+        f"{active_text}"
+        f"\n{valves_text}\n"
         f"🌤️ **Wetter:**\n"
         f"{weather_text}\n\n"
         f"📜 **Letzte Zyklen:**\n{history_text}"
@@ -663,39 +663,16 @@ def _process_message(msg_obj: dict):
     elif text == "📊 Status anzeigen" or text.startswith("/status"):
         handle_status(chat_id)
     elif text.startswith("/report") or text.startswith("/statusbericht"):
-        from ..adapters import mqtt_client, chart
-        import time
+        from ..adapters import mqtt_client as _mc, chart as _chart
+        import time as _time
 
-        mqtt_client.request_valve_status()
-        time.sleep(1.5)
+        _mc.request_valve_status()
+        _time.sleep(5.0)
 
-        # Wetterchart als PNG versuchen; bei Fehler stündlichen Textfallback senden
-        chart_result = chart.generate_weather_chart()
+        chart_result = _chart.generate_weather_chart()
         if chart_result:
             image_bytes, caption = chart_result
             telegram_client.send_photo(chat_id, image_bytes, caption=caption)
-        else:
-            last_weather = database.get_last_weather()
-            if last_weather and last_weather.get("hourly_forecast_json"):
-                import json as _json
-                try:
-                    fc = _json.loads(last_weather["hourly_forecast_json"])
-                    fc_times = fc.get("times", [])
-                    fc_temp = fc.get("temp", [])
-                    fc_precip = fc.get("precip_mm", [])
-                    fc_prob = fc.get("precip_prob", [])
-                    fc_wmo = fc.get("wmo", [])
-                    lines = ["🌤 *Wetterverlauf — nächste 24h*\n"]
-                    for i, t in enumerate(fc_times):
-                        hour_label = t[11:16] if len(t) >= 16 else t
-                        temp_val = fc_temp[i] if i < len(fc_temp) else "?"
-                        precip_val = fc_precip[i] if i < len(fc_precip) else 0.0
-                        prob_val = fc_prob[i] if i < len(fc_prob) else 0
-                        wmo_desc = _get_wmo_description(fc_wmo[i] if i < len(fc_wmo) else 0)
-                        lines.append(f"{hour_label}  {temp_val}°C  💧 {precip_val}mm  {prob_val}%  {wmo_desc}")
-                    telegram_client.send_message(chat_id, "\n".join(lines))
-                except Exception:
-                    pass
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         report_text = scheduler.generate_daily_report(today_str)
