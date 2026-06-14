@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import urllib.request
 import urllib.error
 from . import database
@@ -60,12 +61,24 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
         logger.warning("Keine Stundendaten für Chart verfügbar.")
         return None
 
-    labels = [t[11:16] if len(t) >= 16 else t for t in times]
+    # Nur jede 3. Stunde beschriften, Rest leer lassen
+    labels = []
+    for i, t in enumerate(times):
+        hour_str = t[11:16] if len(t) >= 16 else t
+        labels.append(hour_str if i % 3 == 0 else "")
 
     bar_colors = [
         _bar_color(precip_prob[i] if i < len(precip_prob) else 0)
         for i in range(len(times))
     ]
+
+    # Daten-Labels: Wahrscheinlichkeit auf Balken ab >30%
+    prob_labels = [
+        f"{precip_prob[i]}%" if i < len(precip_prob) and precip_prob[i] > 30 else ""
+        for i in range(len(times))
+    ]
+
+    precip_max = max(precip_mm) if precip_mm else 0
 
     chart_config = {
         "type": "bar",
@@ -76,11 +89,13 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
                     "type": "line",
                     "label": "Temperatur (°C)",
                     "data": temps,
-                    "borderColor": "rgb(255, 99, 132)",
-                    "backgroundColor": "rgba(255, 99, 132, 0.1)",
+                    "borderColor": "rgb(255, 159, 64)",
+                    "backgroundColor": "rgba(0,0,0,0)",
+                    "fill": False,
                     "yAxisID": "yTemp",
                     "tension": 0.3,
-                    "pointRadius": 2,
+                    "pointRadius": 0,
+                    "borderWidth": 2,
                 },
                 {
                     "type": "bar",
@@ -88,6 +103,14 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
                     "data": precip_mm,
                     "backgroundColor": bar_colors,
                     "yAxisID": "yPrecip",
+                    "datalabels": {
+                        "display": True,
+                        "formatter": "function(v, ctx) { var labels = " + json.dumps(prob_labels) + "; return labels[ctx.dataIndex] || ''; }",
+                        "color": "rgba(30, 100, 200, 0.85)",
+                        "font": {"size": 10},
+                        "anchor": "end",
+                        "align": "top",
+                    },
                 },
             ],
         },
@@ -96,18 +119,34 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
                 "title": {
                     "display": True,
                     "text": "Wetterverlauf — nächste 24h",
-                }
+                    "font": {"size": 14, "weight": "bold"},
+                },
+                "legend": {"display": False},
+                "datalabels": {"display": False},
             },
             "scales": {
                 "yTemp": {
                     "type": "linear",
                     "position": "left",
-                    "title": {"display": True, "text": "°C"},
+                    "title": {
+                        "display": True,
+                        "text": "Temperatur (°C)",
+                        "font": {"size": 12},
+                    },
+                    "min": -10,
+                    "max": 40,
+                    "grid": {"color": "rgba(0,0,0,0.07)"},
                 },
                 "yPrecip": {
                     "type": "linear",
                     "position": "right",
-                    "title": {"display": True, "text": "mm"},
+                    "title": {
+                        "display": True,
+                        "text": "Niederschlag (mm)",
+                        "font": {"size": 12},
+                    },
+                    "min": 0,
+                    "max": max(5, math.ceil(precip_max * 1.2)),
                     "grid": {"drawOnChartArea": False},
                 },
             },
@@ -119,6 +158,7 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
         "width": 700,
         "height": 350,
         "version": "4",
+        "backgroundColor": "white",
     }).encode("utf-8")
 
     try:
