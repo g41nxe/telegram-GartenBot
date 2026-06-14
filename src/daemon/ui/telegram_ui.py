@@ -1072,12 +1072,19 @@ def _on_inactivity_resolved(event: InactivityAlertResolved):
     msg = f"🟢 *Verbindung wiederhergestellt:* Ventil \"{event.device_name}\" sendet wieder Signale."
     telegram_client.broadcast_notification(msg)
 
-_global_bus.subscribe(WateringCycleStarted, _on_watering_started)
-_global_bus.subscribe(WateringCycleCompleted, _on_watering_completed)
-_global_bus.subscribe(WateringCycleFailed, _on_watering_failed)
-_global_bus.subscribe(WateringCycleStopped, _on_watering_stopped)
-_global_bus.subscribe(DailyReportTriggered, _on_daily_report)
-_global_bus.subscribe(WateringSkipped, _on_watering_skipped)
-_global_bus.subscribe(ScheduleFailed, _on_schedule_failed)
-_global_bus.subscribe(InactivityAlertTriggered, _on_inactivity_alert)
-_global_bus.subscribe(InactivityAlertResolved, _on_inactivity_resolved)
+def subscribe_event_handlers():
+    """Verdrahtet alle telegram_ui-Benachrichtigungs-Handler mit dem globalen Ereignis-Kanal.
+
+    Muss explizit von main.py aufgerufen werden — nicht automatisch beim Import.
+    Dadurch können Tests das Modul importieren, ohne echte Telegram-Nachrichten auszulösen.
+    Entspricht dem gleichen Muster wie watchdog.initialize().
+    """
+    _global_bus.subscribe(WateringCycleStarted, _on_watering_started)
+    _global_bus.subscribe(WateringCycleCompleted, _on_watering_completed)
+    _global_bus.subscribe(WateringCycleFailed, _on_watering_failed)
+    _global_bus.subscribe(WateringCycleStopped, _on_watering_stopped)
+    _global_bus.subscribe(DailyReportTriggered, _on_daily_report)
+    _global_bus.subscribe(WateringSkipped, _on_watering_skipped)
+    _global_bus.subscribe(ScheduleFailed, _on_schedule_failed)
+    _global_bus.subscribe(InactivityAlertTriggered, _on_inactivity_alert)
+    _global_bus.subscribe(InactivityAlertResolved, _on_inactivity_resolved)

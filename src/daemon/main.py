@@ -53,8 +53,10 @@ def main():
     logger.info("Initialisiere Bewässerungs-Scheduler...")
     scheduler.start_scheduler()
     
-    # 6. Telegram-Bot starten
+    # 6. Telegram-UI-Event-Handler verdrahten und Bot starten
     logger.info("Initialisiere Telegram-Bot...")
+    from .ui import telegram_ui as _telegram_ui
+    _telegram_ui.subscribe_event_handlers()
     if not config.TELEGRAM_BOT_TOKEN:
         logger.warning(
             "TELEGRAM_BOT_TOKEN ist nicht in .env konfiguriert. "

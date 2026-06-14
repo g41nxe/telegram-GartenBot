@@ -29,9 +29,11 @@ Ursache war auch, dass der `EventBus` ursprünglich keine `unsubscribe()`-Method
              event_bus.unsubscribe(DeviceJoinedEvent, on_device_joined)
      ```
 
-3. **Ausnahmen — Abonnements auf Modulebene:**
-   - Listener, die beim Modulstart registriert werden und für die gesamte Daemon-Laufzeit aktiv sein sollen (z. B. `DatabaseLoggerAdapter`, `TelegramUiController`), müssen sich nicht abmelden.
-   - Diese sind durch ihre Position auf Modulebene klar von scoped Abonnements unterscheidbar.
+3. **Dauerhaft aktive Abonnements gehören in explizite Setup-Funktionen:**
+   - Listener für die gesamte Daemon-Laufzeit (z. B. `telegram_ui`, `watchdog`) DÜRFEN NICHT auf Modulebene registriert werden.
+   - Sie werden in eine explizite Funktion ausgelagert (`initialize()`, `subscribe_event_handlers()`), die ausschließlich von `main.py` beim Daemon-Start aufgerufen wird.
+   - **Begründung:** Modulebene-Subscriptions feuern beim ersten Import — auch während der Test-Discovery. Kein `unsubscribe()` ist dennoch erforderlich, weil die Lebensdauer dieser Listener identisch mit der des Daemon-Prozesses ist.
+   - **Referenzimplementierungen:** `watchdog.initialize()`, `telegram_ui.subscribe_event_handlers()`.
 
 ## Konsequenzen
 
@@ -41,3 +43,4 @@ Ursache war auch, dass der `EventBus` ursprünglich keine `unsubscribe()`-Method
   - Die asymmetrische `subscribe()`-only-API des `EventBus` ist behoben.
 - **Nachteile:**
   - Entwickler müssen sich bewusst an das `try/finally`-Muster halten. Eine automatische Prüfung (Linting-Regel) ist nicht ohne weiteres umsetzbar; die Code-Reviews und das Architektur-Regelwerk in `.agents/rules/architecture.md` übernehmen diese Rolle.
+  - Neue UI-Module, die auf Domain-Events reagieren müssen, brauchen eine explizite Setup-Funktion und einen Aufruf in `main.py`.

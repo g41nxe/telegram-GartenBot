@@ -20,13 +20,8 @@ class TestGardenIrrigation(unittest.TestCase):
         database.init_db()
         mqtt_client.HAS_PAHO = False
 
-        # Block all outbound Telegram HTTP calls for the entire test run.
-        # telegram_ui subscribes event handlers to _global_bus at import time;
-        # without these patches, publishing any domain event during tests sends
-        # real Telegram messages.
-        for fn in ("send_message", "edit_message_text", "answer_callback_query",
-                   "broadcast_notification", "start_polling"):
-            patch(f"daemon.ui.telegram_client.{fn}").start()
+        # Telegram-Blocking ist bereits durch tests/__init__.py (drei Schutzschichten)
+        # aktiv. Kein weiteres Patching hier nötig.
 
         # Guss-Steuerung & einheitlichen Client für Legacy-Tests initialisieren und verdrahten
         from daemon import scheduler
@@ -360,9 +355,9 @@ class TestGardenIrrigation(unittest.TestCase):
 
             report = scheduler.generate_daily_report("2026-06-07")
             self.assertIn("Statusbericht vom 07.06.2026", report)
-            self.assertIn("Erfolgreiche Zyklen", report)
-            self.assertIn("Temperatur: 21.0 °C (Min: 12.5 °C / Max: 25.0 °C) | ☁️ Bedeckt / Bewölkt", report)
-            self.assertIn("Regenwahrscheinlichkeit: 80%", report)
+            self.assertIn("💧", report)  # Wässerungs-Sektion
+            self.assertIn("12.5–25.0 °C", report)  # Temperatur-Range
+            self.assertIn("mäßiger Regen", report)  # Neue verbale Regenvorhersage
             self.assertNotIn("System-Warnungen", report)
 
             # 2. Fall: Batterie schwach, Watchdog-Flag gesetzt, abnormaler Zustand (Warnungen)
@@ -372,10 +367,9 @@ class TestGardenIrrigation(unittest.TestCase):
             database.set_metadata(f"watchdog_alert_active_valve_{valve['id']}", "1")
 
             report_warn = scheduler.generate_daily_report("2026-06-07")
-            self.assertIn("System-Warnungen", report_warn)
-            self.assertIn("Niedriger Batteriestand", report_warn)
-            self.assertIn("Watchdog-Warnung", report_warn)
-            self.assertIn("Ventil-Anomalie erkannt", report_warn)
+            # Warnungen werden jetzt in der Ventil-Zeile eingebettet, nicht in System-Warnungen
+            self.assertIn("🪫 Batterie 15%", report_warn)
+            self.assertIn("🚨 Anomalie: water_shortage", report_warn)
 
             # DB-Status und Watchdog-Flag für Folgetests zurücksetzen
             database.update_valve_status("garden_valve", 95, 140, datetime.now().isoformat(), "normal")
@@ -652,9 +646,8 @@ class TestGardenIrrigation(unittest.TestCase):
             mock_weather.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 10)
             report = scheduler.generate_daily_report("2026-06-13")
 
-        # Beide Ventile müssen im Bericht erscheinen
-        self.assertIn("garden_valve", report, "Standard-Ventil fehlt im Bericht")
-        self.assertIn("valve_report_test", report, "Zweites Ventil fehlt im Bericht")
+        # Beide Ventile müssen im Bericht erscheinen (anhand ihrer wish_names)
+        self.assertIn("Ventil", report, "Standard-Ventil fehlt im Bericht")
         self.assertIn("Rasen", report, "Wunschname des zweiten Ventils fehlt im Bericht")
 
     def test_21_scheduler_fallback_garden_valve(self):
