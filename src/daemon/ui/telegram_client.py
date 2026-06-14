@@ -145,12 +145,17 @@ def answer_callback_query(callback_query_id: str, text: str = None, show_alert: 
 
 def broadcast_notification(message: str):
     """Sendet eine Push-Meldung an alle bekannten autorisierten Benutzer."""
-    # Füge standardmäßig die erlaubten User-IDs zu den aktiven Chats hinzu
     for user_id in config.TELEGRAM_ALLOWED_USER_IDS:
         active_chats.add(user_id)
-        
     for chat_id in active_chats:
         send_message(chat_id, message)
+
+def broadcast_photo(image_bytes: bytes, caption: str = None):
+    """Sendet ein PNG-Bild an alle bekannten autorisierten Benutzer."""
+    for user_id in config.TELEGRAM_ALLOWED_USER_IDS:
+        active_chats.add(user_id)
+    for chat_id in active_chats:
+        send_photo(chat_id, image_bytes, caption)
 
 def _polling_loop():
     """Hintergrund-Long-Polling-Schleife zur Abfrage neuer Nachrichten."""

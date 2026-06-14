@@ -1056,6 +1056,10 @@ def _on_watering_stopped(event: WateringCycleStopped):
     telegram_client.broadcast_notification(msg)
 
 def _on_daily_report(event: DailyReportTriggered):
+    from ..adapters import chart
+    image_bytes = chart.generate_weather_chart()
+    if image_bytes:
+        telegram_client.broadcast_photo(image_bytes, caption="🌤 Wetterverlauf — nächste 24h")
     telegram_client.broadcast_notification(event.report_text)
 
 def _on_watering_skipped(event: WateringSkipped):

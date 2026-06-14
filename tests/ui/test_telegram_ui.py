@@ -494,6 +494,44 @@ class TestReportChartIntegration(unittest.TestCase):
         self.assertIn("Tagesbericht", all_texts)
 
 
+class TestDailyReportEventHandler(unittest.TestCase):
+    """Testet dass _on_daily_report den Wetterchart per broadcast_photo sendet."""
+
+    def _make_event(self, text="Tagesbericht"):
+        from daemon.core.scheduler_events import DailyReportTriggered
+        return DailyReportTriggered("2026-06-14", text)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.adapters.chart.generate_weather_chart", return_value=b"\x89PNG")
+    def test_daily_report_sends_chart_photo_when_available(self, mock_chart, mock_client):
+        from daemon.ui.telegram_ui import _on_daily_report
+        _on_daily_report(self._make_event())
+        mock_client.broadcast_photo.assert_called_once()
+        args = mock_client.broadcast_photo.call_args[0]
+        self.assertEqual(args[0], b"\x89PNG")
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.adapters.chart.generate_weather_chart", return_value=None)
+    def test_daily_report_skips_photo_when_chart_fails(self, mock_chart, mock_client):
+        from daemon.ui.telegram_ui import _on_daily_report
+        _on_daily_report(self._make_event())
+        mock_client.broadcast_photo.assert_not_called()
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.adapters.chart.generate_weather_chart", return_value=b"\x89PNG")
+    def test_daily_report_always_sends_text(self, mock_chart, mock_client):
+        from daemon.ui.telegram_ui import _on_daily_report
+        _on_daily_report(self._make_event("Mein Bericht"))
+        mock_client.broadcast_notification.assert_called_once_with("Mein Bericht")
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.adapters.chart.generate_weather_chart", return_value=None)
+    def test_daily_report_sends_text_even_without_chart(self, mock_chart, mock_client):
+        from daemon.ui.telegram_ui import _on_daily_report
+        _on_daily_report(self._make_event("Kein Chart"))
+        mock_client.broadcast_notification.assert_called_once_with("Kein Chart")
+
+
 class TestWatchdogUiHandlers(unittest.TestCase):
     """Testet die telegram_ui-Handler für InactivityAlertTriggered / InactivityAlertResolved."""
 
