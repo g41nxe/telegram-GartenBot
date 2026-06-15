@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import subprocess
 import threading
 import urllib.request
@@ -26,6 +27,7 @@ from ..core.scheduler_events import (
     ScheduleFailed
 )
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
+from ..core.camera_events import CameraInactivityAlertTriggered, CameraInactivityAlertResolved
 logger = logging.getLogger("garden_telegram_ui")
 
 # Module-level controller reference — set once at daemon startup by main.py
@@ -155,7 +157,8 @@ def get_main_keyboard() -> dict:
     rows = [
         [{"text": "📊 Status anzeigen"}, {"text": "📅 Zeitpläne"}],
         [{"text": "🟢 Bewässern starten"}, {"text": "🔴 Sofort Stopp"}],
-        [{"text": "🔧 Ventil koppeln"}]
+        [{"text": "🔧 Ventil koppeln"}, {"text": "📷 Kamera koppeln"}],
+        [{"text": "📷 Foto anzeigen"}]
     ]
     return {
         "keyboard": rows,
@@ -380,6 +383,80 @@ def handle_setup(chat_id: int):
         "_(z.B. \"Terrasse\", \"Rasen\", \"Hochbeet\")_\n\n"
         "Bitte tippe den Namen ein:"
     )
+
+def handle_camera_setup(chat_id: int):
+    from ..adapters import camera_pairing
+    if camera_pairing.is_pairing_active():
+        telegram_client.send_message(chat_id, "⏳ Eine Kamera-Kopplung läuft bereits im Hintergrund. Bitte warten.")
+        return
+
+    _state_set(wizard_states, chat_id, {"step": "setup_camera_wish_name"})
+    telegram_client.send_message(
+        chat_id,
+        "📷 *Neue Kamera koppeln*\n\n"
+        "Wie soll diese Kamera heißen?\n"
+        "_(Erlaubte Zeichen: a-z, A-Z, 0-9, Bindestrich, Unterstrich. Max 32 Zeichen)_\n\n"
+        "Bitte tippe den Namen ein:"
+    )
+
+def handle_photo(chat_id: int):
+    cameras = database.get_all_cameras()
+    if not cameras:
+        telegram_client.send_message(chat_id, "❌ Es sind keine Kameras gekoppelt.")
+        return
+        
+    if len(cameras) == 1:
+        _send_latest_photo(chat_id, cameras[0]["wish_name"])
+    else:
+        rows = []
+        for cam in cameras:
+            rows.append([{"text": cam["wish_name"], "callback_data": f"camphoto_{cam['wish_name']}"}])
+        telegram_client.send_message(
+            chat_id,
+            "Von welcher Kamera möchtest du das aktuellste Foto sehen?",
+            {"inline_keyboard": rows}
+        )
+
+def _send_latest_photo(chat_id: int, wish_name: str):
+    latest_path = Path(config.CAMERA_IMAGE_DIR) / wish_name / "latest.jpg"
+    if latest_path.exists():
+        with open(latest_path, "rb") as f:
+            photo_bytes = f.read()
+        telegram_client.send_photo(chat_id, photo_bytes, caption=f"📸 Letztes Foto von '{wish_name}'")
+    else:
+        telegram_client.send_message(chat_id, f"❌ Kein Foto für Kamera '{wish_name}' gefunden.")
+
+def handle_camera_interval(chat_id: int, text: str):
+    try:
+        parts = text.split(" ")
+        if len(parts) < 2:
+            raise ValueError
+        minutes = int(parts[1])
+        if not (1 <= minutes <= 60):
+            telegram_client.send_message(chat_id, "❌ Das Intervall muss zwischen 1 und 60 Minuten liegen.")
+            return
+            
+        cameras = database.get_all_cameras()
+        if not cameras:
+            telegram_client.send_message(chat_id, "❌ Es sind keine Kameras gekoppelt.")
+            return
+            
+        if len(cameras) == 1:
+            mac = cameras[0]["mac_address"]
+            database.update_camera_settings(mac, sleep_seconds=minutes*60, resolution=cameras[0]["resolution"], quality=cameras[0]["quality"])
+            telegram_client.send_message(chat_id, f"✅ Sendeintervall für Kamera '{cameras[0]['wish_name']}' auf {minutes} Minuten gesetzt.")
+        else:
+            rows = []
+            for cam in cameras:
+                rows.append([{"text": cam["wish_name"], "callback_data": f"camint_{cam['mac_address']}_{minutes}"}])
+            telegram_client.send_message(
+                chat_id,
+                f"Wähle die Kamera, deren Intervall auf {minutes} Minuten gesetzt werden soll:",
+                {"inline_keyboard": rows}
+            )
+            
+    except ValueError:
+        telegram_client.send_message(chat_id, "❌ **Ungültiges Format.** Nutzen Sie: `/camera_interval <minuten>` (z.B. `/camera_interval 15`)")
 
 def handle_status(chat_id: int):
     from ..adapters import mqtt_client
@@ -647,6 +724,16 @@ def _process_message(msg_obj: dict):
                 _state_del(wizard_states, chat_id)
                 _start_pairing(chat_id, wish_name)
                 return
+            elif step == "setup_camera_wish_name":
+                if not text or not re.match(r"^[a-zA-Z0-9_-]{1,32}$", text):
+                    telegram_client.send_message(chat_id, "❌ Ungültiger Name. Erlaubt: a-z, A-Z, 0-9, -, _ (Max 32 Zeichen). Bitte erneut eingeben:")
+                    return
+                wish_name = text
+                _state_del(wizard_states, chat_id)
+                from ..adapters import camera_pairing
+                telegram_client.send_message(chat_id, f"🔧 *Kamera-Kopplung gestartet* - \"{wish_name}\"\n\nBitte schalte die Kamera jetzt ein oder drücke Reset.")
+                camera_pairing.start_pairing(chat_id, telegram_client.send_message, wish_name)
+                return
             elif step == 1:
                 if not text:
                     telegram_client.send_message(chat_id, "❌ Der Name darf nicht leer sein. Bitte gib einen Namen ein:")
@@ -766,6 +853,12 @@ def _process_message(msg_obj: dict):
         handle_schedules(chat_id)
     elif text == "🔧 Ventil koppeln" or text.startswith("/setup"):
         handle_setup(chat_id)
+    elif text == "📷 Foto anzeigen" or text.startswith("/photo") or (text.startswith("/camera") and not text.startswith("/camera_")):
+        handle_photo(chat_id)
+    elif text == "📷 Kamera koppeln" or text.startswith("/camera_setup"):
+        handle_camera_setup(chat_id)
+    elif text.startswith("/camera_interval"):
+        handle_camera_interval(chat_id, text)
     elif text == "🟢 Bewässern starten":
         _state_set(manual_states, chat_id, {"step": 1})
         telegram_client.send_message(
@@ -1100,6 +1193,23 @@ def _process_callback_query(cb_obj: dict):
         telegram_client.answer_callback_query(cb_id, "Abgebrochen")
         telegram_client.send_message(chat_id, "❌ Update abgebrochen.", get_main_keyboard())
 
+    elif data.startswith("camphoto_"):
+        wish_name = data.split("_", 1)[1]
+        telegram_client.answer_callback_query(cb_id, f"Lade Foto von {wish_name}...")
+        _send_latest_photo(chat_id, wish_name)
+
+    elif data.startswith("camint_"):
+        parts = data.split("_")
+        mac = parts[1]
+        minutes = int(parts[2])
+        camera = database.get_camera(mac)
+        if camera:
+            database.update_camera_settings(mac, sleep_seconds=minutes*60, resolution=camera["resolution"], quality=camera["quality"])
+            telegram_client.answer_callback_query(cb_id, "Intervall aktualisiert")
+            telegram_client.edit_message_text(chat_id, message_id, f"✅ Intervall für '{camera['wish_name']}' wurde auf {minutes} Minuten gesetzt.")
+        else:
+            telegram_client.answer_callback_query(cb_id, "Kamera nicht gefunden", show_alert=True)
+
     else:
         telegram_client.answer_callback_query(cb_id)
 
@@ -1182,6 +1292,17 @@ def _on_inactivity_resolved(event: InactivityAlertResolved):
     msg = f"🟢 *Verbindung wiederhergestellt:* Ventil \"{event.device_name}\" sendet wieder Signale."
     telegram_client.broadcast_notification(msg)
 
+def _on_camera_inactivity_alert(event: CameraInactivityAlertTriggered):
+    msg = (
+        f"⚠️ *Kamera-Verbindung verloren:* Kamera \"{event.wish_name}\" "
+        f"hat seit {event.seconds_silent / 3600:.1f} Stunden kein Bild gesendet."
+    )
+    telegram_client.broadcast_notification(msg)
+
+def _on_camera_inactivity_resolved(event: CameraInactivityAlertResolved):
+    msg = f"🟢 *Kamera-Verbindung wiederhergestellt:* Kamera \"{event.wish_name}\" sendet wieder Bilder."
+    telegram_client.broadcast_notification(msg)
+
 def subscribe_event_handlers():
     """Verdrahtet alle telegram_ui-Benachrichtigungs-Handler mit dem globalen Ereignis-Kanal.
 
@@ -1198,3 +1319,5 @@ def subscribe_event_handlers():
     _global_bus.subscribe(ScheduleFailed, _on_schedule_failed)
     _global_bus.subscribe(InactivityAlertTriggered, _on_inactivity_alert)
     _global_bus.subscribe(InactivityAlertResolved, _on_inactivity_resolved)
+    _global_bus.subscribe(CameraInactivityAlertTriggered, _on_camera_inactivity_alert)
+    _global_bus.subscribe(CameraInactivityAlertResolved, _on_camera_inactivity_resolved)

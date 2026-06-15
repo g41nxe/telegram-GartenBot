@@ -146,6 +146,17 @@ def init_db():
             )
         """)
 
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cameras (
+                mac_address TEXT PRIMARY KEY,
+                wish_name TEXT UNIQUE NOT NULL,
+                last_seen TEXT,
+                sleep_duration_seconds INTEGER DEFAULT 900,
+                resolution TEXT DEFAULT 'XGA',
+                quality INTEGER DEFAULT 10
+            )
+        """)
+
         # Spalten-Migrationen für bestehende Tabellen
         try:
             cursor.execute("SELECT execution_mode FROM schedules LIMIT 1")
@@ -618,3 +629,101 @@ def set_schedule_valves(schedule_id: int, valve_ids: list):
         logger.error(f"Fehler beim Setzen der Ventile für Zeitplan {schedule_id}: {e}")
     finally:
         conn.close()
+
+# --- CRUD Operationen für Kameras (cameras) ---
+
+def get_all_cameras() -> list:
+    """Gibt alle registrierten Kameras zurück."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM cameras ORDER BY wish_name ASC")
+        return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Kameras: {e}")
+        return []
+    finally:
+        conn.close()
+
+def get_camera(mac_address: str) -> dict | None:
+    """Gibt eine Kamera anhand ihrer MAC-Adresse zurück."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM cameras WHERE mac_address = ?", (mac_address,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Kamera (mac={mac_address}): {e}")
+        return None
+    finally:
+        conn.close()
+
+def add_camera(mac_address: str, wish_name: str) -> bool:
+    """Fügt eine neue Kamera hinzu. Gibt True bei Erfolg zurück."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO cameras (mac_address, wish_name) VALUES (?, ?)",
+            (mac_address, wish_name)
+        )
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        logger.warning(f"Kamera mit MAC '{mac_address}' oder Name '{wish_name}' existiert bereits.")
+        return False
+    except Exception as e:
+        logger.error(f"Fehler beim Hinzufügen der Kamera '{wish_name}': {e}")
+        return False
+    finally:
+        conn.close()
+
+def update_camera_last_seen(mac_address: str):
+    """Aktualisiert den Zeitstempel des letzten Kontakts einer Kamera."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        from datetime import datetime
+        timestamp = datetime.now().isoformat()
+        cursor.execute(
+            "UPDATE cameras SET last_seen = ? WHERE mac_address = ?",
+            (timestamp, mac_address)
+        )
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Fehler beim Aktualisieren des Status für Kamera '{mac_address}': {e}")
+    finally:
+        conn.close()
+
+def update_camera_settings(mac_address: str, sleep_seconds: int, resolution: str, quality: int) -> bool:
+    """Aktualisiert die Einstellungen einer Kamera."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE cameras SET sleep_duration_seconds = ?, resolution = ?, quality = ? WHERE mac_address = ?",
+            (sleep_seconds, resolution, quality, mac_address)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"Fehler beim Aktualisieren der Kamera-Einstellungen '{mac_address}': {e}")
+        return False
+    finally:
+        conn.close()
+
+def delete_camera(mac_address: str) -> bool:
+    """Löscht eine registrierte Kamera aus der Datenbank."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM cameras WHERE mac_address = ?", (mac_address,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"Fehler beim Löschen der Kamera '{mac_address}': {e}")
+        return False
+    finally:
+        conn.close()
+

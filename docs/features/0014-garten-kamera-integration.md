@@ -17,7 +17,7 @@ Wir integrieren eine oder mehrere **Garten-Kameras** (M5Stack Timer Camera F) in
 5. Als Benutzer möchte ich das Schlafintervall der Garten-Kamera dynamisch über den Telegram-Bot anpassen können (z. B. `/camera_interval 30`), ohne die Kamera flashen zu müssen.
 6. Als Benutzer möchte ich über den Inaktivitäts-Watchdog gewarnt werden, wenn eine Kamera seit dem Dreifachen ihres Schlafintervalls kein Bild mehr hochgeladen hat, um eine leere Batterie oder Funkstörungen zu erkennen.
 7. Als Systembetreiber möchte ich, dass Bilder, die älter als 30 Tage sind, automatisch gelöscht werden, um die SD-Karte des Raspberry Pi vor dem Volllaufen zu schützen.
-8. Als Systembetreiber möchte ich, dass das jeweils erste Bild eines jeden Tages dauerhaft aufbewahrt wird, um später Zeitraffer-Aufnahmen des Gartenwachstums generieren zu können.
+8. Als Systembetreiber möchte ich, dass das jeweils erste Bild eines jeden Tages nach 12:00 Uhr dauerhaft aufbewahrt wird, um später Zeitraffer-Aufnahmen des Gartenwachstums bei gutem Tageslicht generieren zu können.
 9. Als Systembetreiber möchte ich, dass die Kamera bei Verbindungsfehlern stufenweise seltener aufwacht (Exponential Backoff), um bei längeren Netzwerkausfällen den Akku zu schonen.
 
 ## Implementierungs-Entscheidungen (Implementation Decisions)
@@ -27,9 +27,9 @@ Wir integrieren eine oder mehrere **Garten-Kameras** (M5Stack Timer Camera F) in
 
 ### 2. HTTP-API (Schnittstelle Kamera <-> Steuerzentrale)
 * Der Daemon auf dem Pi startet einen separaten, leichtgewichtigen HTTP-Server auf einem konfigurierbaren Port.
-* **`POST /register`**: Wird von der Kamera beim Booten aufgerufen. Wenn das Koppelzeitfenster offen ist, wird die Kamera mit ihrer MAC-Adresse registriert.
-* **`GET /config`**: Die Kamera fragt unter Angabe ihrer MAC-Adresse ihre Konfiguration (Schlafzeit, Kameraauflösung, JPEG-Qualität) ab.
-* **`POST /upload`**: Die Kamera lädt das aufgenommene Bild als rohen JPEG-Datenstrom im Body hoch. Die MAC-Adresse wird im HTTP-Header mitgesendet. Der Pi validiert das Bild und speichert es.
+* **`POST /register`** (idempotent): Wird von der Kamera bei **jedem** Aufwachen aufgerufen — nicht nur beim ersten Start. Der Pi prüft das Koppelzeitfenster in der Datenbank. Bereits registrierte MAC → `200 OK`. Nicht registriert + Fenster offen → Kopplung + `200 OK`. Nicht registriert + Fenster zu → `403 Forbidden`. Kein RTC-RAM-Zustand auf der Kamera nötig.
+* **`GET /config`**: Die Kamera fragt unter Angabe ihrer MAC-Adresse ihre Konfiguration (Schlafzeit in Sekunden, Kameraauflösung, JPEG-Qualität) ab. Nicht registrierte Kameras erhalten `403 Forbidden`.
+* **`POST /upload`**: Die Kamera lädt das aufgenommene Bild als rohen JPEG-Datenstrom im Body hoch. Die MAC-Adresse wird im HTTP-Header mitgesendet. Der Pi prüft die Magic Bytes (`\xFF\xD8`) zur JPEG-Validierung und begrenzt die Payload-Größe auf 500 KB. Gültige Bilder werden gespeichert.
 
 ### 3. C++ Firmware (Garten-Kamera)
 * Nutzt die herstellerspezifische Bibliothek zur Ansteuerung des Weitwinkel-Kamerasensors.
@@ -38,11 +38,14 @@ Wir integrieren eine oder mehrere **Garten-Kameras** (M5Stack Timer Camera F) in
 * Nutzt den RTC-Chip, um die Stromversorgung des ESP32 am Ende des Zyklus physisch zu trennen und nach Ablauf des Intervalls wieder anzuschalten.
 
 ### 4. Bild-Management & Cleanup
-* Die empfangenen Bilder werden in getrennten Ordnern pro Kamera-Wunschnamen gespeichert. Das aktuellste Bild wird stets als symbolischer Link oder Kopie bereitgestellt.
-* Ein täglicher Scheduler-Job durchsucht die Kameraordner, löscht alle Bilder, die älter als 30 Tage sind, schließt jedoch das chronologisch erste Bild jedes Kalendertages von der Löschung aus.
+* Die empfangenen Bilder werden in getrennten Ordnern pro Kamera-Wunschnamen gespeichert (`data/camera/<wish_name>/`). Dateiname: `photo_YYYYMMDD_HHMMSS.jpg` — der Aufnahmezeitpunkt ist im Namen kodiert und unabhängig von Dateisystem-Zeitstempeln. Das aktuellste Bild wird als `latest.jpg` (Kopie, kein Symlink) bereitgestellt.
+* Wunschnamen dürfen nur Buchstaben, Ziffern, Bindestriche und Unterstriche enthalten (`^[a-zA-Z0-9_-]{1,32}$`). Ungültige Namen werden bei der Kamera-Kopplung im Bot sofort abgelehnt.
+* Ein täglicher Scheduler-Job durchsucht die Kameraordner (nur `photo_*.jpg`, `latest.jpg` wird ausgenommen). Er löscht Bilder, die älter als 30 Tage sind, schließt jedoch das jeweils erste Bild nach 12:00 Uhr jedes Kalendertages dauerhaft von der Löschung aus (Zeitraffer-Archiv bei Tageslicht). Tage ohne Bild ab 12 Uhr erhalten keine Ausnahme.
 
 ### 5. Watchdog-Integration
-* Der Inaktivitäts-Watchdog des Daemons überwacht den `last_seen`-Zeitstempel aller registrierten Kameras. Das Toleranzfenster beträgt das 3-Fache des für die Kamera konfigurierten Schlafintervalls (mindestens jedoch 1 Stunde).
+* Der Inaktivitäts-Watchdog des Daemons überwacht den `last_seen`-Zeitstempel aller registrierten Kameras. Das Toleranzfenster beträgt das 3-Fache des für die Kamera konfigurierten Schlafintervalls (mindestens jedoch 3600 Sekunden / 1 Stunde).
+* Kamera-spezifische Events (`CameraInactivityAlertTriggered`, `CameraInactivityAlertResolved`) sind von den ventil-spezifischen Watchdog-Events getrennt, da das Timeout in Sekunden konfiguriert ist (nicht in Stunden wie bei Ventilen).
+* Der Koppelzustand (Pairing-Fenster, Wunschname, Ablaufzeit) wird in der Datenbank (`system_metadata`) gehalten, damit der HTTP-Empfänger ihn ohne direkte Abhängigkeit zum Koppel-Modul lesen kann.
 
 ## Test-Entscheidungen (Testing Decisions)
 
@@ -58,7 +61,7 @@ Wir integrieren eine oder mehrere **Garten-Kameras** (M5Stack Timer Camera F) in
    Wir simulieren den Ablauf der Zeit über Mock-Daten in der Datenbank und prüfen, ob die Watchdog-Komponente ein Inaktivitäts-Event auf dem EventBus publiziert, wenn der letzte Kontakt der Kamera das berechnete Limit überschreitet.
 
 3. **Cleanup-Job-Unittest:**
-   Wir legen Mock-Dateien mit verschiedenen Dateizeitstempeln an und lassen die Bereinigungsfunktion darüber laufen. Wir testen, ob alte Dateien gelöscht, Tages-Erstbilder und neuere Dateien jedoch beibehalten werden.
+   Wir legen Mock-Dateien mit dem Namensformat `photo_YYYYMMDD_HHMMSS.jpg` an (verschiedene Tage, verschiedene Tageszeiten) und lassen die Bereinigungsfunktion darüber laufen. Wir testen, ob alte Dateien gelöscht werden, Bilder nach 12 Uhr als Zeitraffer-Bild des Tages behalten werden, Bilder vor 12 Uhr keine Ausnahme erhalten und `latest.jpg` nie gelöscht wird.
 
 *Referenz-Tests:* Ähnliche Strukturen finden sich in den Integrationstests des Pairing-Moduls und des Watchdogs.
 

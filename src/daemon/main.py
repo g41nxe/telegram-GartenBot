@@ -44,15 +44,21 @@ def main():
     # Initialisiere den DB-Logger Adapter zur Event-Archivierung
     db_adapter = DatabaseLoggerAdapter(mqtt_client._global_bus)
         
-    # 4. Inaktivitäts-Watchdog initialisieren
+    # 4. Kamera-Komponenten initialisieren
+    logger.info("Initialisiere Kamera-Empfänger und Kopplungslogik...")
+    from .adapters import camera_receiver, camera_pairing
+    camera_pairing.init_pairing(mqtt_client._global_bus)
+    camera_receiver.initialize(mqtt_client._global_bus)
+
+    # 5. Inaktivitäts-Watchdog initialisieren
     from .adapters import watchdog
     watchdog.initialize()
 
-    # 5. Zeitpläne/Scheduler starten
+    # 6. Zeitpläne/Scheduler starten
     logger.info("Initialisiere Bewässerungs-Scheduler...")
     scheduler.start_scheduler()
     
-    # 6. Telegram-UI-Event-Handler verdrahten und Bot starten
+    # 7. Telegram-UI-Event-Handler verdrahten und Bot starten
     logger.info("Initialisiere Telegram-Bot...")
     from .ui import telegram_ui as _telegram_ui
     _telegram_ui.set_watering_controller(watering_ctrl)

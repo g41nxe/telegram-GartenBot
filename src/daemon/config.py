@@ -91,3 +91,16 @@ except ValueError:
 
 GITHUB_PAT = os.getenv("GITHUB_PAT", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")
+
+# --- Kamera-Einstellungen ---
+try:
+    CAMERA_RECEIVER_PORT = int(os.getenv("CAMERA_RECEIVER_PORT", "8080"))
+except ValueError:
+    CAMERA_RECEIVER_PORT = 8080
+
+CAMERA_IMAGE_DIR = os.getenv("CAMERA_IMAGE_DIR", "data/camera")
+
+try:
+    CAMERA_CLEANUP_DAYS = int(os.getenv("CAMERA_CLEANUP_DAYS", "30"))
+except ValueError:
+    CAMERA_CLEANUP_DAYS = 30
