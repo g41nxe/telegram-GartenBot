@@ -422,7 +422,8 @@ def _send_latest_photo(chat_id: int, wish_name: str):
     if latest_path.exists():
         with open(latest_path, "rb") as f:
             photo_bytes = f.read()
-        telegram_client.send_photo(chat_id, photo_bytes, caption=f"📸 Letztes Foto von '{wish_name}'")
+        ts = datetime.fromtimestamp(latest_path.stat().st_mtime).strftime("%d.%m.%Y %H:%M")
+        telegram_client.send_photo(chat_id, photo_bytes, caption=f"📸 '{wish_name}' — {ts} Uhr")
     else:
         telegram_client.send_message(chat_id, f"❌ Kein Foto für Kamera '{wish_name}' gefunden.")
 
