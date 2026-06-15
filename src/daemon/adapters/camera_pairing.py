@@ -2,8 +2,8 @@ import time
 import logging
 import threading
 from . import database
-from src.daemon.core.event_bus import EventBus
-from src.daemon.core.camera_events import CameraRegistered
+from ..core.event_bus import EventBus
+from ..core.camera_events import CameraRegistered
 
 logger = logging.getLogger("garden_camera_pairing")
 
@@ -29,7 +29,7 @@ def is_pairing_active() -> bool:
     """Gibt zurück, ob gerade eine Kamera-Kopplung läuft."""
     return _pairing_active
 
-def start_pairing(chat_id: int, notify_fn, wish_name: str) -> bool:
+def start_pairing(chat_id: int, notify_fn, wish_name: str, sleep_seconds: int = 900) -> bool:
     """
     Startet die Kamera-Kopplung in einem Hintergrund-Thread.
     """
@@ -41,13 +41,13 @@ def start_pairing(chat_id: int, notify_fn, wish_name: str) -> bool:
 
     t = threading.Thread(
         target=_pairing_worker,
-        args=(chat_id, notify_fn, wish_name),
+        args=(chat_id, notify_fn, wish_name, sleep_seconds),
         daemon=True
     )
     t.start()
     return True
 
-def _pairing_worker(chat_id: int, notify_fn, wish_name: str):
+def _pairing_worker(chat_id: int, notify_fn, wish_name: str, sleep_seconds: int):
     """Hintergrund-Thread: führt die Kamera-Kopplung durch."""
     global _pairing_active
     
@@ -72,13 +72,23 @@ def _pairing_worker(chat_id: int, notify_fn, wish_name: str):
         logger.info(f"Kamera-Kopplung: Koppelmodus aktiviert für '{wish_name}'.")
         
         if registered_event.wait(PAIRING_TIMEOUT):
-            # Erfolgreich registriert
+            # Erfolgreich registriert — Intervall speichern
             mac = mac_ref[0]
+            cam = database.get_camera(mac)
+            if cam:
+                database.update_camera_settings(
+                    mac,
+                    sleep_seconds=sleep_seconds,
+                    resolution=cam["resolution"],
+                    quality=cam["quality"],
+                )
             logger.info("Kamera-Kopplung: Erfolgreich abgeschlossen.")
+            minutes = sleep_seconds // 60
             notify_fn(
                 chat_id,
                 f"✅ *Kamera-Kopplung erfolgreich!*\n\n"
                 f"Die Kamera **'{wish_name}'** (MAC: `{mac}`) wurde registriert.\n"
+                f"Sendeintervall: {minutes} Minuten\n"
                 f"Der Koppelmodus wurde automatisch deaktiviert."
             )
         else:

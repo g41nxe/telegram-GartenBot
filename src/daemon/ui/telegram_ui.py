@@ -728,11 +728,34 @@ def _process_message(msg_obj: dict):
                 if not text or not re.match(r"^[a-zA-Z0-9_-]{1,32}$", text):
                     telegram_client.send_message(chat_id, "❌ Ungültiger Name. Erlaubt: a-z, A-Z, 0-9, -, _ (Max 32 Zeichen). Bitte erneut eingeben:")
                     return
-                wish_name = text
+                state["wish_name"] = text
+                state["step"] = "setup_camera_interval"
+                _state_touch(wizard_states, chat_id)
+                telegram_client.send_message(
+                    chat_id,
+                    "⏱ *Wie oft soll die Kamera ein Bild senden?*\n\n"
+                    "Bitte gib das Intervall in Minuten ein _(z.B. `15` für alle 15 Minuten)_:"
+                )
+                return
+            elif step == "setup_camera_interval":
+                try:
+                    minutes = int(text.strip())
+                    if minutes < 1 or minutes > 1440:
+                        raise ValueError
+                except ValueError:
+                    telegram_client.send_message(chat_id, "❌ Ungültige Eingabe. Bitte eine Zahl zwischen 1 und 1440 eingeben:")
+                    return
+                wish_name = state["wish_name"]
+                sleep_seconds = minutes * 60
                 _state_del(wizard_states, chat_id)
                 from ..adapters import camera_pairing
-                telegram_client.send_message(chat_id, f"🔧 *Kamera-Kopplung gestartet* - \"{wish_name}\"\n\nBitte schalte die Kamera jetzt ein oder drücke Reset.")
-                camera_pairing.start_pairing(chat_id, telegram_client.send_message, wish_name)
+                telegram_client.send_message(
+                    chat_id,
+                    f"🔧 *Kamera-Kopplung gestartet* — \"{wish_name}\"\n"
+                    f"Intervall: {minutes} Minute(n)\n\n"
+                    "Bitte schalte die Kamera jetzt ein oder drücke Reset."
+                )
+                camera_pairing.start_pairing(chat_id, telegram_client.send_message, wish_name, sleep_seconds=sleep_seconds)
                 return
             elif step == 1:
                 if not text:
