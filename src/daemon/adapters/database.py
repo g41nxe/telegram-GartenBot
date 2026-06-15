@@ -57,7 +57,8 @@ def init_db():
                 weather_code INTEGER DEFAULT 0,
                 temp_min REAL DEFAULT 0.0,
                 temp_max REAL DEFAULT 0.0,
-                rain_probability INTEGER DEFAULT 0
+                rain_probability INTEGER DEFAULT 0,
+                rain_last_source TEXT DEFAULT 'measured'
             )
         """)
 
@@ -169,6 +170,12 @@ def init_db():
             logger.info("Migriere Datenbank: Füge current_precipitation_mm und hourly_forecast_json zu weather_history hinzu...")
             cursor.execute("ALTER TABLE weather_history ADD COLUMN current_precipitation_mm REAL DEFAULT 0.0")
             cursor.execute("ALTER TABLE weather_history ADD COLUMN hourly_forecast_json TEXT")
+
+        try:
+            cursor.execute("SELECT rain_last_source FROM weather_history LIMIT 1")
+        except sqlite3.OperationalError:
+            logger.info("Migriere Datenbank: Füge rain_last_source Spalte zu weather_history hinzu...")
+            cursor.execute("ALTER TABLE weather_history ADD COLUMN rain_last_source TEXT DEFAULT 'measured'")
 
         # Daten-Migrationen: Standard-Ventil anlegen und Altdaten verknüpfen
         cursor.execute("SELECT COUNT(*) FROM valves")
@@ -296,15 +303,16 @@ def get_recent_history(limit: int = 5):
 
 def log_weather(rain_last_24h: float, rain_next_24h: float, current_temp: float = 0.0, weather_code: int = 0,
                 temp_min: float = 0.0, temp_max: float = 0.0, rain_probability: int = 0,
-                current_precipitation_mm: float = 0.0, hourly_forecast_json: str = ""):
+                current_precipitation_mm: float = 0.0, hourly_forecast_json: str = "",
+                rain_last_source: str = "measured"):
     """Speichert den abgerufenen Wetterstatus."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
         timestamp = datetime.now().isoformat()
         cursor.execute(
-            "INSERT INTO weather_history (timestamp, rain_last_24h_mm, rain_next_24h_mm, current_temp, weather_code, temp_min, temp_max, rain_probability, current_precipitation_mm, hourly_forecast_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (timestamp, rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_probability, current_precipitation_mm, hourly_forecast_json or None)
+            "INSERT INTO weather_history (timestamp, rain_last_24h_mm, rain_next_24h_mm, current_temp, weather_code, temp_min, temp_max, rain_probability, current_precipitation_mm, hourly_forecast_json, rain_last_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (timestamp, rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_probability, current_precipitation_mm, hourly_forecast_json or None, rain_last_source)
         )
         conn.commit()
         logger.info("Stundendaten erfolgreich in weather_history gespeichert (24 Einträge).")

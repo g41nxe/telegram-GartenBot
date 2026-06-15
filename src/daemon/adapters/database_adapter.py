@@ -59,6 +59,7 @@ class DatabaseLoggerAdapter:
             event.rain_prob,
             current_precipitation_mm=event.current_precipitation,
             hourly_forecast_json=event.hourly_forecast_json,
+            rain_last_source=event.rain_last_source,
         )
 
 

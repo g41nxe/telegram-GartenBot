@@ -73,12 +73,14 @@ class TestWeatherDataFetchedForwarding(unittest.TestCase):
             rain_prob=70,
             current_precipitation=0.3,
             hourly_forecast_json='{"times":["2026-06-13T14:00"]}',
+            rain_last_source="measured",
         ))
 
         mock_log_weather.assert_called_once_with(
             2.5, 1.0, 19.0, 61, 15.0, 23.0, 70,
             current_precipitation_mm=0.3,
             hourly_forecast_json='{"times":["2026-06-13T14:00"]}',
+            rain_last_source="measured",
         )
 
     @patch("daemon.adapters.database.log_weather")
@@ -100,6 +102,7 @@ class TestWeatherDataFetchedForwarding(unittest.TestCase):
         _, kwargs = mock_log_weather.call_args
         self.assertEqual(kwargs.get("current_precipitation_mm"), 0.0)
         self.assertEqual(kwargs.get("hourly_forecast_json"), "")
+        self.assertEqual(kwargs.get("rain_last_source"), "measured")
 
 
 if __name__ == "__main__":

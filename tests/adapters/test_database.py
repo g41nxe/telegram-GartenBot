@@ -314,5 +314,38 @@ class TestWeatherHistoryFeature0007(unittest.TestCase):
         self.assertIn("hourly_forecast_json", row)
 
 
+class TestRainLastSource(unittest.TestCase):
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._patcher.start()
+        db.init_db()
+
+    def tearDown(self):
+        self._patcher.stop()
+        import gc
+        gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def test_log_weather_persists_source(self):
+        db.log_weather(6.1, 0.0, rain_last_source="measured")
+        row = db.get_last_weather()
+        self.assertEqual(row["rain_last_source"], "measured")
+
+    def test_log_weather_defaults_source_to_measured(self):
+        db.log_weather(1.0, 0.0)
+        row = db.get_last_weather()
+        self.assertEqual(row["rain_last_source"], "measured")
+
+    def test_log_weather_accepts_forecast_source(self):
+        db.log_weather(1.0, 0.0, rain_last_source="forecast")
+        row = db.get_last_weather()
+        self.assertEqual(row["rain_last_source"], "forecast")
+
+
 if __name__ == "__main__":
     unittest.main()
