@@ -14,9 +14,16 @@ _pairing_lock = threading.Lock()
 _global_bus = None
 
 def init_pairing(event_bus: EventBus):
-    """Initialisiert das Pairing-Modul mit dem EventBus."""
+    """Initialisiert das Pairing-Modul mit dem EventBus.
+
+    Bereinigt veraltete Koppel-Metadaten aus einem früheren Daemon-Lauf,
+    damit kein unbeaufsichtigtes Koppel-Fenster offen bleibt.
+    """
     global _global_bus
     _global_bus = event_bus
+    database.set_metadata("camera_pairing_active", "0")
+    database.set_metadata("camera_pairing_wish_name", "")
+    database.set_metadata("camera_pairing_expires_at", "0")
 
 def is_pairing_active() -> bool:
     """Gibt zurück, ob gerade eine Kamera-Kopplung läuft."""
@@ -51,15 +58,16 @@ def _pairing_worker(chat_id: int, notify_fn, wish_name: str):
         mac_ref[0] = event.mac_address
         registered_event.set()
         
-    if _global_bus:
-        _global_bus.subscribe(CameraRegistered, on_camera_registered)
-        
     try:
-        # Setze DB-Metadata
+        # DB-Metadaten zuerst schreiben, damit camera_receiver das Fenster sofort sieht
         expires_at = time.time() + PAIRING_TIMEOUT
         database.set_metadata("camera_pairing_active", "1")
         database.set_metadata("camera_pairing_wish_name", wish_name)
         database.set_metadata("camera_pairing_expires_at", str(expires_at))
+
+        # Erst nach dem DB-Write subscriben, um Race zu vermeiden
+        if _global_bus:
+            _global_bus.subscribe(CameraRegistered, on_camera_registered)
         
         logger.info(f"Kamera-Kopplung: Koppelmodus aktiviert für '{wish_name}'.")
         

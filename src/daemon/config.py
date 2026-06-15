@@ -104,3 +104,8 @@ try:
     CAMERA_CLEANUP_DAYS = int(os.getenv("CAMERA_CLEANUP_DAYS", "30"))
 except ValueError:
     CAMERA_CLEANUP_DAYS = 30
+
+try:
+    CAMERA_MAX_UPLOAD_BYTES = int(os.getenv("CAMERA_MAX_UPLOAD_BYTES", "512000"))
+except ValueError:
+    CAMERA_MAX_UPLOAD_BYTES = 512000

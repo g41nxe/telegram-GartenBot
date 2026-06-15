@@ -672,5 +672,66 @@ class TestWatchdogUiHandlers(unittest.TestCase):
         self.assertIn("Hochbeet", msg)
 
 
+class TestCamintCallbackSafety(unittest.TestCase):
+    """Stellt sicher, dass fehlerhafte camint_-Callbacks den Handler nicht zum Absturz bringen."""
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_camint_callback_with_missing_parts_does_not_raise(self, mock_db, mock_client):
+        """camint_-Callback ohne MAC und Minuten löst keinen IndexError/ValueError aus."""
+        mock_db.get_camera.return_value = None
+        cb = {
+            "id": "cb_001",
+            "from": {"id": 12345},
+            "message": {"chat": {"id": 12345}, "message_id": 1},
+            "data": "camint_",  # fehlende MAC und Minuten
+        }
+        try:
+            _process_callback_query(cb)
+        except (IndexError, ValueError) as e:
+            self.fail(f"Unkontrollierte Ausnahme bei fehlerhaftem camint_-Callback: {e}")
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_camint_callback_with_non_numeric_minutes_does_not_raise(self, mock_db, mock_client):
+        """camint_-Callback mit nicht-numerischen Minuten löst keinen ValueError aus."""
+        mock_db.get_camera.return_value = None
+        cb = {
+            "id": "cb_002",
+            "from": {"id": 12345},
+            "message": {"chat": {"id": 12345}, "message_id": 1},
+            "data": "camint_AA:BB:CC:DD:EE:FF_abc",  # Minuten nicht numerisch
+        }
+        try:
+            _process_callback_query(cb)
+        except (IndexError, ValueError) as e:
+            self.fail(f"Unkontrollierte Ausnahme bei nicht-numerischen Minuten: {e}")
+
+
+class TestCameraPairingMetadataCleanup(unittest.TestCase):
+    """Stellt sicher, dass veraltete Koppel-Metadaten beim Start bereinigt werden."""
+
+    def test_init_pairing_clears_stale_metadata(self):
+        """init_pairing() löscht Koppel-Metadaten, die von einem früheren Daemon-Lauf stammen."""
+        import tempfile, os
+        from daemon.adapters import camera_pairing, database as db
+        from daemon.core.event_bus import EventBus
+
+        temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        temp_db.close()
+
+        with patch.object(db, "DB_PATH", temp_db.name):
+            db.init_db()
+            db.set_metadata("camera_pairing_active", "1")
+            db.set_metadata("camera_pairing_wish_name", "AlteCam")
+            db.set_metadata("camera_pairing_expires_at", "1000000")  # weit in der Vergangenheit
+
+            camera_pairing.init_pairing(EventBus())
+
+            self.assertEqual(db.get_metadata("camera_pairing_active"), "0")
+
+        os.unlink(temp_db.name)
+
+
 if __name__ == "__main__":
     unittest.main()

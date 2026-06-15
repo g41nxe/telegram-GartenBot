@@ -1199,9 +1199,13 @@ def _process_callback_query(cb_obj: dict):
         _send_latest_photo(chat_id, wish_name)
 
     elif data.startswith("camint_"):
-        parts = data.split("_")
-        mac = parts[1]
-        minutes = int(parts[2])
+        try:
+            parts = data.split("_")
+            mac = parts[1]
+            minutes = int(parts[2])
+        except (IndexError, ValueError):
+            telegram_client.answer_callback_query(cb_id, "Ungültiger Callback", show_alert=True)
+            return
         camera = database.get_camera(mac)
         if camera:
             database.update_camera_settings(mac, sleep_seconds=minutes*60, resolution=camera["resolution"], quality=camera["quality"])

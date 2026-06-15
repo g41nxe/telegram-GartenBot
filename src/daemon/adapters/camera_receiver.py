@@ -146,7 +146,8 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
             return
             
         content_length = int(self.headers.get('Content-Length', 0))
-        if content_length > 2 * 1024 * 1024 or content_length == 0:
+        max_bytes = getattr(config, 'CAMERA_MAX_UPLOAD_BYTES', 512000)
+        if content_length > max_bytes or content_length == 0:
             self.send_response(400)
             self.end_headers()
             return
@@ -186,21 +187,40 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"OK")
 
-def run_server(port):
-    server_address = ('0.0.0.0', port)
-    httpd = HTTPServer(server_address, CameraHTTPRequestHandler)
-    logger.info(f"Kamera-HTTP-Server lauscht auf Port {port}")
+_server_instance = None
+
+
+def run_server(httpd):
+    logger.info(f"Kamera-HTTP-Server lauscht auf Port {httpd.server_address[1]}")
     try:
         httpd.serve_forever()
     except Exception as e:
         logger.error(f"Kamera-HTTP-Server Fehler: {e}")
 
+
 def initialize(event_bus: EventBus):
-    """Startet den HTTP-Server für die Kameras in einem Hintergrund-Thread."""
-    global _global_bus
+    """Startet den HTTP-Server für die Kameras in einem Hintergrund-Thread.
+
+    Gibt (port, thread) zurück. Port 0 lässt das OS einen freien Port wählen
+    (nützlich in Tests). shutdown() muss im teardown aufgerufen werden.
+    """
+    global _global_bus, _server_instance
     _global_bus = event_bus
-    
+
     port = getattr(config, 'CAMERA_RECEIVER_PORT', 8080)
-    t = threading.Thread(target=run_server, args=(port,), daemon=True)
+    httpd = HTTPServer(('0.0.0.0', port), CameraHTTPRequestHandler)
+    httpd.socket.settimeout(5.0)
+    _server_instance = httpd
+
+    bound_port = httpd.server_address[1]
+    t = threading.Thread(target=run_server, args=(httpd,), daemon=True)
     t.start()
-    return t
+    return bound_port, t
+
+
+def shutdown():
+    """Fährt den HTTP-Server sauber herunter. In Tests im teardown aufrufen."""
+    global _server_instance
+    if _server_instance:
+        _server_instance.shutdown()
+        _server_instance = None

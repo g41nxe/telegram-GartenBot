@@ -145,13 +145,13 @@ def _scheduler_loop():
                     t_report = threading.Thread(target=_send_daily_report_with_prefetch, args=(today_str,), daemon=True)
                     t_report.start()
 
-            # Tägliches Cleanup der Kamera-Fotos (03:00 Uhr)
-            if current_time == "03:00":
+            # Tägliches Cleanup der Kamera-Fotos (>= 03:00 Uhr, analog zum Tagesbericht)
+            if current_time >= "03:00":
                 last_cleanup = database.get_metadata("last_camera_cleanup_date")
                 if last_cleanup != today_str:
                     logger.info("Starte tägliches Kamera-Cleanup...")
                     database.set_metadata("last_camera_cleanup_date", today_str)
-                    t_cleanup = threading.Thread(target=cleanup_camera_photos, daemon=True)
+                    t_cleanup = threading.Thread(target=_cleanup_camera_photos_safe, daemon=True)
                     t_cleanup.start()
             
             # Stündliche Hintergrundprüfungen
@@ -193,6 +193,14 @@ def _scheduler_loop():
         now = datetime.now()
         seconds_to_sleep = 60 - now.second
         time.sleep(seconds_to_sleep)
+
+def _cleanup_camera_photos_safe():
+    """Thread-Target: ruft cleanup_camera_photos() auf und fängt alle Ausnahmen ab."""
+    try:
+        cleanup_camera_photos()
+    except Exception as e:
+        logger.error(f"Unbehandelter Fehler im Kamera-Cleanup: {e}")
+
 
 def cleanup_camera_photos():
     """Löscht alte Kamera-Fotos und behält ein Zeitraffer-Bild pro Tag (>= 12:00)."""
