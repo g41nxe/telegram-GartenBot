@@ -129,4 +129,8 @@ scratch/
 # Gemini CLI project config (local tooling only)
 .gemini_project_config.json
 
+# Camera Image Buffer
+data/camera/*
+!data/camera/.gitkeep
+
 # End of file
