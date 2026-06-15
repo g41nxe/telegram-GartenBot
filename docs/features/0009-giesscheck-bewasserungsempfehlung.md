@@ -23,6 +23,7 @@ Ein neuer Telegram-Befehl `/giesscheck` gibt auf Anfrage eine **Gieß-Empfehlung
 ### Architektur
 
 - Die Bewertungslogik lebt als pure Funktion `evaluate()` in `core/watering_advice.py` — kein I/O, kein Zustand, keine Adapter-Abhängigkeiten (ADR-0021). Beide möglichen Aufruforte (Telegram-Handler, zukünftige Tagesbericht-Integration) rufen dieselbe Funktion auf.
+- **Koordination mit Feature 0014:** Falls 0014 vor diesem Feature umgesetzt wird, legt es `core/watering_advice.py` bereits an und liefert dort `evaluate_rain_window(rain_last_mm, rain_next_mm, threshold_mm)` als pure Basis-Entscheidung für das Regen-Fenster. Das Signal „Regen-Fenster trocken" (siehe unten) soll dann **diese Funktion wiederverwenden** statt die Schwellenwert-Logik zu duplizieren; `evaluate()` komponiert sie und legt Temperatur und Hitzestrecke darüber.
 - Der Telegram-Handler lebt in `ui/telegram_ui.py`, konsistent mit allen anderen Befehlen.
 
 ### Signale und Verdict-Matrix
