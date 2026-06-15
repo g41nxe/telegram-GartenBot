@@ -476,6 +476,30 @@ class TestReportChartIntegration(unittest.TestCase):
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.adapters.chart.generate_weather_chart", return_value=(b"\x89PNG", "caption"))
+    def test_report_generates_text_before_chart(self, mock_chart, mock_client, mock_db, mock_ctrl, mock_generate):
+        from daemon.adapters import mqtt_client as mc
+        mock_db.get_last_weather.return_value = _make_weather_row()
+        mock_db.get_all_valves.return_value = []
+        mock_db.get_recent_history.return_value = []
+        mock_ctrl.get_active_cycle.return_value = None
+        
+        call_order = []
+        mock_generate.side_effect = lambda *a, **kw: call_order.append("generate_report") or "Tagesbericht"
+        mock_chart.side_effect = lambda *a, **kw: call_order.append("generate_chart") or (b"\x89PNG", "caption")
+        
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"), \
+             patch.object(mc, "is_broker_connected", return_value=True), \
+             patch.object(mc, "get_bridge_status", return_value="online"):
+            _process_message(self._msg("/report"))
+            
+        self.assertEqual(call_order, ["generate_report", "generate_chart"])
+
+    @patch("daemon.ui.telegram_ui._generate_daily_report")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.adapters.chart.generate_weather_chart", return_value=(b"\x89PNG", "🌤 Wetterverlauf — nächste 24h\n🌱 Gießen empfohlen — trocken bis morgen"))
     def test_report_sends_photo_when_chart_available(self, mock_chart, mock_client, mock_db, mock_ctrl, mock_generate):
         from daemon.adapters import mqtt_client as mc

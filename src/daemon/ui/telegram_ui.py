@@ -753,13 +753,14 @@ def _process_message(msg_obj: dict):
         _mc.request_valve_status()
         _time.sleep(5.0)
 
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        report_text = _generate_daily_report(today_str)
+
         chart_result = _chart.generate_weather_chart()
         if chart_result:
             image_bytes, caption = chart_result
             telegram_client.send_photo(chat_id, image_bytes, caption=caption)
 
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        report_text = _generate_daily_report(today_str)
         telegram_client.send_message(chat_id, report_text, get_main_keyboard())
     elif text == "📅 Zeitsteuerung" or text == "📅 Zeitpläne" or text.startswith("/zeitplan"):
         handle_schedules(chat_id)
