@@ -91,3 +91,27 @@ _Avoid_: Status-Report, Update-Meldung, Daily-Report
 **Software-Update (OTA)**:
 Das Over-the-Air Update-Verfahren, das dem Benutzer über den Telegram-Bot ermöglicht, neue Releases direkt von GitHub herunterzuladen und auf der Steuerzentrale vollautomatisch zu installieren.
 _Avoid_: Patching, Neu-Installation, Upgrade-Skript
+
+**Garten-Kamera**:
+Die M5Stack Timer Camera F, die batteriebetrieben im Garten Bilder aufnimmt und zur Steuerzentrale sendet.
+_Avoid_: Cam, M5-Kamera, Kamera-Modul.
+
+**Kamera-Kopplung**:
+Der zeitbegrenzte Registrierungsvorgang im Telegram-Bot, bei dem eine neue Garten-Kamera anhand ihrer MAC-Adresse einem Wunschnamen zugeordnet wird.
+_Avoid_: Camera Pairing, Kamera-Registrierung.
+
+**Bild-Historie**:
+Das Archiv aller empfangenen Bilder auf der Steuerzentrale, sortiert nach Wunschnamen der Garten-Kamera und Zeitstempel.
+_Avoid_: Fotos, Image-Archiv.
+
+**Kamera-Überwachung**:
+Die Erweiterung des Inaktivitäts-Watchdogs, um ausbleibende Bilder einer Garten-Kamera zu erkennen und über den Telegram-Bot zu melden.
+_Avoid_: Kamera-Watchdog, Offline-Check.
+
+**Bild-Puffer**:
+Der temporäre Speicherort für empfangene Einzelbilder der Garten-Kamera, bevor sie zu einem Zeitraffer-GIF zusammengefasst werden.
+_Avoid_: Temp-Ordner, Cache, Raw-Archiv.
+
+**Zeitraffer-Zyklus**:
+Das konfigurierbare Intervall (in Tagen), nach dem die gesammelten Bilder des Bild-Puffers in ein GIF umgewandelt und die Rohdaten anschließend gelöscht werden.
+_Avoid_: GIF-Intervall, Zusammenfassungs-Tage.

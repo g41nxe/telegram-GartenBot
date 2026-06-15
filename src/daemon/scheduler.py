@@ -1,7 +1,8 @@
 import time
 import logging
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 from . import config
 from .adapters import database, weather, watchdog, mqtt_client
 from .adapters.mqtt_client import _global_bus
@@ -143,6 +144,15 @@ def _scheduler_loop():
                     logger.info(f"Täglicher Statusbericht für heute ({today_str}) steht aus. Starte Versand...")
                     t_report = threading.Thread(target=_send_daily_report_with_prefetch, args=(today_str,), daemon=True)
                     t_report.start()
+
+            # Tägliches Cleanup der Kamera-Fotos (>= 03:00 Uhr, analog zum Tagesbericht)
+            if current_time >= "03:00":
+                last_cleanup = database.get_metadata("last_camera_cleanup_date")
+                if last_cleanup != today_str:
+                    logger.info("Starte tägliches Kamera-Cleanup...")
+                    database.set_metadata("last_camera_cleanup_date", today_str)
+                    t_cleanup = threading.Thread(target=_cleanup_camera_photos_safe, daemon=True)
+                    t_cleanup.start()
             
             # Stündliche Hintergrundprüfungen
             current_timestamp = time.time()
@@ -183,6 +193,61 @@ def _scheduler_loop():
         now = datetime.now()
         seconds_to_sleep = 60 - now.second
         time.sleep(seconds_to_sleep)
+
+def _cleanup_camera_photos_safe():
+    """Thread-Target: ruft cleanup_camera_photos() auf und fängt alle Ausnahmen ab."""
+    try:
+        cleanup_camera_photos()
+    except Exception as e:
+        logger.error(f"Unbehandelter Fehler im Kamera-Cleanup: {e}")
+
+
+def cleanup_camera_photos():
+    """Löscht alte Kamera-Fotos und behält ein Zeitraffer-Bild pro Tag (>= 12:00)."""
+    base_dir = Path(config.CAMERA_IMAGE_DIR)
+    if not base_dir.exists():
+        return
+        
+    cutoff_date = datetime.now() - timedelta(days=config.CAMERA_CLEANUP_DAYS)
+    
+    for cam_dir in base_dir.iterdir():
+        if not cam_dir.is_dir():
+            continue
+            
+        photos_by_day = {}
+        for file_path in cam_dir.glob("photo_*.jpg"):
+            name_parts = file_path.stem.split('_')
+            if len(name_parts) != 3:
+                continue
+                
+            try:
+                date_str = name_parts[1]
+                time_str = name_parts[2]
+                photo_dt = datetime.strptime(f"{date_str}_{time_str}", "%Y%m%d_%H%M%S")
+            except ValueError:
+                continue
+                
+            day_str = date_str
+            if day_str not in photos_by_day:
+                photos_by_day[day_str] = []
+            photos_by_day[day_str].append((photo_dt, file_path))
+            
+        for day_str, photos in photos_by_day.items():
+            photos.sort(key=lambda x: x[0])
+            
+            timelapse_photo = None
+            for p_dt, p_path in photos:
+                if p_dt.hour >= 12:
+                    timelapse_photo = p_path
+                    break
+                    
+            for p_dt, p_path in photos:
+                if p_dt < cutoff_date and p_path != timelapse_photo:
+                    try:
+                        p_path.unlink()
+                        logger.debug(f"Cleanup: Gelöscht {p_path.name}")
+                    except Exception as e:
+                        logger.error(f"Fehler beim Löschen von {p_path}: {e}")
 
 def check_startup_safety() -> bool:
     """Prüft beim Systemstart, ob das Ventil unüberwacht offen steht, und schließt es gegebenenfalls."""

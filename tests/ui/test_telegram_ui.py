@@ -672,5 +672,146 @@ class TestWatchdogUiHandlers(unittest.TestCase):
         self.assertIn("Hochbeet", msg)
 
 
+def _make_camera(wish_name="Garten", last_seen=None, sleep_duration_seconds=900,
+                  resolution="UXGA", quality=10):
+    return {
+        "mac_address": "AA:BB:CC:DD:EE:FF",
+        "wish_name": wish_name,
+        "last_seen": last_seen,
+        "sleep_duration_seconds": sleep_duration_seconds,
+        "resolution": resolution,
+        "quality": quality,
+    }
+
+
+def _status_call(mock_db, mock_ctrl, cameras):
+    """Ruft /status auf und gibt den gesendeten Text zurück."""
+    from daemon.adapters import mqtt_client as mc
+    mock_db.get_all_cameras.return_value = cameras
+    mock_db.get_last_weather.return_value = None
+    mock_db.get_all_valves.return_value = []
+    mock_db.get_recent_history.return_value = []
+    mock_ctrl.get_active_cycle.return_value = None
+    with patch.object(mc, "HAS_PAHO", False), \
+         patch.object(mc, "request_valve_status"), \
+         patch.object(mc, "is_broker_connected", return_value=True), \
+         patch.object(mc, "get_bridge_status", return_value="online"):
+        from daemon.ui.telegram_ui import _process_message
+        _process_message({"chat": {"id": 100}, "text": "/status"})
+
+
+class TestStatusCameraBlock(unittest.TestCase):
+    """Testet den Kamera-Abschnitt in der /status-Anzeige."""
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_shows_camera_name(self, mock_client, mock_db, mock_ctrl):
+        """Kameraname erscheint im Status-Text."""
+        _status_call(mock_db, mock_ctrl, [_make_camera("Terrasse")])
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("Terrasse", sent_text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_camera_online_when_recently_seen(self, mock_client, mock_db, mock_ctrl):
+        """Kamera gilt als online wenn last_seen innerhalb sleep_duration_seconds * 2."""
+        from datetime import datetime, timezone
+        recent = datetime.now(timezone.utc).isoformat()
+        _status_call(mock_db, mock_ctrl, [_make_camera(last_seen=recent, sleep_duration_seconds=3600)])
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("🟢", sent_text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_camera_offline_when_long_ago(self, mock_client, mock_db, mock_ctrl):
+        """Kamera gilt als offline wenn last_seen älter als sleep_duration_seconds * 2."""
+        old_ts = "2020-01-01T00:00:00"
+        _status_call(mock_db, mock_ctrl, [_make_camera(last_seen=old_ts, sleep_duration_seconds=900)])
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("🔴", sent_text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_camera_offline_when_never_seen(self, mock_client, mock_db, mock_ctrl):
+        """Kamera ohne last_seen wird als nicht verbunden angezeigt."""
+        _status_call(mock_db, mock_ctrl, [_make_camera(last_seen=None)])
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("🔴", sent_text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_no_cameras_shows_no_camera_section(self, mock_client, mock_db, mock_ctrl):
+        """Ohne Kameras erscheint kein Kamera-Abschnitt im Status."""
+        _status_call(mock_db, mock_ctrl, [])
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertNotIn("📷", sent_text)
+
+
+class TestCamintCallbackSafety(unittest.TestCase):
+    """Stellt sicher, dass fehlerhafte camint_-Callbacks den Handler nicht zum Absturz bringen."""
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_camint_callback_with_missing_parts_does_not_raise(self, mock_db, mock_client):
+        """camint_-Callback ohne MAC und Minuten löst keinen IndexError/ValueError aus."""
+        mock_db.get_camera.return_value = None
+        cb = {
+            "id": "cb_001",
+            "from": {"id": 12345},
+            "message": {"chat": {"id": 12345}, "message_id": 1},
+            "data": "camint_",  # fehlende MAC und Minuten
+        }
+        try:
+            _process_callback_query(cb)
+        except (IndexError, ValueError) as e:
+            self.fail(f"Unkontrollierte Ausnahme bei fehlerhaftem camint_-Callback: {e}")
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_camint_callback_with_non_numeric_minutes_does_not_raise(self, mock_db, mock_client):
+        """camint_-Callback mit nicht-numerischen Minuten löst keinen ValueError aus."""
+        mock_db.get_camera.return_value = None
+        cb = {
+            "id": "cb_002",
+            "from": {"id": 12345},
+            "message": {"chat": {"id": 12345}, "message_id": 1},
+            "data": "camint_AA:BB:CC:DD:EE:FF_abc",  # Minuten nicht numerisch
+        }
+        try:
+            _process_callback_query(cb)
+        except (IndexError, ValueError) as e:
+            self.fail(f"Unkontrollierte Ausnahme bei nicht-numerischen Minuten: {e}")
+
+
+class TestCameraPairingMetadataCleanup(unittest.TestCase):
+    """Stellt sicher, dass veraltete Koppel-Metadaten beim Start bereinigt werden."""
+
+    def test_init_pairing_clears_stale_metadata(self):
+        """init_pairing() löscht Koppel-Metadaten, die von einem früheren Daemon-Lauf stammen."""
+        import tempfile, os
+        from daemon.adapters import camera_pairing, database as db
+        from daemon.core.event_bus import EventBus
+
+        temp_db = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+        temp_db.close()
+
+        with patch.object(db, "DB_PATH", temp_db.name):
+            db.init_db()
+            db.set_metadata("camera_pairing_active", "1")
+            db.set_metadata("camera_pairing_wish_name", "AlteCam")
+            db.set_metadata("camera_pairing_expires_at", "1000000")  # weit in der Vergangenheit
+
+            camera_pairing.init_pairing(EventBus())
+
+            self.assertEqual(db.get_metadata("camera_pairing_active"), "0")
+
+        os.unlink(temp_db.name)
+
+
 if __name__ == "__main__":
     unittest.main()
