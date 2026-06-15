@@ -1,3 +1,23 @@
+## v1.2.0 — 2026-06-15
+
+### Neu
+- Garten-Kamera-Integration: M5Stack Timer Camera F per /camera_setup koppeln,
+  Fotos via /photo abrufen, Kamera-Watchdog bei Ausfall
+- Kamera-Setup Wizard (4 Schritte): Name, Intervall, Auflösung (VGA/XGA/UXGA),
+  Bildqualität (Hoch/Mittel/Niedrig)
+- Kamera-Status in /status: Online/Offline-Indikator, letztes Bild, Einstellungen
+- /photo Caption zeigt Aufnahmezeitstempel
+- Gemessene Regendaten (ERA5/Archiv): korrekte Skip-Entscheidungen nach echtem Regen
+- Deterministischer Vorhersage-Tagessnapshot — manueller /report verschiebt
+  Vergleichsbasis nicht mehr
+- Hauptmenü reorganisiert: ⚙️ Setup-Untermenü für Kopplungsbefehle
+
+### Fixes
+- /report: gemeinsamer Abruf für Chart-Caption und Berichtstext
+- Tagesbericht zeigt "keine Messung" statt falscher Zahl bei fehlendem ERA5-Wert
+
+---
+
 ## v1.1.2 — 2026-06-14
 
 - Architektur-Bereinigung: Scheduler-Fassade über Guss-Steuerung aufgelöst
