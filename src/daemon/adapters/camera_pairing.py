@@ -29,7 +29,8 @@ def is_pairing_active() -> bool:
     """Gibt zurück, ob gerade eine Kamera-Kopplung läuft."""
     return _pairing_active
 
-def start_pairing(chat_id: int, notify_fn, wish_name: str, sleep_seconds: int = 900) -> bool:
+def start_pairing(chat_id: int, notify_fn, wish_name: str,
+                  sleep_seconds: int = 900, resolution: str = "UXGA", quality: int = 10) -> bool:
     """
     Startet die Kamera-Kopplung in einem Hintergrund-Thread.
     """
@@ -41,13 +42,14 @@ def start_pairing(chat_id: int, notify_fn, wish_name: str, sleep_seconds: int = 
 
     t = threading.Thread(
         target=_pairing_worker,
-        args=(chat_id, notify_fn, wish_name, sleep_seconds),
+        args=(chat_id, notify_fn, wish_name, sleep_seconds, resolution, quality),
         daemon=True
     )
     t.start()
     return True
 
-def _pairing_worker(chat_id: int, notify_fn, wish_name: str, sleep_seconds: int):
+def _pairing_worker(chat_id: int, notify_fn, wish_name: str,
+                    sleep_seconds: int, resolution: str, quality: int):
     """Hintergrund-Thread: führt die Kamera-Kopplung durch."""
     global _pairing_active
     
@@ -72,15 +74,14 @@ def _pairing_worker(chat_id: int, notify_fn, wish_name: str, sleep_seconds: int)
         logger.info(f"Kamera-Kopplung: Koppelmodus aktiviert für '{wish_name}'.")
         
         if registered_event.wait(PAIRING_TIMEOUT):
-            # Erfolgreich registriert — Intervall speichern
+            # Erfolgreich registriert — alle Einstellungen speichern
             mac = mac_ref[0]
-            cam = database.get_camera(mac)
-            if cam:
+            if database.get_camera(mac):
                 database.update_camera_settings(
                     mac,
                     sleep_seconds=sleep_seconds,
-                    resolution=cam["resolution"],
-                    quality=cam["quality"],
+                    resolution=resolution,
+                    quality=quality,
                 )
             logger.info("Kamera-Kopplung: Erfolgreich abgeschlossen.")
             minutes = sleep_seconds // 60

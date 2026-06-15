@@ -50,10 +50,15 @@ class TestCameraPairing(unittest.TestCase):
         db.add_camera(mac, wish_name)
         self.bus.publish(CameraRegistered(mac_address=mac, wish_name=wish_name))
 
-    def _start_and_trigger(self, sleep_seconds=None, mac="AA:BB:CC:DD:EE:FF", wish_name="Garten"):
+    def _start_and_trigger(self, sleep_seconds=None, resolution=None, quality=None,
+                           mac="AA:BB:CC:DD:EE:FF", wish_name="Garten"):
         kwargs = dict(chat_id=1, notify_fn=lambda cid, txt: None, wish_name=wish_name)
         if sleep_seconds is not None:
             kwargs["sleep_seconds"] = sleep_seconds
+        if resolution is not None:
+            kwargs["resolution"] = resolution
+        if quality is not None:
+            kwargs["quality"] = quality
         camera_pairing_module.start_pairing(**kwargs)
         # Windows: Thread-Start + 3× set_metadata braucht bis zu 200ms
         time.sleep(0.4)
@@ -77,6 +82,27 @@ class TestCameraPairing(unittest.TestCase):
 
         cam = db.get_camera("AA:BB:CC:DD:EE:FF")
         self.assertEqual(cam["sleep_duration_seconds"], 900)
+
+    def test_resolution_and_quality_saved_after_successful_pairing(self):
+        """start_pairing mit resolution='VGA' und quality=25 speichert diese Werte in der DB."""
+        self._start_and_trigger(resolution="VGA", quality=25)
+
+        self.assertTrue(_wait_for(lambda: not camera_pairing_module._pairing_active))
+
+        cam = db.get_camera("AA:BB:CC:DD:EE:FF")
+        self.assertIsNotNone(cam)
+        self.assertEqual(cam["resolution"], "VGA")
+        self.assertEqual(cam["quality"], 25)
+
+    def test_default_resolution_and_quality_when_not_specified(self):
+        """start_pairing ohne resolution/quality behält die Defaults UXGA / 10."""
+        self._start_and_trigger()
+
+        self.assertTrue(_wait_for(lambda: not camera_pairing_module._pairing_active))
+
+        cam = db.get_camera("AA:BB:CC:DD:EE:FF")
+        self.assertEqual(cam["resolution"], "UXGA")
+        self.assertEqual(cam["quality"], 10)
 
     def test_reentry_guard_prevents_concurrent_pairing(self):
         """Zweiter Aufruf während laufender Kopplung gibt False zurück."""
