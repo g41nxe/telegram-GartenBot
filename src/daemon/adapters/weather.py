@@ -7,17 +7,62 @@ from .. import config
 from . import database
 from .mqtt_client import _global_bus
 from ..core.scheduler_events import WeatherDataFetched
+from ..core.watering_advice import evaluate_rain_window
 
 WEATHER_FORECAST_WINDOW_SECONDS = 86400  # Open-Meteo liefert genau 24h voraus
+ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 logger = logging.getLogger("garden_weather")
 
-def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, float, float, int] | None:
+def _find_current_index(times: list[str]) -> int:
+    """Index des letzten Stunden-Zeitstempels <= jetzt (ISO sortiert lexikografisch).
+
+    Ersetzt die frühere Exakt-Match-Logik mit hartem Fallback auf Index 24.
+    Gibt -1 zurück, wenn alle Zeitstempel in der Zukunft liegen.
+    """
+    now_str = datetime.now().strftime("%Y-%m-%dT%H:00")
+    idx = -1
+    for i, t in enumerate(times):
+        if t <= now_str:
+            idx = i
+        else:
+            break
+    return idx
+
+def _fetch_measured_rain_last(lat: float, lon: float) -> float | None:
+    """Gemessener Niederschlag der letzten 24h aus dem ERA5-Archiv.
+
+    Gibt die Summe in mm zurück oder None bei Netzwerk-/Datenfehler.
+    """
+    start = (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d")
+    end = datetime.now().strftime("%Y-%m-%d")
+    url = (
+        f"{ARCHIVE_URL}?latitude={lat}&longitude={lon}"
+        f"&start_date={start}&end_date={end}&hourly=precipitation&timezone=auto"
+    )
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'GardenIrrigationDaemon/1.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        times = data.get("hourly", {}).get("time", [])
+        precip = data.get("hourly", {}).get("precipitation", [])
+        idx = _find_current_index(times)
+        if idx < 1 or not precip:
+            return None
+        start_idx = max(0, idx - 24)
+        return round(sum(p for p in precip[start_idx:idx] if p is not None), 2)
+    except urllib.error.URLError as e:
+        logger.warning(f"Archiv-Wetterabfrage nicht erreichbar: {e}")
+    except Exception as e:
+        logger.warning(f"Archiv-Wetterdaten nicht verwertbar: {e}")
+    return None
+
+def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, float, float, int, str] | None:
     """
     Ruft stündliche Niederschlagsdaten der letzten 24h, der nächsten 24h,
     die aktuelle Temperatur und den aktuellen Wettercode sowie tägliche Min/Max Temperaturen
     und Regenwahrscheinlichkeit aus der Open-Meteo API ab.
-    Gibt ein Tuple (regen_letzte_24h_mm, regen_naechste_24h_mm, temp_c, wetter_code, temp_min, temp_max, rain_prob)
+    Gibt ein Tuple (regen_letzte_24h_mm, regen_naechste_24h_mm, temp_c, wetter_code, temp_min, temp_max, rain_prob, rain_last_source)
     oder None bei Netzwerk-/Verarbeitungsfehlern zurück.
     """
     # Open-Meteo-Abfrage: past_days=1 (letzte 24h), forecast_days=2 (kommende 24h) sowie aktuelle & tägliche/stündliche Vorhersage
@@ -69,26 +114,26 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         
         if not times or not precip:
             logger.warning("Keine stündlichen Niederschlagsdaten in der API-Antwort gefunden.")
-            return 0.0, 0.0, current_temp, weather_code, temp_min, temp_max, 0
+            return 0.0, 0.0, current_temp, weather_code, temp_min, temp_max, 0, "forecast"
             
         # Finde den Index für die aktuelle Stunde
-        current_time_str = datetime.now().strftime("%Y-%m-%dT%H:00")
-        
-        current_idx = -1
-        for idx, t_str in enumerate(times):
-            if t_str == current_time_str:
-                current_idx = idx
-                break
-                
-        # Fallback, falls die genaue Stunde nicht exakt matched (z.B. Zeitzonen-Offset)
+        current_idx = _find_current_index(times)
         if current_idx == -1:
-            # past_days=1 hat 24 Stunden, also sollte der heutige Tag ab Index 24 starten
             current_idx = 24
-            logger.warning(f"Exakte Stunde {current_time_str} nicht gefunden. Nutze Fallback-Index {current_idx}.")
+            logger.warning(f"Alle Forecast-Zeiten in Zukunft. Nutze Fallback-Index {current_idx}.")
             
-        # Summiere die letzten 24 Stunden vor der aktuellen Stunde
+        # rain_last aus Forecast (Fallback)
         start_past_idx = max(0, current_idx - 24)
-        rain_last_24h = sum(precip[start_past_idx:current_idx])
+        forecast_rain_last = round(sum(p for p in precip[start_past_idx:current_idx] if p is not None), 2)
+        
+        measured = _fetch_measured_rain_last(lat, lon)
+        if measured is not None:
+            rain_last_24h = measured
+            rain_last_source = "measured"
+        else:
+            rain_last_24h = forecast_rain_last
+            rain_last_source = "forecast"
+            logger.warning("Gemessener Regen nicht verfügbar — nutze Forecast-Wert (degradiert).")
         
         # Summiere die nächsten 24 Stunden ab der aktuellen Stunde
         end_forecast_idx = min(len(precip), current_idx + 24)
@@ -135,9 +180,10 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
             temp_min, temp_max, rain_prob,
             current_precipitation=current_precipitation,
             hourly_forecast_json=hourly_forecast_json,
+            rain_last_source=rain_last_source,
         ))
 
-        return rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_prob
+        return rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source
         
     except urllib.error.URLError as e:
         logger.error(f"Netzwerkfehler beim Abruf der Wetterdaten: {e}")
@@ -147,16 +193,16 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
     return None
 
 def _evaluate_skip(rain_last: float, rain_next: float) -> tuple[bool, str]:
-    total_rain = rain_last + rain_next
-    if total_rain >= config.RAIN_THRESHOLD_MM:
+    result = evaluate_rain_window(rain_last, rain_next, config.RAIN_THRESHOLD_MM)
+    if result.skip:
         details = (
-            f"Regenschwelle überschritten: Gesamt {total_rain}mm "
+            f"Regenschwelle überschritten: Gesamt {result.total_mm}mm "
             f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {config.RAIN_THRESHOLD_MM}mm)"
         )
         logger.info(f"Bewässerung überspringen: {details}")
         return True, details
     details = (
-        f"Regen liegt unter Grenzwert: Gesamt {total_rain}mm "
+        f"Regen liegt unter Grenzwert: Gesamt {result.total_mm}mm "
         f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {config.RAIN_THRESHOLD_MM}mm)"
     )
     logger.info(f"Bewässerung freigegeben: {details}")

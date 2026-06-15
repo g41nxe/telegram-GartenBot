@@ -169,5 +169,121 @@ class TestWeatherEventCarriesNewFields(unittest.TestCase):
         self.assertGreater(len(fc["times"]), 0)
 
 
+class TestArchiveIntegration(unittest.TestCase):
+
+    def _make_archive_response(self, hours_back=48, mm_value=6.1):
+        now = datetime.now()
+        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        start_hour = current_hour - timedelta(hours=hours_back)
+        times = [(start_hour + timedelta(hours=i)).strftime("%Y-%m-%dT%H:00") for i in range(hours_back)]
+        precip = [0.0] * hours_back
+        if len(precip) >= 24:
+            precip[-24] = mm_value  # inject 6.1 mm 24h ago to test sum
+
+        return json.dumps({
+            "hourly": {
+                "time": times,
+                "precipitation": precip
+            }
+        }).encode("utf-8")
+
+    def _branching_side_effect(self, forecast_bytes, archive_bytes, fail_archive=False, fail_forecast=False):
+        import urllib.error
+        def _side_effect(req, *args, **kwargs):
+            url = req.full_url if hasattr(req, "full_url") else str(req)
+            if "archive-api" in url:
+                if fail_archive:
+                    raise urllib.error.URLError("Archive unreachable")
+                payload = archive_bytes
+            else:
+                if fail_forecast:
+                    raise urllib.error.URLError("Forecast unreachable")
+                payload = forecast_bytes
+            cm = MagicMock()
+            cm.__enter__.return_value = MagicMock(read=lambda: payload)
+            return cm
+        return _side_effect
+
+    @patch("urllib.request.urlopen")
+    def test_2_call_success_measured_source(self, mock_urlopen):
+        forecast_payload = _make_api_response()
+        archive_payload = self._make_archive_response(mm_value=6.1)
+        mock_urlopen.side_effect = self._branching_side_effect(forecast_payload, archive_payload)
+        
+        captured = []
+        _global_bus.subscribe(WeatherDataFetched, captured.append)
+        try:
+            res = weather.get_weather_data(52.5, 13.5)
+        finally:
+            _global_bus.unsubscribe(WeatherDataFetched, captured.append)
+            
+        self.assertIsNotNone(res)
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0].rain_last_source, "measured")
+        self.assertAlmostEqual(captured[0].rain_last_24h, 6.1)
+
+    @patch("urllib.request.urlopen")
+    def test_archive_fails_forecast_ok(self, mock_urlopen):
+        forecast_payload = _make_api_response()
+        archive_payload = self._make_archive_response()
+        mock_urlopen.side_effect = self._branching_side_effect(forecast_payload, archive_payload, fail_archive=True)
+        
+        captured = []
+        _global_bus.subscribe(WeatherDataFetched, captured.append)
+        try:
+            res = weather.get_weather_data(52.5, 13.5)
+        finally:
+            _global_bus.unsubscribe(WeatherDataFetched, captured.append)
+            
+        self.assertIsNotNone(res)
+        self.assertEqual(len(captured), 1)
+        self.assertEqual(captured[0].rain_last_source, "forecast")
+        # should fallback to forecast payload rain
+        self.assertAlmostEqual(captured[0].rain_last_24h, 0.0)
+
+    @patch("urllib.request.urlopen")
+    def test_forecast_fails(self, mock_urlopen):
+        forecast_payload = _make_api_response()
+        archive_payload = self._make_archive_response()
+        mock_urlopen.side_effect = self._branching_side_effect(forecast_payload, archive_payload, fail_forecast=True)
+        
+        captured = []
+        _global_bus.subscribe(WeatherDataFetched, captured.append)
+        try:
+            res = weather.get_weather_data(52.5, 13.5)
+        finally:
+            _global_bus.unsubscribe(WeatherDataFetched, captured.append)
+            
+        self.assertIsNone(res)
+        self.assertEqual(len(captured), 0)
+
+    @patch("urllib.request.urlopen")
+    def test_robust_index_assignment(self, mock_urlopen):
+        # Create response where current exact hour is missing, but past hour exists
+        now = datetime.now()
+        past_hour = now - timedelta(minutes=45) # missing exact hour
+        # using standard api response but shift times
+        res_json = json.loads(_make_api_response().decode("utf-8"))
+        # shift all times by 45 minutes backwards
+        shifted_times = []
+        for t_str in res_json["hourly"]["time"]:
+            t = datetime.fromisoformat(t_str) - timedelta(minutes=45)
+            shifted_times.append(t.strftime("%Y-%m-%dT%H:%M"))
+        res_json["hourly"]["time"] = shifted_times
+        
+        forecast_payload = json.dumps(res_json).encode("utf-8")
+        archive_payload = self._make_archive_response()
+        mock_urlopen.side_effect = self._branching_side_effect(forecast_payload, archive_payload)
+        
+        captured = []
+        _global_bus.subscribe(WeatherDataFetched, captured.append)
+        try:
+            res = weather.get_weather_data(52.5, 13.5)
+        finally:
+            _global_bus.unsubscribe(WeatherDataFetched, captured.append)
+            
+        self.assertIsNotNone(res)
+        self.assertEqual(len(captured), 1)
+
 if __name__ == "__main__":
     unittest.main()
