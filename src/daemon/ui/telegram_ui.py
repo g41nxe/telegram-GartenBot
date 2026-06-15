@@ -355,7 +355,7 @@ def _get_lqi_description(lqi_val) -> str:
 # --- Befehlsverarbeitung ---
 
 def _start_pairing(chat_id: int, wish_name: str):
-    from ..adapters import pairing
+    from ..adapters import valve_pairing as pairing
     telegram_client.send_message(
         chat_id,
         f'🔧 *Ventil-Kopplung gestartet* - "{wish_name}"\n\n'
@@ -366,7 +366,7 @@ def _start_pairing(chat_id: int, wish_name: str):
     pairing.start_pairing(chat_id, telegram_client.send_message, wish_name)
 
 def handle_setup(chat_id: int):
-    from ..adapters import pairing
+    from ..adapters import valve_pairing as pairing
 
     if pairing.is_pairing_active():
         telegram_client.send_message(

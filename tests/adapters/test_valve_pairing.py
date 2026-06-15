@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 from daemon.core.event_bus import EventBus
 from daemon.core.valve_events import DeviceJoinedEvent
 from daemon.adapters.mqtt_client import SimulatedMqttAdapter
-import daemon.adapters.pairing as pairing_module
+import daemon.adapters.valve_pairing as pairing_module
 import daemon.adapters.database as db
 
 
