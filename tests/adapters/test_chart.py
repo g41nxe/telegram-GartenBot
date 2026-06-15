@@ -37,6 +37,7 @@ _LAST_WEATHER_WITH_FORECAST = {
 
 _LAST_WEATHER_RAINY = {
     **_LAST_WEATHER_WITH_FORECAST,
+    "rain_next_24h_mm": 4.5,
     "hourly_forecast_json": _RAINY_FORECAST,
 }
 
