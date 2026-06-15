@@ -564,6 +564,44 @@ def handle_status(chat_id: int):
 
     valves_text = "\n".join(valve_sections) if valve_sections else "Keine Ventile registriert.\n"
 
+    # Kamera-Abschnitt
+    cameras = database.get_all_cameras()
+    camera_sections = []
+    for cam in cameras:
+        wish_name = cam["wish_name"]
+        last_seen_str = cam.get("last_seen")
+        sleep_sec = cam.get("sleep_duration_seconds") or 900
+        resolution = cam.get("resolution") or "UXGA"
+        quality_val = cam.get("quality") or 10
+        quality_label = {10: "🌟 Hoch", 25: "⚡ Mittel", 40: "💨 Niedrig"}.get(quality_val, str(quality_val))
+
+        if not last_seen_str:
+            conn_text = "🔴 Noch kein Bild empfangen"
+        else:
+            try:
+                from datetime import timezone
+                last_dt = datetime.fromisoformat(last_seen_str)
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                now_utc = datetime.now(timezone.utc)
+                age_sec = (now_utc - last_dt).total_seconds()
+                time_str = last_dt.strftime("%d.%m. %H:%M")
+                if age_sec <= sleep_sec * 2:
+                    conn_text = f"🟢 Aktiv (Letztes Bild: {time_str})"
+                else:
+                    conn_text = f"🔴 Offline (Letztes Bild: {time_str})"
+            except Exception:
+                conn_text = "🔴 Unbekannt"
+
+        camera_sections.append(
+            f"📷 **{wish_name}:**\n"
+            f"   - Verbindung: {conn_text}\n"
+            f"   - Auflösung: {resolution} · Qualität: {quality_label}\n"
+            f"   - Intervall: {sleep_sec // 60} Min\n"
+        )
+
+    cameras_text = "\n".join(camera_sections) if camera_sections else ""
+
     last_weather = database.get_last_weather()
     weather_text = "   - Keine Daten vorhanden"
     if last_weather:
@@ -619,11 +657,14 @@ def handle_status(chat_id: int):
 
     version_line = f"\n\n🔧 **Version:** `{_read_local_version()}`"
 
+    cameras_block = f"\n{cameras_text}\n" if cameras_text else ""
+
     msg = (
         f"📊 **System-Status Gartenbewässerung**\n\n"
         f"🔌 **System-Dienste:** {services_status}\n"
         f"{active_text}"
         f"\n{valves_text}\n"
+        f"{cameras_block}"
         f"🌤️ **Wetter:**\n"
         f"{weather_text}\n\n"
         f"📜 **Letzte Zyklen:**\n{history_text}"

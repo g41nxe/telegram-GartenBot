@@ -672,6 +672,86 @@ class TestWatchdogUiHandlers(unittest.TestCase):
         self.assertIn("Hochbeet", msg)
 
 
+def _make_camera(wish_name="Garten", last_seen=None, sleep_duration_seconds=900,
+                  resolution="UXGA", quality=10):
+    return {
+        "mac_address": "AA:BB:CC:DD:EE:FF",
+        "wish_name": wish_name,
+        "last_seen": last_seen,
+        "sleep_duration_seconds": sleep_duration_seconds,
+        "resolution": resolution,
+        "quality": quality,
+    }
+
+
+def _status_call(mock_db, mock_ctrl, cameras):
+    """Ruft /status auf und gibt den gesendeten Text zurück."""
+    from daemon.adapters import mqtt_client as mc
+    mock_db.get_all_cameras.return_value = cameras
+    mock_db.get_last_weather.return_value = None
+    mock_db.get_all_valves.return_value = []
+    mock_db.get_recent_history.return_value = []
+    mock_ctrl.get_active_cycle.return_value = None
+    with patch.object(mc, "HAS_PAHO", False), \
+         patch.object(mc, "request_valve_status"), \
+         patch.object(mc, "is_broker_connected", return_value=True), \
+         patch.object(mc, "get_bridge_status", return_value="online"):
+        from daemon.ui.telegram_ui import _process_message
+        _process_message({"chat": {"id": 100}, "text": "/status"})
+
+
+class TestStatusCameraBlock(unittest.TestCase):
+    """Testet den Kamera-Abschnitt in der /status-Anzeige."""
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_shows_camera_name(self, mock_client, mock_db, mock_ctrl):
+        """Kameraname erscheint im Status-Text."""
+        _status_call(mock_db, mock_ctrl, [_make_camera("Terrasse")])
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("Terrasse", sent_text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_camera_online_when_recently_seen(self, mock_client, mock_db, mock_ctrl):
+        """Kamera gilt als online wenn last_seen innerhalb sleep_duration_seconds * 2."""
+        from datetime import datetime, timezone
+        recent = datetime.now(timezone.utc).isoformat()
+        _status_call(mock_db, mock_ctrl, [_make_camera(last_seen=recent, sleep_duration_seconds=3600)])
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("🟢", sent_text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_camera_offline_when_long_ago(self, mock_client, mock_db, mock_ctrl):
+        """Kamera gilt als offline wenn last_seen älter als sleep_duration_seconds * 2."""
+        old_ts = "2020-01-01T00:00:00"
+        _status_call(mock_db, mock_ctrl, [_make_camera(last_seen=old_ts, sleep_duration_seconds=900)])
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("🔴", sent_text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_camera_offline_when_never_seen(self, mock_client, mock_db, mock_ctrl):
+        """Kamera ohne last_seen wird als nicht verbunden angezeigt."""
+        _status_call(mock_db, mock_ctrl, [_make_camera(last_seen=None)])
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("🔴", sent_text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_no_cameras_shows_no_camera_section(self, mock_client, mock_db, mock_ctrl):
+        """Ohne Kameras erscheint kein Kamera-Abschnitt im Status."""
+        _status_call(mock_db, mock_ctrl, [])
+        sent_text = mock_client.send_message.call_args[0][1]
+        self.assertNotIn("📷", sent_text)
+
+
 class TestCamintCallbackSafety(unittest.TestCase):
     """Stellt sicher, dass fehlerhafte camint_-Callbacks den Handler nicht zum Absturz bringen."""
 
