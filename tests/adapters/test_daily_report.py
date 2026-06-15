@@ -39,6 +39,7 @@ class TestVerbalWeatherSection(unittest.TestCase):
             weather_desc="Leicht bewölkt",
             rain_last=0.0, rain_next=0.5, rain_prob=10,
             yesterday_rain_next=None,
+            rain_last_source="measured",
         )
         self.assertIn("Leicht bewölkt", result)
         self.assertIn("15", result)
@@ -51,6 +52,7 @@ class TestVerbalWeatherSection(unittest.TestCase):
             weather_desc="Bewölkt",
             rain_last=0.3, rain_next=1.0, rain_prob=20,
             yesterday_rain_next=6.0,
+            rain_last_source="measured",
         )
         self.assertIn("Weniger Regen", result)
         self.assertIn("0.3", result)
@@ -62,6 +64,7 @@ class TestVerbalWeatherSection(unittest.TestCase):
             weather_desc="Regnerisch",
             rain_last=9.0, rain_next=2.0, rain_prob=40,
             yesterday_rain_next=1.0,
+            rain_last_source="measured",
         )
         self.assertIn("Mehr Regen", result)
         self.assertIn("9.0", result)
@@ -73,6 +76,7 @@ class TestVerbalWeatherSection(unittest.TestCase):
             weather_desc="Sonnig",
             rain_last=1.5, rain_next=0.0, rain_prob=5,
             yesterday_rain_next=2.0,  # Abweichung 0.5mm — unter Schwellenwert
+            rain_last_source="measured",
         )
         self.assertNotIn("erwartet:", result)
 
@@ -82,6 +86,7 @@ class TestVerbalWeatherSection(unittest.TestCase):
             weather_desc="Gewitter",
             rain_last=0.0, rain_next=15.0, rain_prob=80,
             yesterday_rain_next=None,
+            rain_last_source="measured",
         )
         self.assertIn("starker Regen", result)
 
@@ -91,8 +96,21 @@ class TestVerbalWeatherSection(unittest.TestCase):
             weather_desc="Bewölkt",
             rain_last=0.0, rain_next=5.0, rain_prob=55,
             yesterday_rain_next=None,
+            rain_last_source="measured",
         )
         self.assertIn("mäßiger Regen", result)
+
+    def test_not_measured_source_skips_deviation_and_adds_disclaimer(self):
+        result = dr._format_weather_section(
+            temp=18.0, temp_min=12.0, temp_max=22.0,
+            weather_desc="Bewölkt",
+            rain_last=5.0, rain_next=1.0, rain_prob=20,
+            yesterday_rain_next=0.0,
+            rain_last_source="forecast",
+        )
+        self.assertNotIn("Mehr Regen als erwartet", result)
+        self.assertNotIn("gefallen", result)
+        self.assertIn("Gemessene Regendaten zurzeit nicht verfügbar", result)
 
 
 class TestVerbalValveSection(unittest.TestCase):
@@ -171,7 +189,8 @@ class TestSendDailyReport(unittest.TestCase):
         mocks["db"].get_watering_stats_last_24h.return_value = (1, 0, 5.0)
         mocks["db"].get_all_valves.return_value = []
         mocks["db"].get_metadata.return_value = None
-        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5)
+        mocks["db"].get_daily_forecast_snapshot.return_value = None
+        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
 
         send_daily_report("2026-06-14")
@@ -185,7 +204,8 @@ class TestSendDailyReport(unittest.TestCase):
         mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
         mocks["db"].get_all_valves.return_value = []
         mocks["db"].get_metadata.return_value = None
-        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5)
+        mocks["db"].get_daily_forecast_snapshot.return_value = None
+        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
 
         send_daily_report("2026-06-14")
@@ -201,8 +221,8 @@ class TestSendDailyReport(unittest.TestCase):
         mocks["db"].get_watering_stats_last_24h.return_value = (2, 1, 8.5)
         mocks["db"].get_all_valves.return_value = []
         mocks["db"].get_metadata.return_value = None
-        mocks["db"].get_weather_around_hours_ago.return_value = None
-        mocks["weather"].get_weather_data.return_value = (3.0, 1.0, 18.0, 61, 14.0, 22.0, 80)
+        mocks["db"].get_daily_forecast_snapshot.return_value = None
+        mocks["weather"].get_weather_data.return_value = (3.0, 1.0, 18.0, 61, 14.0, 22.0, 80, "measured")
         mocks["mqtt"].HAS_PAHO = False
 
         send_daily_report("2026-06-14")
@@ -220,7 +240,8 @@ class TestSendDailyReport(unittest.TestCase):
         mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
         mocks["db"].get_all_valves.return_value = []
         mocks["db"].get_metadata.return_value = None
-        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5)
+        mocks["db"].get_daily_forecast_snapshot.return_value = None
+        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
 
         send_daily_report("2026-06-14")

@@ -60,23 +60,27 @@ def _format_weather_section(
     weather_desc: str,
     rain_last: float, rain_next: float, rain_prob: int,
     yesterday_rain_next: float | None,
+    rain_last_source: str = "measured",
 ) -> str:
     parts = [f"{weather_desc}, heute {temp_min}–{temp_max} °C."]
 
-    if yesterday_rain_next is not None:
-        deviation = rain_last - yesterday_rain_next
-        if deviation > _RAIN_DEVIATION_THRESHOLD_MM:
-            parts.append(
-                f"Mehr Regen als erwartet: {rain_last} mm gefallen (Vorhersage gestern: {yesterday_rain_next} mm)."
-            )
-        elif deviation < -_RAIN_DEVIATION_THRESHOLD_MM:
-            parts.append(
-                f"Weniger Regen als erwartet: {rain_last} mm gefallen (Vorhersage gestern: {yesterday_rain_next} mm)."
-            )
+    if rain_last_source != "measured":
+        parts.append("Gemessene Regendaten zurzeit nicht verfügbar.")
+    else:
+        if yesterday_rain_next is not None:
+            deviation = rain_last - yesterday_rain_next
+            if deviation > _RAIN_DEVIATION_THRESHOLD_MM:
+                parts.append(
+                    f"Mehr Regen als erwartet: {rain_last} mm gefallen (Vorhersage gestern: {yesterday_rain_next} mm)."
+                )
+            elif deviation < -_RAIN_DEVIATION_THRESHOLD_MM:
+                parts.append(
+                    f"Weniger Regen als erwartet: {rain_last} mm gefallen (Vorhersage gestern: {yesterday_rain_next} mm)."
+                )
+            elif rain_last > 0:
+                parts.append(f"{rain_last} mm Regen gefallen.")
         elif rain_last > 0:
             parts.append(f"{rain_last} mm Regen gefallen.")
-    elif rain_last > 0:
-        parts.append(f"{rain_last} mm Regen gefallen.")
 
     if rain_next > 10.0:
         parts.append(f"Heute starker Regen erwartet ({rain_next} mm, {rain_prob}%).")
@@ -134,15 +138,23 @@ def generate_daily_report(today_str: str) -> str:
     except Exception as e:
         logger.error(f"Fehler beim Abrufen der Wetterdaten für Statusbericht: {e}")
     if weather_result is not None:
-        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob = weather_result
+        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source = weather_result
         weather_desc = get_wmo_description(weather_code)
     else:
-        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0
+        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0, "measured"
         weather_desc = "Unbekannt"
 
     # 3. Gestrige Regenvorhersage für Abweichungsvergleich
-    yesterday_weather = database.get_weather_around_hours_ago(24)
-    yesterday_rain_next = yesterday_weather["rain_next_24h_mm"] if yesterday_weather else None
+    snapshot = database.get_daily_forecast_snapshot()
+    yesterday_rain_next = None
+    if snapshot:
+        try:
+            from datetime import timedelta
+            yesterday_str = (datetime.strptime(today_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+            if snapshot.get("date") == yesterday_str:
+                yesterday_rain_next = snapshot.get("rain_next_mm")
+        except ValueError:
+            pass
 
     # 4. System-Warnungen
     warnings = []
@@ -187,6 +199,7 @@ def generate_daily_report(today_str: str) -> str:
         weather_desc=weather_desc,
         rain_last=rain_last, rain_next=rain_next, rain_prob=rain_prob,
         yesterday_rain_next=yesterday_rain_next,
+        rain_last_source=rain_last_source,
     )
     valve_text = "\n".join(valve_lines) if valve_lines else "Keine Ventile registriert."
 
@@ -212,6 +225,15 @@ def send_daily_report(today_str: str):
     database.set_metadata("last_daily_report_date", today_str)
     try:
         report_text = generate_daily_report(today_str)
+        # Snapshot für morgen schreiben (nach generate_daily_report, nutzt frische Zeile)
+        last_weather = database.get_last_weather()
+        if last_weather:
+            database.set_daily_forecast_snapshot(
+                date_str=today_str,
+                rain_next_mm=last_weather.get("rain_next_24h_mm", 0.0) or 0.0,
+                window_start=datetime.now().strftime("%H:00")
+            )
+            
         _global_bus.publish(DailyReportTriggered(today_str, report_text))
         logger.info(f"Täglicher Statusbericht für {today_str} erfolgreich generiert und Event veröffentlicht.")
     except Exception as e:

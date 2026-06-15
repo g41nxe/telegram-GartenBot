@@ -391,6 +391,23 @@ def set_metadata(key: str, value: str):
     finally:
         conn.close()
 
+import json as _json
+_DAILY_FORECAST_SNAPSHOT_KEY = "daily_forecast_snapshot"
+
+def set_daily_forecast_snapshot(date_str: str, rain_next_mm: float, window_start: str):
+    set_metadata(_DAILY_FORECAST_SNAPSHOT_KEY, _json.dumps({
+        "date": date_str, "rain_next_mm": rain_next_mm, "window_start": window_start,
+    }))
+
+def get_daily_forecast_snapshot() -> dict | None:
+    raw = get_metadata(_DAILY_FORECAST_SNAPSHOT_KEY)
+    if not raw:
+        return None
+    try:
+        return _json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+
 def get_watering_stats_last_24h() -> tuple[int, int, float]:
     """
     Gibt (erfolgreiche_zyklen, fehlgeschlagene_zyklen, gesamt_liter) für die letzten 24 Stunden zurück.

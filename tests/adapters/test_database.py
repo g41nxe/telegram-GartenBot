@@ -347,5 +347,33 @@ class TestRainLastSource(unittest.TestCase):
         self.assertEqual(row["rain_last_source"], "forecast")
 
 
+class TestDailyForecastSnapshot(unittest.TestCase):
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._patcher.start()
+        db.init_db()
+
+    def tearDown(self):
+        self._patcher.stop()
+        import gc
+        gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def test_set_and_get_daily_forecast_snapshot(self):
+        db.set_daily_forecast_snapshot("2026-06-14", 5.5, "14:00")
+        snapshot = db.get_daily_forecast_snapshot()
+        self.assertIsNotNone(snapshot)
+        self.assertEqual(snapshot["date"], "2026-06-14")
+        self.assertEqual(snapshot["rain_next_mm"], 5.5)
+        self.assertEqual(snapshot["window_start"], "14:00")
+
+    def test_get_daily_forecast_snapshot_returns_none_initially(self):
+        self.assertIsNone(db.get_daily_forecast_snapshot())
+
 if __name__ == "__main__":
     unittest.main()
