@@ -288,6 +288,12 @@ check_service zigbee2mqtt
 check_service garden-irrigation
 
 # ══════════════════════════════════════════════════════════════
+# DATENVERZEICHNISSE
+# ══════════════════════════════════════════════════════════════
+mkdir -p "${CURRENT_HOME}/garden/data/camera"
+ok "Datenverzeichnis data/camera angelegt"
+
+# ══════════════════════════════════════════════════════════════
 # OTA-VERSIONSDATEIEN
 # ══════════════════════════════════════════════════════════════
 if [ ! -f "${CURRENT_HOME}/garden/VERSION" ]; then
