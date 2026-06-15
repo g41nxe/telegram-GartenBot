@@ -15,3 +15,5 @@ Das Hexagonale Architekturprinzip dieses Projekts verbietet I/O in `core/`. Da d
 - Beide Aufruforte teilen dieselbe Logik ohne Duplizierung.
 - Tests für `evaluate()` brauchen keine Mocks — reine Eingabe/Ausgabe-Szenarien.
 - `daily_report.py` bleibt ein reiner Formatter; die Bewertung ist davon entkoppelt.
+
+**Ergänzung (Feature 0014):** `core/watering_advice.py` wurde zunächst mit der Teil-Funktion `evaluate_rain_window()` realisiert (für die pure Skip-/Caption-Entscheidung). Das vollständige `evaluate()` (aus Feature 0009) wird diese Basis kompositionell nutzen.

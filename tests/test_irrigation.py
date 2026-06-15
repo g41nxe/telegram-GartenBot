@@ -175,7 +175,7 @@ class TestGardenIrrigation(unittest.TestCase):
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
         # Führe Abfrage aus
-        rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob = weather.get_weather_data(52.5, 13.5)
+        rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob, rain_last_source = weather.get_weather_data(52.5, 13.5)
         
         self.assertEqual(rain_last, 1.5)
         self.assertEqual(rain_next, 2.5)
@@ -346,7 +346,7 @@ class TestGardenIrrigation(unittest.TestCase):
 
         # Mocke Wetterdaten
         with patch("daemon.adapters.weather.get_weather_data") as mock_weather_data:
-            mock_weather_data.return_value = (1.5, 2.0, 21.0, 3, 12.5, 25.0, 80)  # Bedeckt
+            mock_weather_data.return_value = (1.5, 2.0, 21.0, 3, 12.5, 25.0, 80, "measured")  # Bedeckt
 
             # Watchdog-Flags zurücksetzen (könnten von vorherigen Testläufen gesetzt worden sein)
             for v in database.get_all_valves():
@@ -623,7 +623,7 @@ class TestGardenIrrigation(unittest.TestCase):
         database.update_valve_status("valve_report_test", 80, 120, now_str, "normal")
 
         with patch("daemon.adapters.weather.get_weather_data") as mock_weather:
-            mock_weather.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 10)
+            mock_weather.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 10, "measured")
             report = generate_daily_report("2026-06-13")
 
         # Beide Ventile müssen im Bericht erscheinen (anhand ihrer wish_names)

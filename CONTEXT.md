@@ -29,8 +29,8 @@ Die lokale SQLite-Datei, in welcher Zeitpläne, Bewässerungsprotokolle und erfa
 _Avoid_: DB-Server, SQL-Server
 
 **Wetter-Dienst**:
-Die externe Online-Wetter-API (z. B. Open-Meteo), über welche der Bewässerungs-Daemon lokale Wettervorhersagen und historische Regenmengen abruft, um Bewässerungsentscheidungen zu treffen.
-_Avoid_: Wetterstation, Wettersensoren
+Die externe Online-Wetter-API (z. B. Open-Meteo), über welche der Bewässerungs-Daemon zwei Produkte abruft: lokale Wettervorhersagen (Forecast-Modell) und historische, messbasierte Regenmengen (Archiv/ERA5-Reanalyse), um Bewässerungsentscheidungen zu treffen.
+_Avoid_: Wetterstation, Wettersensoren (meint eigene Hardware, nicht die API)
 
 **Telegram-Bot**:
 Die primäre, gesicherte Benutzeroberfläche, über welche der Benutzer mit dem Bewässerungs-Daemon über Chat-Befehle und interaktive Buttons kommuniziert und Benachrichtigungen erhält.
@@ -77,7 +77,7 @@ Die Anzahl aufeinanderfolgender abgeschlossener Vortage, an denen die maximale T
 _Avoid_: Hitzeperiode, Hitzewelle, Hot-Streak
 
 **Regen-Fenster**:
-Die Summe des gemessenen Niederschlags der letzten 24 Stunden und der vorhergesagten Niederschlagsmenge der nächsten 24 Stunden. Entspricht dem bestehenden Schwellenwert `RAIN_THRESHOLD_MM` und wird sowohl für die Gieß-Empfehlung als auch für die automatische Überspringlogik des Schedulers verwendet.
+Die Summe des gefallenen Niederschlags der letzten 24 Stunden (aus gemessenen Archiv-/Reanalyse-Daten des Wetter-Dienstes) und der vorhergesagten Niederschlagsmenge der nächsten 24 Stunden (aus dem Forecast-Modell). Entspricht dem bestehenden Schwellenwert `RAIN_THRESHOLD_MM` und wird sowohl für die Gieß-Empfehlung als auch für die automatische Überspringlogik des Schedulers verwendet.
 _Avoid_: Regen-Periode, Niederschlags-Fenster, Rain-Window
 
 **Inaktivitäts-Watchdog**:
