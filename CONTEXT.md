@@ -108,3 +108,10 @@ _Avoid_: Fotos, Image-Archiv.
 Die Erweiterung des Inaktivitäts-Watchdogs, um ausbleibende Bilder einer Garten-Kamera zu erkennen und über den Telegram-Bot zu melden.
 _Avoid_: Kamera-Watchdog, Offline-Check.
 
+**Bild-Puffer**:
+Der temporäre Speicherort für empfangene Einzelbilder der Garten-Kamera, bevor sie zu einem Zeitraffer-GIF zusammengefasst werden.
+_Avoid_: Temp-Ordner, Cache, Raw-Archiv.
+
+**Zeitraffer-Zyklus**:
+Das konfigurierbare Intervall (in Tagen), nach dem die gesammelten Bilder des Bild-Puffers in ein GIF umgewandelt und die Rohdaten anschließend gelöscht werden.
+_Avoid_: GIF-Intervall, Zusammenfassungs-Tage.
