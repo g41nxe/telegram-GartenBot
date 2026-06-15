@@ -32,6 +32,7 @@ Wir integrieren eine oder mehrere **Garten-Kameras** (M5Stack Timer Camera F) in
 * **`POST /upload`**: Die Kamera lädt das aufgenommene Bild als rohen JPEG-Datenstrom im Body hoch. Die MAC-Adresse wird im HTTP-Header mitgesendet. Der Pi prüft die Magic Bytes (`\xFF\xD8`) zur JPEG-Validierung und begrenzt die Payload-Größe auf 500 KB. Gültige Bilder werden gespeichert.
 
 ### 3. C++ Firmware (Garten-Kamera)
+* Die Firmware wird in einem separaten Repository gepflegt: **[m5-GartenKamera](https://github.com/g41nxe/m5-gartenKamera)** (PlatformIO, ESP32).
 * Nutzt die herstellerspezifische Bibliothek zur Ansteuerung des Weitwinkel-Kamerasensors.
 * Bypasst das langsame DHCP-Protokoll, indem die Kamera eine statische IP-Adresse im lokalen WLAN nutzt.
 * Speichert den Backoff-Fehlerzähler im RTC-RAM (überlebt den Deep Sleep), um bei Verbindungsfehlern ein progressiv ansteigendes Schlafintervall (1, 2, 4, 8 Minuten) zu berechnen.
@@ -73,5 +74,6 @@ Wir integrieren eine oder mehrere **Garten-Kameras** (M5Stack Timer Camera F) in
 
 ## Weitere Anmerkungen (Further Notes)
 
-* Für die Kompilierung des C++ Codes wird die Bibliothek `ArduinoJson` in der Firmware benötigt.
+* Die C++ Firmware (M5Stack Timer Camera F) wird im separaten Repository [m5-GartenKamera](https://github.com/g41nxe/m5-gartenKamera) verwaltet. Zugangsdaten werden in `include/config.h` konfiguriert (gitignored; Vorlage: `include/config.h.template`).
+* Für die Kompilierung der Firmware wird PlatformIO sowie die Bibliothek `ArduinoJson` benötigt.
 * Der Port des HTTP-Empfängers muss in der Firewall der Steuerzentrale (Raspberry Pi) freigegeben werden.

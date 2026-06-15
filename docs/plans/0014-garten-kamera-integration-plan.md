@@ -135,7 +135,9 @@ Alle kamera-spezifischen Domain-Events (analog zu `core/valve_events.py` und `co
 
 ### 8. C++ Firmware (Garten-Kamera)
 
-#### [NEW] [camera/main.cpp](file:///c:/Users/g41nx/Repositories/garden/camera/main.cpp)
+> **Externes Repository:** Die Firmware wird in **[github.com/g41nxe/m5-gartenKamera](https://github.com/g41nxe/m5-gartenKamera)** (PlatformIO, ESP32) gepflegt und ist nicht Teil dieses Repositories.
+
+#### [src/main.cpp](https://github.com/g41nxe/m5-gartenKamera/blob/master/src/main.cpp)
 Das C++ Programm auf Basis der M5Stack `TimerCam-arduino` und `ArduinoJson` Bibliotheken:
 - **Konstruktoren & Setup:** Statische IP, Gateway und DNS-Server zur schnellen WLAN-Assoziierung konfigurieren.
 - **Exponential Backoff:** `RTC_DATA_ATTR int failCount = 0` sichert den Zähler im RTC-RAM.
@@ -145,8 +147,8 @@ Das C++ Programm auf Basis der M5Stack `TimerCam-arduino` und `ArduinoJson` Bibl
 - **Upload (`POST /upload`):** Bild aufnehmen und raw per HTTP POST mit `X-Camera-MAC` Header an den Pi senden.
 - **Schlafzustand:** Führt `bat_disable_output(sleep_seconds)` aus.
 
-#### [NEW] [camera/config.h](file:///c:/Users/g41nx/Repositories/garden/camera/config.h)
-- Statische Zugangsdaten: WLAN SSID, Passwort, IP-Adresse des Raspberry Pi, statische IP der Kamera, Standard-Schlafintervall.
+#### [include/config.h.template](https://github.com/g41nxe/m5-gartenKamera/blob/master/include/config.h.template)
+- Vorlage für Zugangsdaten: WLAN SSID, Passwort, IP-Adresse des Raspberry Pi, statische IP der Kamera, Standard-Schlafintervall. Die lokale `include/config.h` ist gitignored und enthält die echten Werte.
 
 ---
 
