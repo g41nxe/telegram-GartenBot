@@ -141,7 +141,7 @@ def generate_daily_report(today_str: str) -> str:
         rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source = weather_result
         weather_desc = get_wmo_description(weather_code)
     else:
-        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0, "measured"
+        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0, "forecast"
         weather_desc = "Unbekannt"
 
     # 3. Gestrige Regenvorhersage für Abweichungsvergleich

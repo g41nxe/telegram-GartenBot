@@ -137,7 +137,7 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         
         # Summiere die nächsten 24 Stunden ab der aktuellen Stunde
         end_forecast_idx = min(len(precip), current_idx + 24)
-        rain_next_24h = sum(precip[current_idx:end_forecast_idx])
+        rain_next_24h = sum(p for p in precip[current_idx:end_forecast_idx] if p is not None)
         
         # Berechne die maximale Regenwahrscheinlichkeit für die nächsten 24 Stunden
         if precip_probs and current_idx < len(precip_probs):
@@ -153,16 +153,17 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         # Stündliche Vorhersage: 2h vor aktueller Stunde bis +22h (= 24 Einträge gesamt)
         chart_start = max(0, current_idx - 2)
         forecast_end = min(chart_start + 24, len(times))
+        # precip_probs kann kürzer sein (z.B. leer bei nicht-best_match-Modell) — auf Länge auffüllen
+        safe_probs = list(precip_probs) + [0] * max(0, forecast_end - len(precip_probs))
         hourly_forecast_json = json.dumps({
             "times": times[chart_start:forecast_end],
             "temp": hourly_temps[chart_start:forecast_end],
             "precip_mm": precip[chart_start:forecast_end],
-            "precip_prob": precip_probs[chart_start:forecast_end],
+            "precip_prob": safe_probs[chart_start:forecast_end],
             "wmo": hourly_wmo[chart_start:forecast_end],
         })
 
-        # Werte runden
-        rain_last_24h = round(rain_last_24h, 2)
+        # rain_next runden (rain_last ist bereits gerundet aus _fetch_measured_rain_last oder forecast_rain_last)
         rain_next_24h = round(rain_next_24h, 2)
         temp_min = round(temp_min, 1)
         temp_max = round(temp_max, 1)

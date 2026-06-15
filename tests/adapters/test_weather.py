@@ -145,6 +145,21 @@ class TestHourlyForecastJson(unittest.TestCase):
         self.assertEqual(len(set(lengths.values())), 1,
                          f"Alle Arrays müssen gleich lang sein, aber: {lengths}")
 
+    @patch("urllib.request.urlopen")
+    def test_hourly_forecast_json_arrays_same_length_when_precip_prob_empty(self, mock_urlopen):
+        """Wenn precipitation_probability fehlt (leere Liste), müssen alle Arrays gleich lang sein."""
+        response = json.loads(_make_api_response().decode("utf-8"))
+        response["hourly"]["precipitation_probability"] = []
+        payload = json.dumps(response).encode("utf-8")
+        event = self._call_and_capture_event(payload, mock_urlopen)
+        self.assertIsNotNone(event)
+        fc = json.loads(event.hourly_forecast_json)
+        lengths = {k: len(v) for k, v in fc.items()}
+        self.assertEqual(len(set(lengths.values())), 1,
+                         f"Alle Arrays müssen gleich lang sein auch ohne precip_prob, aber: {lengths}")
+        self.assertEqual(fc["precip_prob"], [0] * len(fc["times"]),
+                         "Fehlende precip_prob-Einträge sollen mit 0 aufgefüllt werden")
+
 
 class TestWeatherEventCarriesNewFields(unittest.TestCase):
 

@@ -203,52 +203,6 @@ class TestDatabaseMultiValveSchema(unittest.TestCase):
         self.assertEqual(target.get("execution_mode", "sequential"), "sequential")
 
 
-class TestGetWeatherAroundHoursAgo(unittest.TestCase):
-    """Testet die neue DB-Funktion get_weather_around_hours_ago()."""
-
-    def setUp(self):
-        self.db_path = _make_temp_db()
-        self._patcher = patch.object(db, "DB_PATH", self.db_path)
-        self._patcher.start()
-        db.init_db()
-
-    def tearDown(self):
-        self._patcher.stop()
-        import gc; gc.collect()
-        try:
-            self.db_path.unlink(missing_ok=True)
-        except PermissionError:
-            pass
-
-    def _insert_weather(self, hours_ago: float, rain_next: float):
-        from datetime import timedelta
-        ts = (datetime.now() - timedelta(hours=hours_ago)).isoformat()
-        conn = db.get_connection()
-        conn.execute(
-            "INSERT INTO weather_history (timestamp, rain_last_24h_mm, rain_next_24h_mm, current_temp, weather_code, temp_min, temp_max, rain_probability) VALUES (?,?,?,?,?,?,?,?)",
-            (ts, 0.0, rain_next, 20.0, 0, 15.0, 25.0, 10)
-        )
-        conn.commit()
-        conn.close()
-
-    def test_returns_record_closest_to_24h_ago(self):
-        self._insert_weather(23.0, 3.0)   # am nächsten zu 24h
-        self._insert_weather(25.0, 7.0)   # weiter weg
-        self._insert_weather(1.0, 0.5)    # zu frisch
-        result = db.get_weather_around_hours_ago(24)
-        self.assertIsNotNone(result)
-        self.assertAlmostEqual(result["rain_next_24h_mm"], 3.0)
-
-    def test_returns_none_when_no_records(self):
-        result = db.get_weather_around_hours_ago(24)
-        self.assertIsNone(result)
-
-    def test_returns_none_when_closest_is_too_old(self):
-        self._insert_weather(50.0, 5.0)
-        result = db.get_weather_around_hours_ago(24, max_offset_hours=12)
-        self.assertIsNone(result)
-
-
 class TestWeatherHistoryFeature0007(unittest.TestCase):
     """Testet die neuen Spalten und Funktionen aus Feature 0007 (verbesserte Wetterdaten)."""
 

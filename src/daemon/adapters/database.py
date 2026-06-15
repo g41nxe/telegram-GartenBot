@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import logging
 from pathlib import Path
@@ -335,31 +336,6 @@ def get_last_weather():
     finally:
         conn.close()
 
-def get_weather_around_hours_ago(hours: int, max_offset_hours: int = 6) -> dict | None:
-    """Gibt den Wettereintrag zurück, dessen Zeitstempel am nächsten an `hours` Stunden zurückliegt.
-    Gibt None zurück, wenn kein Eintrag innerhalb von max_offset_hours existiert."""
-    from datetime import timedelta
-    target = datetime.now() - timedelta(hours=hours)
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM weather_history ORDER BY ABS(JULIANDAY(timestamp) - JULIANDAY(?)) LIMIT 1",
-            (target.isoformat(),)
-        )
-        row = cursor.fetchone()
-        if row is None:
-            return None
-        record_time = datetime.fromisoformat(row["timestamp"])
-        if abs((record_time - target).total_seconds()) > max_offset_hours * 3600:
-            return None
-        return dict(row)
-    except Exception as e:
-        logger.error(f"Fehler beim Laden des Wettereintrags vor {hours}h: {e}")
-        return None
-    finally:
-        conn.close()
-
 # --- Operationen für System-Metadaten ---
 
 def get_metadata(key: str, default: str = None) -> str:
@@ -391,11 +367,10 @@ def set_metadata(key: str, value: str):
     finally:
         conn.close()
 
-import json as _json
 _DAILY_FORECAST_SNAPSHOT_KEY = "daily_forecast_snapshot"
 
 def set_daily_forecast_snapshot(date_str: str, rain_next_mm: float, window_start: str):
-    set_metadata(_DAILY_FORECAST_SNAPSHOT_KEY, _json.dumps({
+    set_metadata(_DAILY_FORECAST_SNAPSHOT_KEY, json.dumps({
         "date": date_str, "rain_next_mm": rain_next_mm, "window_start": window_start,
     }))
 
@@ -404,7 +379,7 @@ def get_daily_forecast_snapshot() -> dict | None:
     if not raw:
         return None
     try:
-        return _json.loads(raw)
+        return json.loads(raw)
     except (ValueError, TypeError):
         return None
 

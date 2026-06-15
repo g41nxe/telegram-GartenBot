@@ -112,6 +112,21 @@ class TestVerbalWeatherSection(unittest.TestCase):
         self.assertNotIn("gefallen", result)
         self.assertIn("Gemessene Regendaten zurzeit nicht verfügbar", result)
 
+    def test_api_failure_with_snapshot_suppresses_deviation(self):
+        """Wenn get_weather_data() None zurückgibt (rain_last_source='forecast' im Fallback),
+        darf kein Abweichungssatz erscheinen, auch wenn ein gestern-Snapshot existiert."""
+        result = dr._format_weather_section(
+            temp=0.0, temp_min=0.0, temp_max=0.0,
+            weather_desc="Unbekannt",
+            rain_last=0.0, rain_next=0.0, rain_prob=0,
+            yesterday_rain_next=4.2,
+            rain_last_source="forecast",  # Fallback bei vollständigem API-Fehler
+        )
+        self.assertNotIn("0.0 mm gefallen", result)
+        self.assertNotIn("Weniger Regen als erwartet", result)
+        self.assertNotIn("Mehr Regen als erwartet", result)
+        self.assertIn("Gemessene Regendaten zurzeit nicht verfügbar", result)
+
 
 class TestVerbalValveSection(unittest.TestCase):
 
@@ -176,7 +191,6 @@ class TestSendDailyReport(unittest.TestCase):
             "bus": patch("daemon.adapters.daily_report._global_bus"),
         }
         mocks = {k: p.start() for k, p in patches.items()}
-        mocks["db"].get_weather_around_hours_ago.return_value = None
         for p in patches.values():
             self.addCleanup(p.stop)
         return mocks
