@@ -89,25 +89,36 @@ def handle_update(chat_id: int):
         )
         return
 
+    confirm_kb = {
+        "inline_keyboard": [[
+            {"text": "✓ Jetzt installieren", "callback_data": "update_confirm"},
+            {"text": "✗ Abbrechen",          "callback_data": "update_cancel"},
+        ]]
+    }
+
     if len(notes_raw) > 800:
         notes_raw = notes_raw[:800] + "…"
-    notes_section = f"\n\n📋 **Was ist neu:**\n{notes_raw}" if notes_raw else ""
+    # Markdown-Sonderzeichen in den Notes escapen, damit Telegrams Parser nicht abbricht
+    notes_escaped = notes_raw.replace("_", "\\_").replace("*", "\\*").replace("`", "\\`").replace("[", "\\[")
+    notes_section = f"\n\n📋 *Was ist neu:*\n{notes_escaped}" if notes_escaped else ""
 
-    telegram_client.send_message(
+    sent = telegram_client.send_message(
         chat_id,
-        f"🔄 **Software-Update verfügbar**\n\n"
+        f"🔄 *Software-Update verfügbar*\n\n"
         f"Installiert: `{local}`\n"
         f"Verfügbar:   `{remote_name}`"
         f"{notes_section}\n\n"
         f"Soll das Update jetzt installiert werden?\n"
         f"_(Dauer: ca. 1–5 Minuten. Der Daemon startet neu.)_",
-        {
-            "inline_keyboard": [[
-                {"text": "✓ Jetzt installieren", "callback_data": "update_confirm"},
-                {"text": "✗ Abbrechen",          "callback_data": "update_cancel"},
-            ]]
-        }
+        confirm_kb,
     )
+    if not sent:
+        # Fallback ohne Notes und ohne Markdown-Formatierung
+        telegram_client.send_message(
+            chat_id,
+            f"Update verfügbar: {local} → {remote_tag}\nJetzt installieren?",
+            confirm_kb,
+        )
 
 
 def _cleanup_expired_states():

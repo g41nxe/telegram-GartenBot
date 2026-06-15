@@ -126,6 +126,39 @@ class TestHandleUpdate(unittest.TestCase):
         self.assertLessEqual(len(notes_section), 950)
 
 
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui._fetch_latest_release_info",
+           return_value={"tag": "v1.2.0", "name": "v1.2.0", "notes": "- _italic_ und *bold* und `code`"})
+    @patch("daemon.ui.telegram_ui._read_local_version", return_value="v1.0.0")
+    def test_notes_markdown_sonderzeichen_werden_escaped(self, _local, _info, mock_client):
+        """Markdown-Sonderzeichen in den Notes dürfen den Telegram-Parser nicht brechen."""
+        mock_client.send_message.return_value = True
+        handle_update(12345)
+
+        text = mock_client.send_message.call_args[0][1]
+        self.assertIn("\\_italic\\_", text)
+        self.assertIn("\\*bold\\*", text)
+        self.assertIn("\\`code\\`", text)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui._fetch_latest_release_info",
+           return_value={"tag": "v1.2.0", "name": "v1.2.0", "notes": "- Neues Feature"})
+    @patch("daemon.ui.telegram_ui._read_local_version", return_value="v1.0.0")
+    def test_fallback_wenn_send_message_fehlschlaegt(self, _local, _info, mock_client):
+        """Wenn send_message False zurückgibt, wird ein einfacher Fallback-Dialog gesendet."""
+        mock_client.send_message.side_effect = [False, True]
+        handle_update(12345)
+
+        self.assertEqual(mock_client.send_message.call_count, 2)
+        fallback_text = mock_client.send_message.call_args[0][1]
+        self.assertIn("v1.0.0", fallback_text)
+        self.assertIn("v1.2.0", fallback_text)
+        # Fallback enthält den confirm-Button
+        kb = mock_client.send_message.call_args[0][2]
+        buttons = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
+        self.assertIn("update_confirm", buttons)
+
+
 class TestUpdateCallbacks(unittest.TestCase):
 
     @patch("daemon.ui.telegram_ui.telegram_client")

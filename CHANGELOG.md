@@ -1,3 +1,10 @@
+## v1.2.1 — 2026-06-15
+
+- /update: Markdown-Sonderzeichen in Release-Notes werden jetzt escaped
+- /update: Fallback-Dialog wenn die Telegram-API die Update-Nachricht ablehnt
+
+---
+
 ## v1.2.0 — 2026-06-15
 
 ### Neu
