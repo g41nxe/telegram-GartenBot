@@ -51,30 +51,23 @@ Der Bewässerungs-Daemon abonniert das MQTT-Topic des Regensensors. Bei Eingang 
 - **Benachrichtigungs-Zustand (Flankensteuerung):** Der Sendezustand für die Regen-Benachrichtigung wird persistent in den System-Metadaten abgelegt (gleiches Muster wie der Watchdog). Eine Benachrichtigung wird nur beim Übergang trocken→Regen gesendet, eine Entwarnung beim Übergang Regen→trocken.
 - **Inaktivitäts-Watchdog:** Der bestehende Watchdog wird um den Regensensor erweitert. Das Inaktivitäts-Fenster orientiert sich am Heartbeat-Intervall des Sensors (alle 6 Stunden bei Trockenheit) plus Puffer. Sofortige Entwarnung beim nächsten Eingang einer Regenmessung, analog zu Ventil und Garten-Kamera.
 - **Konfiguration:** Drei neue Umgebungsvariablen — Topic, Schwellenwert für „es regnet" und Offline-Fenster für den ERA5-Fallback — jeweils mit sinnvollen Standardwerten und Dokumentation in der `.env`-Vorlage.
-- **Telegram-Oberfläche:** Erweiterung von `/status` und Tagesbericht sowie die Guss-Unterbrechungs- und Regen-Benachrichtigungen (Details unten). Alle Änderungen sind in `docs/reference/telegram-nachrichten.html` nachzuziehen (siehe `.claude/rules/telegram_messages.md`).
+- **Telegram-Oberfläche:** Erweiterung von `/status` und Tagesbericht sowie die Guss-Unterbrechungs- und Regen-Benachrichtigungen (Details unten). Alle Texte folgen verbindlich dem Design-System (ADR 0029 / `docs/reference/telegram-design-system.html`) und sind nach der Umsetzung in IST- und SOLL-Referenz nachzuziehen (siehe `.claude/rules/telegram_messages.md`).
 - **Architektur-Abweichung:** ADR 0028 löst ADR 0003 ab (Verzicht auf physische Sensoren). Begründung und Konsequenzen sind dort dokumentiert.
 
 ### Konkrete Telegram-Formate
 
-Die folgenden Formate orientieren sich eng am bestehenden Stil (siehe Referenz). Beispieldaten sind eingesetzt.
+Die folgenden Formate folgen dem Design-System (ADR 0029 / `docs/reference/telegram-design-system.html`): Anrede „du", Header `*Emoji Titel*` ohne Doppelpunkt, Einheiten mit Leerzeichen (`1.4 mm`, `2.1 l`), Zeiten mit „Uhr", Garten-Ampel/Progressive Disclosure, qualitative Batterie (`voll`/`mittel`/`schwach`). Beispieldaten sind eingesetzt; Titel werden fett dargestellt.
 
-**`/status` — neuer Regensensor-Block** in `handle_status()`, eingefügt nach dem Kamera-Block und vor dem Wetter-Block, im gleichen `📡/📷`-Stil wie die übrigen Geräte. „Aktuell" = `rainlevel_mm` der letzten Regenmessung, „Gesamt" = `raintotal_mm`. Die Batterie nutzt die bestehende `_get_battery_description()`. Der Block entfällt vollständig, wenn kein Regensensor konfiguriert/registriert ist (analog zum Kamera-Block).
-
-```
-🌧 Regensensor:
-   - Aktuell: 1.4 mm · Gesamt: 18.2 mm
-   - Temperatur: 21.8 °C
-   - Batterie: 🔋 Voll
-   - Letzte Messung: 17.06. 14:24 (vor 8 Min)
-```
-
-Offline-Variante (kein Eintrag jünger als `RAIN_SENSOR_OFFLINE_HOURS`):
+**`/status` — Regensensor-Zeile** in `handle_status()`, im kompakten gebündelten Stil der übrigen Geräte. „Aktuell" = `rainlevel_mm` der letzten Regenmessung, „Gesamt" = `raintotal_mm`. Batterie qualitativ über `_get_battery_description()`. Entfällt vollständig, wenn kein Regensensor registriert ist.
 
 ```
-🌧 Regensensor:
-   - ⚠️ Offline seit 7.2 h
-   - Letzte Messung: 17.06. 07:10
-   - Regen 24h via ERA5-Reanalyse
+🌧 Regen  1.4 mm · Gesamt 18.2 mm · 🌡 21.8 °C · 🔋 voll
+```
+
+Offline (kein Eintrag jünger als `RAIN_SENSOR_OFFLINE_HOURS`) — der Regensensor wird über den Watchdog zum Aufmerksamkeits-/Problemfall der Garten-Ampel; die Technik-Details erscheinen nur dann (Progressive Disclosure):
+
+```
+🌧 Regen  ⚠️ Sensor offline (seit 7.2 h) · Regen-24h via ERA5
 ```
 
 **`/report` & Tagesbericht** — beide nutzen `daily_report.generate_daily_report()`, also genügt eine Änderung an zwei Stellen:
@@ -84,31 +77,29 @@ Offline-Variante (kein Eintrag jünger als `RAIN_SENSOR_OFFLINE_HOURS`):
 2. *Neue Regensensor-Zeile* im Stil der bestehenden Ventil-Zeile (`📡 Terrasse — …`). Ø/Max-Temperatur stammen aus den `rain_measurements` der letzten 24h:
 
 ```
-🌧 Regensensor — 3.6 mm gefallen · Ø 20.1 °C, max 26.8 °C · 🔋 Voll
+🌧 Regen — 3.6 mm gefallen · Ø 20.1 °C, max 26.8 °C · 🔋 voll
 ```
 
 Offline-Variante:
 
 ```
-🌧 Regensensor — ⚠️ offline seit 9 h, Fallback auf ERA5
+🌧 Regen — ⚠️ Sensor offline (seit 9 h), Fallback auf ERA5
 ```
 
-**Guss-Unterbrechung** (`WateringCycleInterrupted` → neuer `_on_watering_interrupted`-Handler, Broadcast wie die übrigen `_on_*`-Handler):
+**Guss-Unterbrechung** (`WateringCycleInterrupted` → neuer `_on_watering_interrupted`-Handler, Broadcast wie die übrigen `_on_*`-Handler). Verspieltes Regen-Framing wie der Skip, Werte gebündelt wie beim manuellen Stopp:
 
 ```
-🌧 Bewässerung durch Regen unterbrochen!
-⏱️ Laufzeit: ca. 4 Min
-💧 Geflossene Menge: 2.1 Liter
-🌧 Regen erkannt: 0.6 mm
+🌧 Regen übernimmt — Guss gestoppt
+Terrasse · 4 Min · 2.1 l geflossen · 0.6 mm erkannt
 ```
 
 **Regen-Benachrichtigung (Flankensteuerung)** — beim Übergang trocken→Regen bzw. Regen→trocken:
 
 ```
-🌧 Regen erkannt: 1.4 mm
+🌧 Regen erkannt — 1.4 mm
 ```
 ```
-🌤 Regen aufgehört
+🌤 Regen vorbei
 ```
 
 ## Test-Entscheidungen (Testing Decisions)
@@ -136,4 +127,4 @@ Offline-Variante:
 - Dieses Feature erweitert die in ADR 0012 definierten Benachrichtigungskanäle und System-Statistiken und baut auf der Ereignis-getriebenen Architektur (ADR 0008) auf.
 - Die Quellen-Fallback-Logik knüpft direkt an ADR 0024 (getrennte Behandlung von gemessener Vergangenheit und Vorhersage) an; der Regensensor wird zur neuen bevorzugten Quelle der gemessenen Vergangenheit.
 - Neue Domänenbegriffe sind in `CONTEXT.md` ergänzt: **Regensensor**, **Regenmessung**, **Guss-Unterbrechung**.
-- Das vollständige Design (inkl. Schema-DDL und Ereignis-Signaturen) liegt unter `docs/superpowers/specs/2026-06-17-regensensor-integration-design.md`.
+- Schema-DDL und Ereignis-Signaturen sind in diesem Dokument (Abschnitt Implementierungs-Entscheidungen) sowie in ADR 0028 festgehalten.

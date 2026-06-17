@@ -37,6 +37,8 @@
   .bubble.me { background:#2b5278; border-top-left-radius:12px; border-top-right-radius:4px; margin-left:auto; color:#fff; }
   .bubble b { color:#fff; font-weight:700; } .bubble i { color:#aebfd0; font-style:italic; }
   .bubble code { background:#0e1621; padding:1px 5px; border-radius:4px; font-size:12px; color:#8fd6ff; }
+  .btnrow { display:flex; gap:5px; margin-top:6px; flex-wrap:wrap; }
+  .btn { background:#232e3c; color:#6ab3f3; border-radius:8px; padding:7px 10px; font-size:12px; flex:1; text-align:center; min-width:56px; }
   .kbd-row { display:flex; gap:8px; margin-bottom:8px; }
   .kbd-key { flex:1; background:#212d3b; color:#e9edf2; border-radius:9px; padding:11px 8px; text-align:center; font-size:13px; }
   .note { font-size:11px; color:#6b7d92; margin:3px 0 0; }
@@ -46,10 +48,10 @@
 <div class="page">
 
 <h1>Telegram Design-System <span style="color:#16a34a">(SOLL)</span></h1>
-<div class="meta">Stand: 2026-06-17 · Verbindliche Regeln &amp; Zielbild · Grundlage: <code>docs/adr/0029-telegram-design-system.md</code></div>
+<div class="meta">Stand: 2026-06-18 · Verbindliche Regeln + vollständiges Zielbild · Grundlage: <code>docs/adr/0029-telegram-design-system.md</code></div>
 <div class="banner">
-  Dieses Dokument beschreibt das <b>Zielbild (SOLL)</b>. Der heutige Stand der einzelnen Nachrichten liegt getrennt davon in
-  <a href="telegram-nachrichten.html">telegram-nachrichten.html (IST)</a>. Pflegepflicht: <code>.claude/rules/telegram_messages.md</code>.
+  Dieses Dokument ist das <b>vollständige Zielbild (SOLL)</b> und damit die <b>Migrations-Spezifikation für Feature 0017</b>: für jede Nachricht aus dem
+  <a href="telegram-nachrichten.html">IST-Inventar</a> gibt es hier genau eine Zielversion. Pflegepflicht: <code>.claude/rules/telegram_messages.md</code>.
 </div>
 
 <!-- ============ PRINZIPIEN ============ -->
@@ -77,39 +79,35 @@
   <div class="card">
     <h4>🕐 Datum &amp; Zeit</h4>
     <span class="rule">Nie Sekunden. Immer „Uhr". Relativ in Klammern.</span><br>
-    <code>14:24 Uhr</code> · <code>17.06. um 14:24 Uhr</code> · <code>(vor 8 Min)</code>
+    <code>14:24 Uhr</code> · <code>18.06. um 14:24 Uhr</code> · <code>(vor 8 Min)</code>
   </div>
   <div class="card">
     <h4>• Listen</h4>
     Ein Stil, kompakt mit <code>·</code> gebündelt:<br>
-    <code>🔋 voll · 📶 gut · 🟢 aktiv</code><br>
-    Statt mehrerer Einrückungs-/Bullet-Stile.
+    <code>🔋 voll · 📶 gut · 🟢 aktiv</code>
   </div>
 </div>
 
-<!-- ============ EMOJI ============ -->
 <h2 class="section">Emoji-Semantik (je ein Sinn im Nachrichtentext)</h2>
 <div class="card" style="margin-bottom:6px">
   <div class="legend">
     <span>🟢 ok / aktiv</span><span>🟡 Achtung</span><span>🔴 aus / Fehler</span><span>⚠️ Alarm</span>
     <span>🌧 Regen</span><span>🌡 Temperatur</span><span>💧 Wassermenge</span><span>🔋 Batterie</span>
-    <span>🚿 Guss</span><span>📡 Ventil</span><span>📷 Kamera</span><span>📅 Zeitplan</span>
+    <span>🚿 Guss</span><span>🛑 Stopp</span><span>📡 Ventil</span><span>📷 Kamera</span><span>📅 Zeitplan</span>
   </div>
-  <div class="note" style="margin-top:8px">Regen-Skip nutzt 🌧 (nicht 🌤️). Ampelfarben 🟢/🟡/🔴 sind dem Gesundheits-Status vorbehalten — Buttons nutzen daher 🚿 / 🛑.</div>
+  <div class="note" style="margin-top:8px">Regen-Skip nutzt 🌧 (nicht 🌤️). Ampelfarben 🟢/🟡/🔴 nur für Gesundheits-Status. Buttons nutzen 🚿 / 🛑. Zeitplan-Status: ✅ aktiv / ⏸️ pausiert (nicht 🟢/🔴, um die Ampel nicht zu überladen).</div>
 </div>
 
-<!-- ============ TON-REGISTER ============ -->
 <h2 class="section">Ton-Register</h2>
 <table class="reg">
   <thead><tr><th>Register</th><th>Stil</th><th>Gilt für</th></tr></thead>
   <tbody>
-    <tr><td><span class="reg-pill play">Verspielt</span></td><td>Garten-Energie, darf ein „!" tragen</td><td>Guss gestartet/fertig, Regen-Skip, Tagesbericht-Einstieg, Zeitplan gespeichert, Foto</td></tr>
-    <tr><td><span class="reg-pill neutral">Neutral-freundlich</span></td><td>klar &amp; „du", kein „!"</td><td>/status (außer Headline), Zeitplan-Liste, Assistenten-Schritte, Setup</td></tr>
-    <tr><td><span class="reg-pill dry">Sachlich-klar</span></td><td>kein Wortwitz, Problem + Handlungsanweisung</td><td>Watchdog-Alarme, Notfall-Abschaltung, Zeitplan-Fehler, Dienst-Störung, Eingabefehler</td></tr>
+    <tr><td><span class="reg-pill play">Verspielt</span></td><td>Garten-Energie, darf ein „!" tragen</td><td>Guss gestartet/fertig, Regen-Skip, Tagesbericht-Einstieg, Zeitplan gespeichert, Foto, Kopplung erfolgreich</td></tr>
+    <tr><td><span class="reg-pill neutral">Neutral-freundlich</span></td><td>klar &amp; „du", kein „!"</td><td>/status (außer Headline), Zeitplan-Liste, Assistenten-Schritte, Setup, /start</td></tr>
+    <tr><td><span class="reg-pill dry">Sachlich-klar</span></td><td>kein Wortwitz, Problem + Handlungsanweisung</td><td>Watchdog-Alarme, Notfall-Abschaltung, Zeitplan-Fehler, Dienst-Störung, Eingabe-/Format-Fehler, Lösch-Bestätigung</td></tr>
   </tbody>
 </table>
 
-<!-- ============ GARTEN-AMPEL ============ -->
 <h2 class="section">Garten-Ampel (3-Stufen-Gesundheitsmodell)</h2>
 <table class="reg">
   <thead><tr><th>Stufe</th><th>Headline</th><th>Auslöser</th></tr></thead>
@@ -121,17 +119,17 @@
 </table>
 <div class="note">Headline = schlimmste aktive Stufe. Progressive Disclosure: technische Details (LQI-Zahl, Geräte-ID, exakte Zeitstempel) nur für nicht-grüne Geräte.</div>
 
-<!-- ============ ZIELBILD-BEISPIELE ============ -->
-<h2 class="section">Zielbild — Beispiele</h2>
-
+<!-- ============ 1 · BEFEHLE & MENÜS ============ -->
+<h2 class="section">Zielbild 1 · Befehle &amp; Menüs</h2>
 <div class="grid">
 
   <div class="phone">
     <div class="cap">/status — Normalfall <span class="reg-pill neutral">neutral</span></div>
     <div class="bubble">🌱 <b>Dein Garten auf einen Blick</b>
-<i>Mi, 17.06. · 14:32 Uhr</i>
+<i>Mi, 18.06. · 14:32 Uhr</i>
 
 🟢 Alles im grünen Bereich — Dienste online
+🚿 <b>Terrasse</b> gießt gerade · noch 8 Min
 
 📡 <b>Ventile</b>
     Terrasse · 🟢 aktiv · 🔋 voll · 📶 gut
@@ -141,24 +139,27 @@
 
 🌧 <b>Regen</b>  1.4 mm · 🌡 21.8 °C · 🔋 92 %
 🌡 <b>Wetter</b>  leicht bewölkt, 22.4 °C · 💧 0 mm
+    <i>später 15 Uhr: bedeckt, 0.2 mm (15 %)</i>
 
 📜 <b>Zuletzt</b>  ✅ 06:00 Rasen (12 Min)
 <i>v1.2.1</i></div>
   </div>
 
   <div class="phone">
-    <div class="cap">/status — Problemfall (Garten-Ampel 🟡/🔴 + Disclosure)</div>
+    <div class="cap">/status — Problemfall (Ampel 🔴 + Progressive Disclosure)</div>
     <div class="bubble">🌱 <b>Dein Garten auf einen Blick</b>
-<i>Mi, 17.06. · 14:32 Uhr</i>
+<i>Mi, 18.06. · 14:32 Uhr</i>
 
 🔴 <b>Es gibt ein Problem</b>
 
 📡 <b>Ventile</b>
     🔴 Terrasse — seit 26.2 h kein Signal
        🔋 18 % · 📶 kritisch (48 LQI)
-       Letztes Signal: 16.06. um 12:18 Uhr
+       Letztes Signal: 17.06. um 12:18 Uhr
        ID: garden_valve
     Hochbeet · 🟢 aktiv · 🔋 voll · 📶 gut
+📷 <b>Kameras</b>
+    Nordseite · 🟢 14:15 Uhr
 
 🌧 <b>Regen</b>  1.4 mm · 🌡 21.8 °C · 🔋 92 %
 
@@ -167,39 +168,264 @@
   </div>
 
   <div class="phone">
-    <div class="cap">Guss-Benachrichtigungen <span class="reg-pill play">verspielt</span></div>
+    <div class="cap">/report &amp; Tagesbericht — Foto + Text <span class="reg-pill play">verspielt</span></div>
+    <div class="bubble" style="padding:0; overflow:hidden">
+      <div style="height:80px; background:linear-gradient(135deg,#1f3a5f,#3b6ea5); display:flex; align-items:center; justify-content:center; color:#cfe4ff; font-size:12px;">📈 [ Wetter-Chart ]</div>
+    </div>
+    <div class="bubble">🌱 <b>Guten Morgen — dein Tagesbericht</b>
+<i>Mi, 18.06.</i>
+
+🚿 Gestern 1× gegossen — 8.4 l gesamt
+🌧 3.6 mm gefallen (lokal gemessen) · heute 1.2 mm erwartet (12 %)
+🌡 14.1–27.3 °C, leicht bewölkt
+
+🟢 Alles im grünen Bereich — alle Geräte aktiv</div>
+    <div class="note">Problem-Variante: Headline 🔴 + betroffene Geräte/Warnungen darunter, sonst gleicher Aufbau.</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">/zeitplan — Liste <span class="reg-pill neutral">neutral</span></div>
+    <div class="bubble">📅 <b>Zeitpläne</b>
+
+✅ <b>Rasen morgens</b> · 06:00 Uhr
+    täglich · 12 Min · 30 l
+⏸️ <b>Hochbeet abends</b> · 20:15 Uhr
+    Mo, Mi, Fr · 15 Min · 50 l</div>
+    <div class="btnrow"><span class="btn">✅ Rasen morgens (06:00)</span><span class="btn" style="flex:0;min-width:36px">🗑️</span></div>
+    <div class="btnrow"><span class="btn">⏸️ Hochbeet abends (20:15)</span><span class="btn" style="flex:0;min-width:36px">🗑️</span></div>
+    <div class="btnrow"><span class="btn">➕ Neuer Zeitplan</span></div>
+    <div class="note">Leerzustand: „Noch keine Zeitpläne — tipp auf ➕ Neuer Zeitplan oder nutze /add."</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">/start <span class="reg-pill neutral">neutral</span> · Hauptmenü mit 🚿/🛑</div>
+    <div class="bubble">👋 <b>Willkommen in deinem Garten!</b>
+
+Ich halte deine Bewässerung im Griff. Nimm die Buttons unten oder die Befehle <code>/status</code> und <code>/zeitplan</code>.</div>
+    <div class="kbd-row"><div class="kbd-key">📊 Status anzeigen</div><div class="kbd-key">📅 Zeitpläne</div></div>
+    <div class="kbd-row"><div class="kbd-key" style="background:#2a3f2d">🚿 Bewässern starten</div><div class="kbd-key" style="background:#3d2a2a">🛑 Sofort Stopp</div></div>
+    <div class="kbd-row"><div class="kbd-key">📸 Foto anzeigen</div><div class="kbd-key">⚙️ Setup</div></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Foto-Anzeige <span class="reg-pill play">verspielt</span></div>
+    <div class="bubble" style="padding:0; overflow:hidden">
+      <div style="height:90px; background:linear-gradient(135deg,#3a5a3a,#6b8e4e); display:flex; align-items:center; justify-content:center; color:#cde8b5; font-size:12px;">🌱 [ Garten-Foto ]</div>
+      <div style="padding:8px 12px">📸 <b>Nordseite</b> — 18.06. um 14:15 Uhr</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ============ 2 · ASSISTENTEN ============ -->
+<h2 class="section">Zielbild 2 · Assistenten <span class="reg-pill neutral">neutral</span></h2>
+<div class="grid">
+
+  <div class="phone">
+    <div class="cap">Manuelle Bewässerung (2 Schritte)</div>
+    <div class="bubble">🚿 <b>Bewässern starten — Schritt 1/2</b>
+
+Wie lange maximal? (Zeitlimit)
+<i>Aus Sicherheitsgründen max. 25 Min.</i></div>
+    <div class="btnrow"><span class="btn">⏱️ 5 Min</span><span class="btn">⏱️ 10 Min</span><span class="btn">⏱️ 15 Min</span></div>
+    <div class="btnrow"><span class="btn">⏱️ 20 Min</span><span class="btn">⏱️ 25 Min</span><span class="btn">✏️ Eigene</span></div>
+    <div class="bubble" style="margin-top:8px">🚿 <b>Bewässern starten — Schritt 2/2</b>
+
+Wie viel Wasser maximal? (Volumenlimit)
+<i>Dauer: 15 Min</i></div>
+    <div class="btnrow"><span class="btn">🌱 10 l</span><span class="btn">🥬 25 l</span><span class="btn">🍅 50 l</span></div>
+    <div class="bubble me" style="margin-top:8px">🚿 Läuft — Terrasse gießt jetzt (15 Min / 25 l).</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Zeitplan-Assistent (6 Schritte) → Bestätigung</div>
+    <div class="bubble">🆕 <b>Neuer Zeitplan — Schritt 1/6</b>
+
+Gib einen Namen ein (z. B. „Rasen morgens"):</div>
+    <div class="bubble">🆕 <b>Neuer Zeitplan — Schritt 2/6</b>
+
+Zu welcher <b>Stunde</b> soll es losgehen?</div>
+    <div class="note">Schritte 3–6: Minute · Dauer · Menge · Wochentage (Raster-Tastaturen, je „❌ Abbrechen").</div>
+    <div class="bubble" style="margin-top:6px">📝 <b>Passt das so?</b>
+
+• Name: Rasen morgens
+• Start: 06:00 Uhr
+• Dauer: 12 Min
+• Menge: 30 l
+• Tage: Mo, Mi, Fr</div>
+    <div class="btnrow"><span class="btn">❌ Abbrechen</span><span class="btn">✅ Speichern</span></div>
+    <div class="bubble me" style="margin-top:8px">✅ Gespeichert — Zeitplan „Rasen morgens" ist aktiv.</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Setup-Menü &amp; Ventil-Kopplung-Start</div>
+    <div class="bubble">⚙️ <b>Setup</b>
+
+Was möchtest du einrichten?</div>
+    <div class="btnrow"><span class="btn">🔧 Ventil koppeln</span><span class="btn">📷 Kamera koppeln</span></div>
+    <div class="btnrow"><span class="btn">⏱ Kamera-Einstellungen</span></div>
+    <div class="bubble" style="margin-top:8px">🔧 <b>Neues Ventil koppeln</b>
+
+Wie soll dieses Ventil heißen?
+<i>(z. B. „Terrasse", „Rasen", „Hochbeet")</i>
+
+Tipp den Namen ein:</div>
+    <div class="bubble">🔧 <b>Kopplung gestartet — „Terrasse"</b>
+
+Drück jetzt den Reset-Knopf am Sonoff Hydro ONE <b>5 Sekunden</b>, bis die LED schnell blinkt.
+<i>Ich warte bis zu 90 Sekunden.</i></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Kamera-Assistent (Name → Intervall → Auflösung → Qualität)</div>
+    <div class="bubble">📷 <b>Neue Kamera koppeln</b>
+
+Wie soll diese Kamera heißen?
+<i>(a–z, A–Z, 0–9, „-", „_", max. 32 Zeichen)</i></div>
+    <div class="bubble">⏱ <b>Wie oft soll die Kamera ein Bild senden?</b>
+
+Gib das Intervall in Minuten ein <i>(z. B. 15)</i>:</div>
+    <div class="bubble">🖼 <b>Welche Auflösung?</b>
+
+Höhere Auflösung = schärfere Bilder, größere Dateien.</div>
+    <div class="btnrow"><span class="btn">🏔 Hoch</span><span class="btn">⚡ Mittel</span><span class="btn">💨 Niedrig</span></div>
+    <div class="bubble">🎨 <b>Welche Bildqualität?</b>
+
+Gewählte Auflösung: 🏔 Hoch (1600×1200)</div>
+    <div class="btnrow"><span class="btn">🌟 Hoch</span><span class="btn">⚡ Mittel</span><span class="btn">💨 Niedrig</span></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Lösch-Bestätigung <span class="reg-pill dry">sachlich</span></div>
+    <div class="bubble">🗑️ <b>Zeitplan löschen</b>
+
+„Hochbeet abends" wirklich löschen? Das lässt sich nicht rückgängig machen.</div>
+    <div class="btnrow"><span class="btn">✅ Ja, löschen</span><span class="btn">❌ Nein, abbrechen</span></div>
+    <div class="bubble me" style="margin-top:8px">🗑️ „Hochbeet abends" wurde gelöscht.</div>
+    <div class="note">Bei Abbruch: „Löschen abgebrochen."</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Kopplung — Ergebnis <span class="reg-pill play">verspielt</span> / Fehler <span class="reg-pill dry">sachlich</span></div>
+    <div class="bubble">⏳ <b>Noch kein Ventil erkannt</b>
+
+Halt den Reset-Knopf 5 Sekunden gedrückt, bis die LED schnell blinkt.
+<i>Noch 45 Sekunden.</i></div>
+    <div class="bubble">✅ <b>Ventil gekoppelt!</b>
+
+„Terrasse" ist da und als <code>valve_a1b2</code> registriert. Prüf den Status mit <code>/status</code>.</div>
+    <div class="bubble">❌ <b>Kopplung fehlgeschlagen</b>
+
+Nach 90 Sekunden kein Ventil erkannt. Erneut versuchen: <code>/setup</code></div>
+    <div class="bubble">✅ <b>Kamera gekoppelt!</b>
+
+„Nordseite" ist registriert · Intervall 15 Min.</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Software-Update (/update)</div>
+    <div class="bubble">🔄 <b>Update verfügbar</b>
+
+Installiert: <code>v1.2.1</code>
+Neu: <code>v1.3.0</code>
+
+📋 Was ist neu:
+- Regensensor-Integration
+- Fehlerbehebungen im Tagesbericht
+
+Jetzt installieren? <i>(1–5 Min, Daemon startet neu)</i></div>
+    <div class="btnrow"><span class="btn">✓ Installieren</span><span class="btn">✗ Abbrechen</span></div>
+    <div class="bubble" style="margin-top:8px">⏳ <b>Update läuft</b> — gib mir 1–5 Minuten, dann <code>/status</code> prüfen.</div>
+    <div class="note">Schon aktuell: „Schon aktuell (v1.2.1) — kein Update nötig." · Abbruch: „Update abgebrochen."</div>
+  </div>
+
+</div>
+
+<!-- ============ 3 · EREIGNIS-BENACHRICHTIGUNGEN ============ -->
+<h2 class="section">Zielbild 3 · Ereignis-Benachrichtigungen</h2>
+<div class="grid">
+
+  <div class="phone">
+    <div class="cap">Guss-Lebenszyklus <span class="reg-pill play">verspielt</span> (Stopp/Notfall <span class="reg-pill dry">sachlich</span>)</div>
     <div class="bubble">🚿 <b>Wasser marsch!</b>
 <b>Terrasse</b> gießt jetzt · max. 15 Min / 25 l · manuell</div>
     <div class="bubble">🏁 <b>Fertig — 25 l sind durch</b>
 <b>Terrasse</b> · 6 Min Laufzeit</div>
-    <div class="bubble">🌧 <b>Heute übernimmt der Regen</b>
-Guss <b>Rasen morgens</b> pausiert — 5.6 mm gefallen (Grenze: 2.0 mm).</div>
+    <div class="bubble">🏁 <b>Zeitlimit erreicht</b>
+<b>Terrasse</b> · 15 Min · 18.5 l geflossen</div>
+    <div class="bubble">🛑 <b>Guss gestoppt</b>
+<b>Terrasse</b> · 4 Min · 8.2 l geflossen</div>
+    <div class="bubble">⚠️ <b>Notfall-Abschaltung</b>
+<b>Terrasse</b> nach 25 Min abgeschaltet — Zielmenge 50 l nicht erreicht (12.0 l geflossen). Bitte Wasserzufuhr und Ventil prüfen.</div>
   </div>
 
   <div class="phone">
-    <div class="cap">Warnungen &amp; Fehler <span class="reg-pill dry">sachlich</span></div>
+    <div class="cap">Scheduler — Skip <span class="reg-pill play">verspielt</span> / Fehler <span class="reg-pill dry">sachlich</span></div>
+    <div class="bubble">🌧 <b>Heute übernimmt der Regen</b>
+Guss <b>Rasen morgens</b> pausiert — 5.6 mm gefallen (Grenze: 2.0 mm).</div>
+    <div class="bubble">⚠️ <b>Zeitplan „Hochbeet abends" fehlgeschlagen</b>
+Das Ventil ließ sich nicht ansteuern (MQTT). Bitte Verbindung prüfen.</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Watchdog — Alarm <span class="reg-pill dry">sachlich</span> / Entwarnung <span class="reg-pill neutral">neutral</span></div>
     <div class="bubble">⚠️ <b>Ventil „Terrasse" meldet sich nicht</b>
 Seit 24.5 h kein Signal. Bitte Batterie und Funkverbindung prüfen.</div>
+    <div class="bubble">🟢 <b>Terrasse ist wieder da</b>
+Das Ventil sendet wieder Signale.</div>
+    <div class="bubble">⚠️ <b>Kamera „Nordseite" meldet sich nicht</b>
+Seit 1.5 h kein Bild. Bitte Stromversorgung und WLAN prüfen.</div>
+    <div class="bubble">🟢 <b>Nordseite ist wieder da</b>
+Die Kamera sendet wieder Bilder.</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Tagesbericht (DailyReportTriggered) — wie /report</div>
+    <div class="bubble">🌱 <b>Guten Morgen — dein Tagesbericht</b>
+<i>Mi, 18.06.</i>
+
+🚿 Gestern nicht gegossen
+🌧 3.6 mm gefallen (lokal gemessen) · heute trocken (8 %)
+🌡 14.1–27.3 °C, leicht bewölkt
+
+🟢 Alles im grünen Bereich</div>
+  </div>
+
+</div>
+
+<!-- ============ 4 · FEHLER & HINWEISE ============ -->
+<h2 class="section">Zielbild 4 · Fehler &amp; Hinweise <span class="reg-pill dry">sachlich</span></h2>
+<div class="grid">
+
+  <div class="phone">
+    <div class="cap">Hinweise</div>
     <div class="bubble">🤔 <b>Das kenne ich nicht</b>
 Nimm die Buttons unten oder <code>/status</code> für die Übersicht.</div>
     <div class="bubble">💤 Gerade läuft kein Guss — nichts zu stoppen.</div>
+    <div class="bubble">⏳ Es läuft bereits eine Ventil-Kopplung. Einen Moment noch.</div>
+    <div class="bubble">📷 Es sind noch keine Kameras gekoppelt.</div>
   </div>
 
   <div class="phone">
-    <div class="cap">Hauptmenü — Buttons ohne Ampelfarben</div>
-    <div class="kbd-row">
-      <div class="kbd-key">📊 Status anzeigen</div>
-      <div class="kbd-key">📅 Zeitpläne</div>
-    </div>
-    <div class="kbd-row">
-      <div class="kbd-key" style="background:#2a3f2d">🚿 Bewässern starten</div>
-      <div class="kbd-key" style="background:#3d2a2a">🛑 Sofort Stopp</div>
-    </div>
-    <div class="kbd-row">
-      <div class="kbd-key">📸 Foto anzeigen</div>
-      <div class="kbd-key">⚙️ Setup</div>
-    </div>
-    <div class="note">🚿 = Guss (Button &amp; Text), 🛑 = Stopp. 🟢/🟡/🔴 bleiben dem Status vorbehalten.</div>
+    <div class="cap">Eingabe-Validierung</div>
+    <div class="bubble">Der Name darf nicht leer sein — bitte gib einen ein:</div>
+    <div class="bubble">Ungültiger Name. Erlaubt: a–z, A–Z, 0–9, „-", „_" (max. 32 Zeichen). Bitte nochmal:</div>
+    <div class="bubble">Bitte eine Zahl zwischen 1 und 25 Minuten:</div>
+    <div class="bubble">Bitte eine Zahl größer als 0 Liter:</div>
+    <div class="bubble">Bitte eine Zahl zwischen 1 und 1440:</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Format- &amp; Ablauf-Fehler</div>
+    <div class="bubble">❌ <b>Ungültiges Format</b>
+So geht's: <code>/add Name, HH:MM, Tage, Dauer, [Menge]</code>
+z. B. <code>/add Abend, 20:00, Mon,Wed,Fri, 12, 30</code>
+Tage: <code>everyday</code> oder <code>Mon,Tue,…</code></div>
+    <div class="bubble">❌ <b>Ungültiges Format</b>
+So geht's: <code>/delete &lt;ID&gt;</code> (z. B. <code>/delete 2</code>)</div>
+    <div class="bubble">Es läuft bereits eine Bewässerung.</div>
+    <div class="bubble">Das überschreitet das Sicherheitslimit (30 Min).</div>
+    <div class="bubble">Zeitplan ID 5 gibt's nicht.</div>
   </div>
 
 </div>

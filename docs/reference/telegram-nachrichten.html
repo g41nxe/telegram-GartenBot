@@ -170,6 +170,126 @@ Ich bin Ihr lokaler Assistent. Nutzen Sie die Buttons unten oder die Chat-Befehl
 <div class="grid">
 
   <div class="phone">
+    <div class="cap">handle_setup_menu() · „⚙️ Setup"</div>
+    <div class="bubble">⚙️ <b>Setup</b>
+
+Was möchtest du einrichten?</div>
+    <div class="btnrow"><span class="btn">🔧 Ventil koppeln</span><span class="btn">📷 Kamera koppeln</span></div>
+    <div class="btnrow"><span class="btn">⏱ Kamera-Einstellungen</span></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Zeitplan-Assistent — alle 6 Schritte (wiz_*)</div>
+    <div class="bubble">🆕 <b>Neuen Zeitplan anlegen (Schritt 1/6)</b>
+
+Bitte gib einen <b>Namen</b> für den Zeitplan ein (z. B. <i>Rasen morgens</i> oder <i>Hochbeet</i>):</div>
+    <div class="bubble">🆕 <b>Neuen Zeitplan 'Rasen morgens' (Schritt 2/6)</b>
+
+Zu welcher <b>Stunde</b> soll die Bewässerung starten?</div>
+    <div class="note">6×4-Raster 00–23 + „❌ Abbrechen"</div>
+    <div class="bubble">🆕 <b>Neuen Zeitplan 'Rasen morgens' um 06:?? (Schritt 3/6)</b>
+
+Zu welcher <b>Minute</b> soll die Bewässerung starten?</div>
+    <div class="note">Minuten in 5er-Schritten</div>
+    <div class="bubble">🆕 <b>Neuen Zeitplan 'Rasen morgens' um 06:00 (Schritt 4/6)</b>
+
+Wie lange soll <b>maximal</b> bewässert werden? (Zeitlimit)
+
+<i>Aus Sicherheitsgründen max. 25 Min.</i></div>
+    <div class="bubble">🆕 <b>Neuen Zeitplan 'Rasen morgens' um 06:00 (Schritt 5/6)</b>
+
+Wie viel Wasser soll <b>maximal</b> fließen? (Volumenlimit)
+
+<i>Ausgewählte Dauer: 12 Min.</i></div>
+    <div class="bubble">🆕 <b>Neuen Zeitplan 'Rasen morgens' um 06:00 (Schritt 6/6)</b>
+
+Wähle die <b>Wochentage</b> aus, an denen bewässert werden soll:
+
+<i>Ausgewählt: Mo, Mi, Fr</i></div>
+    <div class="btnrow"><span class="btn">✅ Mo</span><span class="btn">Di</span><span class="btn">✅ Mi</span><span class="btn">Do</span></div>
+    <div class="btnrow"><span class="btn">✅ Fr</span><span class="btn">Sa</span><span class="btn">So</span><span class="btn">Täglich</span></div>
+    <div class="btnrow"><span class="btn">❌ Abbrechen</span><span class="btn">✅ Weiter</span></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Kamera-Assistent — Schritte (camsetup_*)</div>
+    <div class="bubble">📷 <b>Neue Kamera koppeln</b>
+
+Wie soll diese Kamera heißen?
+<i>(Erlaubte Zeichen: a-z, A-Z, 0-9, Bindestrich, Unterstrich. Max 32 Zeichen)</i>
+
+Bitte tippe den Namen ein:</div>
+    <div class="bubble">⏱ <b>Wie oft soll die Kamera ein Bild senden?</b>
+
+Bitte gib das Intervall in Minuten ein <i>(z.B. 15 für alle 15 Minuten)</i>:</div>
+    <div class="bubble">🖼 <b>Welche Auflösung soll die Kamera verwenden?</b>
+
+Höhere Auflösung = schärfere Bilder, größere Dateien.</div>
+    <div class="btnrow"><span class="btn">🏔 Hoch (1600×1200)</span><span class="btn">⚡ Mittel (1024×768)</span></div>
+    <div class="btnrow"><span class="btn">💨 Niedrig (640×480)</span><span class="btn">❌ Abbrechen</span></div>
+    <div class="bubble">🎨 <b>Welche Bildqualität soll die Kamera verwenden?</b>
+
+Gewählte Auflösung: 🏔 Hoch (1600×1200)
+
+Höhere Qualität = schärfere Bilder, größere Dateien.</div>
+    <div class="btnrow"><span class="btn">🌟 Hoch</span><span class="btn">⚡ Mittel</span><span class="btn">💨 Niedrig</span></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Lösch-Bestätigung (sched_delete_ask_* → Reply-Keyboard)</div>
+    <div class="bubble">🗑️ <b>Zeitplan löschen</b>
+
+Möchtest du den Zeitplan <b>'Hochbeet abends'</b> wirklich löschen?
+
+Diese Aktion kann nicht rückgängig gemacht werden.</div>
+    <div class="btnrow"><span class="btn">✅ Ja, löschen</span><span class="btn">❌ Nein, abbrechen</span></div>
+    <div class="bubble" style="margin-top:6px">🗑️ Zeitplan <b>'Hochbeet abends'</b> wurde gelöscht.</div>
+    <div class="note">Bei Abbruch: <code>❌ Löschvorgang abgebrochen.</code></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Ventil-Kopplung — Verlauf (valve_pairing.py)</div>
+    <div class="bubble">⏳ Noch kein Ventil erkannt.
+
+Bitte Reset-Knopf am Sonoff Hydro ONE <b>5 Sekunden</b> gedrückt halten, bis die LED schnell blinkt.
+
+<i>Noch 45 Sekunden verbleibend...</i></div>
+    <div class="bubble">✅ <b>Ventil-Kopplung erfolgreich!</b>
+
+Das Ventil <b>'Terrasse'</b> wurde erkannt und als <code>valve_a1b2</code> registriert.
+Der Koppelmodus wurde automatisch deaktiviert.
+
+Sende /status um den Verbindungsstatus zu prüfen.</div>
+    <div class="bubble">❌ <b>Ventil-Kopplung fehlgeschlagen.</b>
+
+Kein Ventil erkannt nach 90 Sekunden. Koppelmodus wurde automatisch deaktiviert.
+
+Erneut versuchen: <code>/setup</code></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Kamera-Kopplung — Ergebnis (camera_pairing.py)</div>
+    <div class="bubble">✅ <b>Kamera-Kopplung erfolgreich!</b>
+
+Die Kamera <b>'Nordseite'</b> (MAC: <code>A4:CF:12:…</code>) wurde registriert.
+Sendeintervall: 15 Minuten
+Der Koppelmodus wurde automatisch deaktiviert.</div>
+    <div class="bubble">❌ <b>Kamera-Kopplung fehlgeschlagen.</b>
+
+Keine Kamera hat sich innerhalb von 90 Sekunden gemeldet. Koppelmodus wurde automatisch deaktiviert.
+
+Erneut versuchen: <code>/camera_setup</code></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">OTA — Verlaufsmeldungen (update_confirm / update_cancel)</div>
+    <div class="bubble">⏳ Update gestartet. Bitte 1–5 Minuten warten, dann <code>/status</code> prüfen.</div>
+    <div class="bubble">✅ Bereits aktuell (v1.2.1). Kein Update verfügbar.</div>
+    <div class="bubble">❌ Update abgebrochen.</div>
+  </div>
+
+
+  <div class="phone">
     <div class="src">Manuelle Bewässerung · „🟢 Bewässern starten"</div>
     <div class="bubble">🟢 <b>Manuelle Bewässerung starten (Schritt 1/2)</b>
 
@@ -350,7 +470,30 @@ Verwenden Sie die Buttons oder <code>/status</code> für eine Übersicht.</div>
     <div class="bubble">ℹ️ Kein aktiver Bewässerungszyklus gefunden.</div>
     <div class="bubble">⏳ Eine Ventil-Kopplung läuft bereits im Hintergrund. Bitte warten.</div>
     <div class="bubble">❌ Es sind keine Kameras gekoppelt.</div>
-    <div class="note">Dazu diverse <code>❌ Ungültiges Format …</code>-Meldungen bei <code>/add</code>, <code>/delete</code>, <code>/toggle</code>, <code>/camera_interval</code>.</div>
+    <div class="note">Adressiert teils mit „Sie" (Altbestand) — im SOLL durchgängig „du".</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Eingabe-Validierung (Assistenten)</div>
+    <div class="bubble">❌ Der Name darf nicht leer sein. Bitte gib einen Namen ein:</div>
+    <div class="bubble">❌ Ungültiger Name. Erlaubt: a-z, A-Z, 0-9, -, _ (Max 32 Zeichen). Bitte erneut eingeben:</div>
+    <div class="bubble">❌ <b>Ungültige Eingabe.</b> Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:</div>
+    <div class="bubble">❌ <b>Ungültige Eingabe.</b> Bitte gib eine Zahl größer als 0 Liter ein:</div>
+    <div class="bubble">❌ Ungültige Eingabe. Bitte eine Zahl zwischen 1 und 1440 eingeben:</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Format- &amp; Ablauf-Fehler</div>
+    <div class="bubble">❌ <b>Ungültiges Format.</b>
+
+Nutzen Sie folgendes Format:
+<code>/add Name, HH:MM, Tage, Dauer, [Menge_Liter]</code> (z.B. <code>/add Abend, 20:00, Mon,Wed,Fri, 12, 30</code>)
+
+Tage: <code>everyday</code> oder kommagetrennt: <code>Mon,Tue,Wed,Thu,Fri,Sat,Sun</code>.</div>
+    <div class="bubble">❌ <b>Ungültiges Format.</b> Nutzen Sie: <code>/delete &lt;ID&gt;</code> (z.B. <code>/delete 2</code>)</div>
+    <div class="bubble">❌ Fehler beim Starten: Es läuft bereits eine Bewässerung.</div>
+    <div class="bubble">❌ Fehler beim Starten: Zeitlimit überschreitet das Sicherheitslimit (30 Min).</div>
+    <div class="bubble">❌ Zeitplan ID 5 nicht gefunden.</div>
   </div>
 </div>
 

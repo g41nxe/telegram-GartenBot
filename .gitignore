@@ -134,3 +134,5 @@ data/camera/*
 !data/camera/.gitkeep
 
 # End of file
+# Brainstorming-Begleitserver (ephemer)
+.superpowers/

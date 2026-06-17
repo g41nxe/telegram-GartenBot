@@ -129,4 +129,3 @@ Szenarien:
 
 - ADR-0021 dokumentiert, warum die Bewertungslogik in `core/` und nicht im Handler lebt.
 - ADR-0022 dokumentiert, warum die Hitzestrecke datums-aware und nicht list-index-basiert berechnet wird.
-- Der Design-Spec liegt unter `docs/superpowers/specs/2026-06-14-giesscheck-design.md` und enthält die vollständige Verdict-Matrix, Begründungszeilen-Beispiele und die Herleitung der Standardwerte.
