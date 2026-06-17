@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Telegram Design-System (SOLL) — GartenBot</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", system-ui, sans-serif; background:#f1f3f5; color:#1a1a1a; margin:0; padding:32px 16px; line-height:1.5; }
+  .page { max-width:1100px; margin:0 auto; }
+  h1 { font-size:24px; margin:0 0 4px; }
+  .meta { color:#64748b; font-size:13px; }
+  .meta code { background:#e2e8f0; padding:1px 5px; border-radius:4px; font-size:12px; }
+  .banner { background:#ecfdf5; border:1px solid #6ee7b7; border-radius:8px; padding:10px 14px; margin:14px 0 28px; font-size:13px; color:#065f46; }
+  .banner a { color:#047857; font-weight:600; }
+  h2.section { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#475569; margin:36px 0 14px; padding-bottom:6px; border-bottom:2px solid #cbd5e1; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; }
+  .card { background:#fff; border:1px solid #e2e8f0; border-radius:10px; padding:12px 14px; font-size:12.5px; color:#334155; }
+  .card h4 { margin:0 0 6px; font-size:12px; color:#0f172a; }
+  .card .rule { color:#16a34a; font-weight:600; }
+  .card code { background:#f1f5f9; padding:1px 5px; border-radius:4px; font-size:11.5px; color:#0369a1; }
+  .card .x { color:#991b1b; }
+  table.reg { width:100%; border-collapse:collapse; font-size:12.5px; background:#fff; border:1px solid #e2e8f0; border-radius:10px; overflow:hidden; }
+  table.reg th { background:#f1f5f9; text-align:left; padding:8px 12px; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#475569; }
+  table.reg td { padding:8px 12px; border-top:1px solid #eef2f6; vertical-align:top; }
+  table.reg td:first-child { font-weight:700; white-space:nowrap; }
+  .legend { display:flex; flex-wrap:wrap; gap:6px 14px; }
+  .legend span { font-size:12.5px; color:#334155; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:16px; align-items:start; }
+  .phone { background:#0e1621; border-radius:14px; padding:14px 12px; }
+  .cap { font-size:11px; color:#6b7d92; font-family:ui-monospace,monospace; margin-bottom:8px; }
+  .reg-pill { font-size:10px; font-weight:700; padding:1px 6px; border-radius:5px; letter-spacing:.03em; }
+  .reg-pill.play { background:#dcfce7; color:#166534; }
+  .reg-pill.neutral { background:#e0f2fe; color:#075985; }
+  .reg-pill.dry { background:#fee2e2; color:#991b1b; }
+  .bubble { background:#182533; color:#e9edf2; border-radius:12px; border-top-left-radius:4px; padding:9px 12px; font-size:13px; line-height:1.55; white-space:pre-wrap; word-wrap:break-word; margin-bottom:8px; }
+  .bubble.me { background:#2b5278; border-top-left-radius:12px; border-top-right-radius:4px; margin-left:auto; color:#fff; }
+  .bubble b { color:#fff; font-weight:700; } .bubble i { color:#aebfd0; font-style:italic; }
+  .bubble code { background:#0e1621; padding:1px 5px; border-radius:4px; font-size:12px; color:#8fd6ff; }
+  .kbd-row { display:flex; gap:8px; margin-bottom:8px; }
+  .kbd-key { flex:1; background:#212d3b; color:#e9edf2; border-radius:9px; padding:11px 8px; text-align:center; font-size:13px; }
+  .note { font-size:11px; color:#6b7d92; margin:3px 0 0; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>Telegram Design-System <span style="color:#16a34a">(SOLL)</span></h1>
+<div class="meta">Stand: 2026-06-17 · Verbindliche Regeln &amp; Zielbild · Grundlage: <code>docs/adr/0029-telegram-design-system.md</code></div>
+<div class="banner">
+  Dieses Dokument beschreibt das <b>Zielbild (SOLL)</b>. Der heutige Stand der einzelnen Nachrichten liegt getrennt davon in
+  <a href="telegram-nachrichten.html">telegram-nachrichten.html (IST)</a>. Pflegepflicht: <code>.claude/rules/telegram_messages.md</code>.
+</div>
+
+<!-- ============ PRINZIPIEN ============ -->
+<h2 class="section">Prinzipien &amp; Tokens</h2>
+<div class="cards">
+  <div class="card">
+    <h4>🗣 Anrede &amp; Ton</h4>
+    Durchgängig <span class="rule">„du"</span>. Verspielt mit Garten-Thema bei positiven/neutralen Nachrichten — <span class="rule">sachlich-klar bei Fehlern &amp; Warnungen.</span> <span class="x">Keine Vermenschlichung</span> („satt getrunken").
+  </div>
+  <div class="card">
+    <h4>🔠 Markdown (Legacy)</h4>
+    Fett <code>*einfach*</code>, Kursiv <code>_unterstrich_</code>, Mono <code>`backtick`</code>.<br>
+    <span class="x">Nie</span> <code>**doppelt**</code> (kein gültiges Legacy-Markdown). Escapen: <code>_ * ` [</code>.
+  </div>
+  <div class="card">
+    <h4>🏷 Überschrift</h4>
+    Genau ein Format: <code>*🌱 Titel*</code> — ein Emoji, fett, <span class="rule">kein Doppelpunkt</span>. Schluss-„!" nur im verspielten Register.
+  </div>
+  <div class="card">
+    <h4>📐 Einheiten</h4>
+    <span class="rule">Leerzeichen vor der Einheit:</span><br>
+    <code>22.4 °C</code> · <code>1.4 mm</code> · <code>25 l</code> · <code>87 %</code><br>
+    Dezimal-Punkt bleibt (kein Komma).
+  </div>
+  <div class="card">
+    <h4>🕐 Datum &amp; Zeit</h4>
+    <span class="rule">Nie Sekunden. Immer „Uhr". Relativ in Klammern.</span><br>
+    <code>14:24 Uhr</code> · <code>17.06. um 14:24 Uhr</code> · <code>(vor 8 Min)</code>
+  </div>
+  <div class="card">
+    <h4>• Listen</h4>
+    Ein Stil, kompakt mit <code>·</code> gebündelt:<br>
+    <code>🔋 voll · 📶 gut · 🟢 aktiv</code><br>
+    Statt mehrerer Einrückungs-/Bullet-Stile.
+  </div>
+</div>
+
+<!-- ============ EMOJI ============ -->
+<h2 class="section">Emoji-Semantik (je ein Sinn im Nachrichtentext)</h2>
+<div class="card" style="margin-bottom:6px">
+  <div class="legend">
+    <span>🟢 ok / aktiv</span><span>🟡 Achtung</span><span>🔴 aus / Fehler</span><span>⚠️ Alarm</span>
+    <span>🌧 Regen</span><span>🌡 Temperatur</span><span>💧 Wassermenge</span><span>🔋 Batterie</span>
+    <span>🚿 Guss</span><span>📡 Ventil</span><span>📷 Kamera</span><span>📅 Zeitplan</span>
+  </div>
+  <div class="note" style="margin-top:8px">Regen-Skip nutzt 🌧 (nicht 🌤️). Ampelfarben 🟢/🟡/🔴 sind dem Gesundheits-Status vorbehalten — Buttons nutzen daher 🚿 / 🛑.</div>
+</div>
+
+<!-- ============ TON-REGISTER ============ -->
+<h2 class="section">Ton-Register</h2>
+<table class="reg">
+  <thead><tr><th>Register</th><th>Stil</th><th>Gilt für</th></tr></thead>
+  <tbody>
+    <tr><td><span class="reg-pill play">Verspielt</span></td><td>Garten-Energie, darf ein „!" tragen</td><td>Guss gestartet/fertig, Regen-Skip, Tagesbericht-Einstieg, Zeitplan gespeichert, Foto</td></tr>
+    <tr><td><span class="reg-pill neutral">Neutral-freundlich</span></td><td>klar &amp; „du", kein „!"</td><td>/status (außer Headline), Zeitplan-Liste, Assistenten-Schritte, Setup</td></tr>
+    <tr><td><span class="reg-pill dry">Sachlich-klar</span></td><td>kein Wortwitz, Problem + Handlungsanweisung</td><td>Watchdog-Alarme, Notfall-Abschaltung, Zeitplan-Fehler, Dienst-Störung, Eingabefehler</td></tr>
+  </tbody>
+</table>
+
+<!-- ============ GARTEN-AMPEL ============ -->
+<h2 class="section">Garten-Ampel (3-Stufen-Gesundheitsmodell)</h2>
+<table class="reg">
+  <thead><tr><th>Stufe</th><th>Headline</th><th>Auslöser</th></tr></thead>
+  <tbody>
+    <tr><td>🟢 grün</td><td>„Alles im grünen Bereich"</td><td>Alle Geräte aktiv, Batterien über <code>BATTERY_WARNING_THRESHOLD</code>, Dienste online, keine Anomalie</td></tr>
+    <tr><td>🟡 gelb</td><td>„N Gerät(e) brauchen Aufmerksamkeit"</td><td>Batterie ≤ Schwelle <b>oder</b> Signal kritisch (LQI &lt; 60), Gerät meldet aber noch</td></tr>
+    <tr><td>🔴 rot</td><td>„Es gibt ein Problem"</td><td>Broker/Mittelweg-Dienst offline, aktiver Watchdog-Alarm, oder Ventil-Anomalie</td></tr>
+  </tbody>
+</table>
+<div class="note">Headline = schlimmste aktive Stufe. Progressive Disclosure: technische Details (LQI-Zahl, Geräte-ID, exakte Zeitstempel) nur für nicht-grüne Geräte.</div>
+
+<!-- ============ ZIELBILD-BEISPIELE ============ -->
+<h2 class="section">Zielbild — Beispiele</h2>
+
+<div class="grid">
+
+  <div class="phone">
+    <div class="cap">/status — Normalfall <span class="reg-pill neutral">neutral</span></div>
+    <div class="bubble">🌱 <b>Dein Garten auf einen Blick</b>
+<i>Mi, 17.06. · 14:32 Uhr</i>
+
+🟢 Alles im grünen Bereich — Dienste online
+
+📡 <b>Ventile</b>
+    Terrasse · 🟢 aktiv · 🔋 voll · 📶 gut
+    Hochbeet · 🟢 aktiv · 🔋 voll · 📶 gut
+📷 <b>Kameras</b>
+    Nordseite · 🟢 14:15 Uhr
+
+🌧 <b>Regen</b>  1.4 mm · 🌡 21.8 °C · 🔋 92 %
+🌡 <b>Wetter</b>  leicht bewölkt, 22.4 °C · 💧 0 mm
+
+📜 <b>Zuletzt</b>  ✅ 06:00 Rasen (12 Min)
+<i>v1.2.1</i></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">/status — Problemfall (Garten-Ampel 🟡/🔴 + Disclosure)</div>
+    <div class="bubble">🌱 <b>Dein Garten auf einen Blick</b>
+<i>Mi, 17.06. · 14:32 Uhr</i>
+
+🔴 <b>Es gibt ein Problem</b>
+
+📡 <b>Ventile</b>
+    🔴 Terrasse — seit 26.2 h kein Signal
+       🔋 18 % · 📶 kritisch (48 LQI)
+       Letztes Signal: 16.06. um 12:18 Uhr
+       ID: garden_valve
+    Hochbeet · 🟢 aktiv · 🔋 voll · 📶 gut
+
+🌧 <b>Regen</b>  1.4 mm · 🌡 21.8 °C · 🔋 92 %
+
+📜 <b>Zuletzt</b>  ✅ 06:00 Rasen (12 Min)
+<i>v1.2.1</i></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Guss-Benachrichtigungen <span class="reg-pill play">verspielt</span></div>
+    <div class="bubble">🚿 <b>Wasser marsch!</b>
+<b>Terrasse</b> gießt jetzt · max. 15 Min / 25 l · manuell</div>
+    <div class="bubble">🏁 <b>Fertig — 25 l sind durch</b>
+<b>Terrasse</b> · 6 Min Laufzeit</div>
+    <div class="bubble">🌧 <b>Heute übernimmt der Regen</b>
+Guss <b>Rasen morgens</b> pausiert — 5.6 mm gefallen (Grenze: 2.0 mm).</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Warnungen &amp; Fehler <span class="reg-pill dry">sachlich</span></div>
+    <div class="bubble">⚠️ <b>Ventil „Terrasse" meldet sich nicht</b>
+Seit 24.5 h kein Signal. Bitte Batterie und Funkverbindung prüfen.</div>
+    <div class="bubble">🤔 <b>Das kenne ich nicht</b>
+Nimm die Buttons unten oder <code>/status</code> für die Übersicht.</div>
+    <div class="bubble">💤 Gerade läuft kein Guss — nichts zu stoppen.</div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Hauptmenü — Buttons ohne Ampelfarben</div>
+    <div class="kbd-row">
+      <div class="kbd-key">📊 Status anzeigen</div>
+      <div class="kbd-key">📅 Zeitpläne</div>
+    </div>
+    <div class="kbd-row">
+      <div class="kbd-key" style="background:#2a3f2d">🚿 Bewässern starten</div>
+      <div class="kbd-key" style="background:#3d2a2a">🛑 Sofort Stopp</div>
+    </div>
+    <div class="kbd-row">
+      <div class="kbd-key">📸 Foto anzeigen</div>
+      <div class="kbd-key">⚙️ Setup</div>
+    </div>
+    <div class="note">🚿 = Guss (Button &amp; Text), 🛑 = Stopp. 🟢/🟡/🔴 bleiben dem Status vorbehalten.</div>
+  </div>
+
+</div>
+
+</div>
+</body>
+</html>

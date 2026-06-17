@@ -1,10 +1,22 @@
-# Telegram-Nachrichten: Referenz pflegen
+# Telegram-Nachrichten: Design-System &amp; Referenz
 
-Die Datei [`docs/reference/telegram-nachrichten.html`](../../docs/reference/telegram-nachrichten.html) ist die zentrale, originalgetreue Referenz aller Nachrichten, die der Telegram-Bot versendet (Befehle, Assistenten, Ereignis-Benachrichtigungen, Fehlermeldungen). Sie dient der UI-Konsistenz und als Überblick beim Entwurf neuer Features.
+Zwei Dokumente in `docs/reference/` steuern die Telegram-Nachrichten:
 
-## Regel: Referenz synchron halten
+- [`telegram-design-system.html`](../../docs/reference/telegram-design-system.html) — **SOLL / verbindliche Regeln**: Anrede, Ton-Register, Markdown-Konvention, Einheiten-/Datumsformate, Emoji-Semantik, Garten-Ampel, Progressive Disclosure. Grundlage ist ADR 0029.
+- [`telegram-nachrichten.html`](../../docs/reference/telegram-nachrichten.html) — **IST-Stand**: originalgetreue Referenz aller heute versendeten Nachrichten.
 
-Wenn du eine benutzersichtbare Telegram-Nachricht **hinzufügst, änderst oder entfernst**, MUSST du die Referenz-Datei im selben Arbeitsschritt aktualisieren. Das betrifft insbesondere Änderungen in:
+## Regel: Design-System einhalten
+
+Jede neue oder geänderte benutzersichtbare Nachricht MUSS dem Design-System (`telegram-design-system.html` / ADR 0029) entsprechen — insbesondere:
+
+- Legacy-Markdown: Fett `*einfach*`, Kursiv `_unterstrich_`. **Nie** `**doppelt**`.
+- Anrede durchgängig „du"; korrektes Ton-Register je Nachrichtentyp (verspielt / neutral-freundlich / sachlich-klar).
+- Überschrift `*<Emoji> Titel*` (ein Emoji, kein Doppelpunkt); Einheiten mit Leerzeichen (`22.4 °C`); Zeiten ohne Sekunden mit „Uhr".
+- Emoji nach fester Semantik; Ampelfarben 🟢/🟡/🔴 nur für Gesundheits-Status.
+
+## Regel: IST-Referenz synchron halten
+
+Wenn du eine benutzersichtbare Telegram-Nachricht **hinzufügst, änderst oder entfernst**, MUSST du `telegram-nachrichten.html` im selben Arbeitsschritt aktualisieren. Das betrifft insbesondere Änderungen in:
 
 - `src/daemon/ui/telegram_ui.py` (Befehls-Handler, Assistenten-Texte, `_on_*`-Benachrichtigungs-Handler, Tastaturen)
 - `src/daemon/adapters/daily_report.py` (Tagesbericht-Bausteine)
