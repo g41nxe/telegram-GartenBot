@@ -106,6 +106,8 @@ Violations of these rules should be refactored before proceeding.
 
 **Offline simulation:** If `paho-mqtt` is not installed, `SimulatedMqttAdapter` is used instead — simulates a valve at 5 L/min. Tests force this path by setting `mqtt_client.HAS_PAHO = False` in `setUpClass`.
 
+**Telegram messages:** Every user-facing message the bot sends (commands, wizards, `_on_*` event notifications, daily report, errors) is catalogued faithfully in [`docs/reference/telegram-nachrichten.html`](docs/reference/telegram-nachrichten.html). When you add, change, or remove a message in `ui/telegram_ui.py` or `adapters/daily_report.py`, update that reference in the same change — see `.claude/rules/telegram_messages.md`.
+
 **Database migrations:** `database.init_db()` runs `ALTER TABLE` statements wrapped in `try/except OperationalError` to handle schema drift on existing deployments — no migration framework used.
 
 **Zigbee2MQTT vendoring:** `vendor/zigbee2mqtt/` holds a locally modified copy with `debounce` downgraded to `^1.2.1` (CommonJS compat for Node.js v20.11.1 on ARMv6). TypeScript is compiled on the Windows host via `deploy.ps1` (not on the Pi, which lacks RAM for `tsc`).
@@ -136,3 +138,5 @@ Before implementing any feature or refactor, read in order:
 3. `docs/adr/` — prior decisions (ADRs 0001–0013)
 
 ADR deviations must be flagged explicitly for review.
+
+If the feature touches the Telegram UI, also review [`docs/reference/telegram-nachrichten.html`](docs/reference/telegram-nachrichten.html) for existing message style, and keep it in sync per `.claude/rules/telegram_messages.md`.

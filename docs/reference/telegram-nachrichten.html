@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Referenz: Telegram-Nachrichten des GartenBots</title>
+<style>
+  :root {
+    --bg: #0e1621; --bubble: #182533; --bubble-me: #2b5278;
+    --txt: #e9edf2; --txt-dim: #aebfd0; --code-bg: #0e1621; --code-txt: #8fd6ff;
+    --btn-bg: #232e3c; --btn-txt: #6ab3f3; --label: #6b7d92;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: #f1f3f5; color: #1a1a1a; margin: 0; padding: 32px 16px;
+    line-height: 1.5;
+  }
+  .page { max-width: 1100px; margin: 0 auto; }
+  header.doc { margin-bottom: 8px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .meta { color: #64748b; font-size: 13px; margin-bottom: 4px; }
+  .meta code { background: #e2e8f0; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .legend { font-size: 12px; color: #64748b; background: #fff; border: 1px solid #e2e8f0;
+            border-radius: 8px; padding: 10px 14px; margin: 12px 0 28px; }
+  h2.section {
+    font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    color: #475569; margin: 36px 0 14px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 18px; align-items: start; }
+  .phone { background: var(--bg); border-radius: 14px; padding: 14px 12px; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+  .src { font-size: 11px; color: var(--label); font-family: ui-monospace, "Cascadia Code", monospace;
+         margin-bottom: 8px; word-break: break-word; }
+  .note { font-size: 11px; color: var(--label); margin: 2px 0 8px; }
+  .bubble {
+    background: var(--bubble); color: var(--txt); border-radius: 12px; border-top-left-radius: 4px;
+    padding: 9px 12px; font-size: 13px; white-space: pre-wrap; max-width: 96%;
+    margin-bottom: 8px; word-wrap: break-word;
+  }
+  .bubble.me { background: var(--bubble-me); border-top-left-radius: 12px; border-top-right-radius: 4px;
+               margin-left: auto; color: #fff; }
+  .bubble b { color: #fff; font-weight: 700; }
+  .bubble i { color: var(--txt-dim); font-style: italic; }
+  .bubble code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; color: var(--code-txt); }
+  .btnrow { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+  .btn { background: var(--btn-bg); color: var(--btn-txt); border-radius: 8px; padding: 7px 10px;
+         font-size: 12px; flex: 1; text-align: center; min-width: 56px; }
+  .btn.narrow { flex: 0; min-width: 38px; }
+  .kbd { background: #18222d; color: #c5d3e0; border-radius: 7px; padding: 8px; font-size: 12px;
+         text-align: center; margin-top: 4px; }
+  .photo-ph { height: 90px; background: linear-gradient(135deg,#3a5a3a,#6b8e4e);
+              display: flex; align-items: center; justify-content: center; color: #cde8b5; font-size: 12px; }
+  ul.variants { font-size: 12px; color: #cbd5e1; background: #18222d; border-radius: 8px;
+                padding: 8px 12px 8px 28px; margin: 4px 0 0; }
+  ul.variants code { background: var(--code-bg); padding: 1px 4px; border-radius: 3px; color: var(--code-txt); }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="doc">
+  <h1>Referenz: Telegram-Nachrichten des GartenBots</h1>
+  <div class="meta">Stand: 2026-06-17 · Originalgetreu nach aktueller Implementation (kein Entwurf).</div>
+  <div class="meta">Quellen: <code>src/daemon/ui/telegram_ui.py</code> · <code>src/daemon/adapters/daily_report.py</code></div>
+  <div class="legend">
+    Beispieldaten sind in die echten Textvorlagen eingesetzt. Telegram stellt <b>**Text**</b>/<b>*Text*</b> fett dar,
+    <i>_Text_</i> kursiv, <code>`Text`</code> als Monospace. Eigene Nachrichten (Nutzer-Eingaben) sind blau und rechtsbündig.
+  </div>
+</header>
+
+<!-- ============ BEFEHLE & MENÜS ============ -->
+<h2 class="section">1 · Befehle &amp; Menüs</h2>
+<div class="grid">
+
+  <div class="phone">
+    <div class="src">handle_status() · /status · „📊 Status anzeigen"</div>
+    <div class="bubble">📊 <b>System-Status Gartenbewässerung</b>
+
+🔌 <b>System-Dienste:</b> 🟢 Aktiv
+
+⚡ <b>Laufender Zyklus:</b>
+   - Gestartet: MANUAL
+   - Restzeit: 8 Min (12 Sek)
+
+📡 <b>Terrasse</b> (<code>garden_valve</code>):
+   - Verbindung: 🟢 Aktiv (Letztes Signal: 17.06. 14:32:10 Uhr)
+   - Batterie: 🔋 Voll
+   - Signalqualität: 🟢 Gut (145 LQI)
+
+📷 <b>Hochbeet:</b>
+   - Verbindung: 🟢 Aktiv (Letztes Bild: 17.06. 14:15)
+   - Auflösung: UXGA · Qualität: 🌟 Hoch
+   - Intervall: 15 Min
+
+🌤️ <b>Wetter:</b>
+   🌡 <b>Jetzt</b>  Leicht bewölkt · 22.4°C · 💧 0.0mm
+   🔜 <b>15:00</b>  Bedeckt · 22.1°C · 0.2mm · 15%
+   <i>(Stand: 14:30 Uhr)</i>
+
+📜 <b>Letzte Zyklen:</b>
+✅ 17.06. 06:00 (12 Min, schedule)
+🌤️ 16.06. 06:00 (0 Min, schedule)
+✅ 15.06. 20:15 (15 Min, manual)
+
+🔧 <b>Version:</b> <code>v1.2.1</code></div>
+    <ul class="variants">
+      <li>Dienste: <code>🟢 Aktiv</code> / <code>🔴 Inaktiv (MQTT-Broker …)</code> / <code>🔴 Inaktiv (Mittelweg-Dienst offline)</code> / <code>⚡ Simulationsmodus</code></li>
+      <li>Batterie: <code>🔋 Voll</code> / <code>🔋 Mittel (45%)</code> / <code>🪫 Schwach (15%)</code> / <code>🪫 Unbekannt</code></li>
+      <li>Signal: <code>🟢 Sehr gut</code> / <code>🟢 Gut</code> / <code>🟡 Ausreichend</code> / <code>🔴 Kritisch</code> / <code>🔴 Keine Verbindung</code></li>
+      <li>Zyklen: <code>✅</code> completed · <code>🌤️</code> skipped · <code>❌</code> sonst</li>
+      <li>„Laufender Zyklus" nur bei aktivem Guss; Ventil-/Kamera-Block je Gerät wiederholt.</li>
+    </ul>
+  </div>
+
+  <div class="phone">
+    <div class="src">/report · /statusbericht — Wetter-Chart-Foto, dann Bericht</div>
+    <div class="bubble" style="padding:0; overflow:hidden">
+      <div class="photo-ph">📈 [ Wetter-Chart QuickChart.io ]</div>
+      <div style="padding:8px 12px">🌦 Wettervorhersage &amp; Niederschlag (nächste 24h)</div>
+    </div>
+    <div class="note">Danach folgt derselbe Text wie der automatische Tagesbericht → Abschnitt 3.</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">handle_schedules() · /zeitplan · „📅 Zeitpläne"</div>
+    <div class="bubble">📅 <b>Aktuelle Zeitsteuerung (Zeitpläne):</b>
+
+🆔 <b>ID 1: Rasen morgens</b>
+   - ⏰ Startzeit: 06:00 Uhr
+   - 📅 Tage: Täglich
+   - ⏳ Dauer: 12 Min
+   - 💧 Menge: 30 Liter
+   - Status: ✅ Aktiv
+
+🆔 <b>ID 2: Hochbeet abends</b>
+   - ⏰ Startzeit: 20:15 Uhr
+   - 📅 Tage: Mo, Mi, Fr
+   - ⏳ Dauer: 15 Min
+   - 💧 Menge: 50 Liter
+   - Status: ❌ Inaktiv</div>
+    <div class="btnrow"><span class="btn">🟢 Rasen morgens (06:00)</span><span class="btn narrow">🗑️</span></div>
+    <div class="btnrow"><span class="btn">🔴 Hochbeet abends (20:15)</span><span class="btn narrow">🗑️</span></div>
+    <div class="btnrow"><span class="btn">➕ Neuer Zeitplan</span></div>
+    <div class="note">Leerzustand zeigt stattdessen Anleitung zum <code>/add</code>-Befehl + Button „➕ Neuer Zeitplan".</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">/start</div>
+    <div class="bubble">👋 <b>Willkommen bei der Gartenbewässerung-Steuerung!</b>
+
+Ich bin Ihr lokaler Assistent. Nutzen Sie die Buttons unten oder die Chat-Befehle <code>/status</code> und <code>/zeitplan</code>, um Ihr System zu steuern.</div>
+    <div class="kbd">📊 Status anzeigen &nbsp;|&nbsp; 📅 Zeitpläne<br>🟢 Bewässern starten &nbsp;|&nbsp; 🔴 Sofort Stopp<br>📸 Foto anzeigen &nbsp;|&nbsp; ⚙️ Setup</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">_send_latest_photo() · „📸 Foto anzeigen"</div>
+    <div class="bubble" style="padding:0; overflow:hidden">
+      <div class="photo-ph">🌱 [ Garten-Foto ]</div>
+      <div style="padding:8px 12px">📸 'Hochbeet' — 17.06.2026 14:15 Uhr</div>
+    </div>
+    <div class="note">Fehlerfall: <code>❌ Kein Foto für Kamera 'Hochbeet' gefunden.</code> · bei mehreren Kameras erst Auswahl-Keyboard.</div>
+  </div>
+
+</div>
+
+<!-- ============ ASSISTENTEN ============ -->
+<h2 class="section">2 · Assistenten (Wizards)</h2>
+<div class="grid">
+
+  <div class="phone">
+    <div class="src">Manuelle Bewässerung · „🟢 Bewässern starten"</div>
+    <div class="bubble">🟢 <b>Manuelle Bewässerung starten (Schritt 1/2)</b>
+
+Wie lange soll <b>maximal</b> bewässert werden? (Zeitlimit)
+
+<i>Aus Sicherheitsgründen max. 25 Min.</i></div>
+    <div class="btnrow"><span class="btn">⏱️ 5 Min</span><span class="btn">⏱️ 10 Min</span></div>
+    <div class="btnrow"><span class="btn">⏱️ 15 Min</span><span class="btn">⏱️ 20 Min</span></div>
+    <div class="btnrow"><span class="btn">⏱️ 25 Min</span><span class="btn">✏️ Eigene Dauer</span></div>
+    <div class="bubble" style="margin-top:8px">🟢 <b>Manuelle Bewässerung starten (Schritt 2/2)</b>
+
+Wie viel Wasser soll <b>maximal</b> fließen? (Volumenlimit)
+
+<i>Ausgewählte Dauer: 15 Min.</i></div>
+    <div class="btnrow"><span class="btn">🌱 10 L</span><span class="btn">🥬 25 L</span></div>
+    <div class="btnrow"><span class="btn">🍅 50 L</span><span class="btn">🥦 80 L</span></div>
+    <div class="bubble me" style="margin-top:8px">🟢 <b>Befehl gesendet:</b> Bewässerung gestartet (15 Min / 25l).</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">Zeitplan-Assistent · „➕ Neuer Zeitplan" (6 Schritte)</div>
+    <div class="note">Name → Stunde → Minute → Dauer → Volumen → Wochentage, danach:</div>
+    <div class="bubble">📝 <b>Zusammenfassung &amp; Bestätigung</b>
+
+Bitte überprüfe die Angaben für den neuen Zeitplan:
+
+• <b>Name:</b> Rasen morgens
+• <b>Startzeit:</b> 06:00 Uhr
+• <b>Dauer:</b> 12 Min
+• <b>Wassermenge:</b> 30 Liter
+• <b>Tage:</b> Täglich
+
+Soll dieser Zeitplan gespeichert werden?</div>
+    <div class="btnrow"><span class="btn">❌ Abbrechen</span><span class="btn">✅ Speichern</span></div>
+    <div class="bubble" style="margin-top:8px">📅 <b>Zeitplan 'Rasen morgens'</b> erfolgreich angelegt!</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">Ventil-Kopplung · /setup · „🔧 Ventil koppeln"</div>
+    <div class="bubble">🔧 <b>Neues Ventil koppeln</b>
+
+Wie soll dieses Ventil heißen?
+<i>(z.B. "Terrasse", "Rasen", "Hochbeet")</i>
+
+Bitte tippe den Namen ein:</div>
+    <div class="bubble me">Terrasse</div>
+    <div class="bubble">🔧 <b>Ventil-Kopplung gestartet</b> - "Terrasse"
+
+Bitte drücke jetzt den <b>Reset-Knopf</b> am Sonoff Hydro ONE für <b>5 Sekunden</b>, bis die LED schnell blinkt.
+
+⏱️ Das System wartet bis zu 90 Sekunden auf das Ventil.</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">Kamera-Kopplung · „📷 Kamera koppeln" (4 Schritte)</div>
+    <div class="note">Name → Intervall → Auflösung → Qualität, Abschluss:</div>
+    <div class="bubble">🔧 <b>Kamera-Kopplung gestartet</b> — "Hochbeet"
+Intervall: 15 Min · Auflösung: UXGA · Qualität: high
+
+Bitte schalte die Kamera jetzt ein oder drücke Reset.
+⏱️ Das System wartet bis zu 90 Sekunden.</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">handle_update() · /update — Software-Update (OTA)</div>
+    <div class="bubble">🔄 <b>Software-Update verfügbar</b>
+
+Installiert: <code>v1.2.1</code>
+Verfügbar:   <code>v1.3.0</code>
+
+📋 <b>Was ist neu:</b>
+- Regensensor-Integration
+- Fehlerbehebungen im Tagesbericht
+
+Soll das Update jetzt installiert werden?
+<i>(Dauer: ca. 1–5 Minuten. Der Daemon startet neu.)</i></div>
+    <div class="btnrow"><span class="btn">✓ Jetzt installieren</span><span class="btn">✗ Abbrechen</span></div>
+    <div class="note">Bereits aktuell: <code>✅ Bereits aktuell (v1.2.1). Kein Update verfügbar.</code></div>
+  </div>
+
+</div>
+
+<!-- ============ EREIGNIS-BENACHRICHTIGUNGEN ============ -->
+<h2 class="section">3 · Ereignis-Benachrichtigungen (Broadcast an alle autorisierten Nutzer)</h2>
+<div class="grid">
+
+  <div class="phone">
+    <div class="src">_on_watering_started · WateringCycleStarted</div>
+    <div class="bubble">🟢 <b>Bewässerung gestartet!</b>
+⏱️ Zeitlimit: 15 Minuten
+💧 Volumenlimit: 25 Liter
+⏳ Quelle: Manuell</div>
+    <div class="note">Quelle <code>Zeitplan</code> bei <code>source=='schedule'</code>; Volumenlimit <code>Keines</code> wenn 0.</div>
+
+    <div class="src">_on_watering_completed · WateringCycleCompleted (Volumen)</div>
+    <div class="bubble">🏁 <b>Wassermenge erreicht!</b>
+💧 Bewässerung nach 25 Litern automatisch beendet.
+⏱️ Benötigte Zeit: ca. 6 Minute(n).</div>
+
+    <div class="src">_on_watering_completed · WateringCycleCompleted (Zeitlimit)</div>
+    <div class="bubble">🏁 <b>Zeitlimit erreicht!</b>
+⏱️ Bewässerung nach 15 Minuten planmäßig beendet.
+💧 Wassermenge: 18.5 Liter geflossen.</div>
+
+    <div class="src">_on_watering_stopped · WateringCycleStopped</div>
+    <div class="bubble">🔴 <b>Bewässerung vorzeitig gestoppt!</b>
+⏱️ Laufzeit: ca. 4 Min
+💧 Geflossene Menge: 8.2 Liter</div>
+
+    <div class="src">_on_watering_failed · WateringCycleFailed</div>
+    <div class="bubble">⚠️ <b>Notfall-Abschaltung ausgelöst!</b>
+⏱️ Abschaltung nach Ablauf von 25 Minuten bei geflossenen 12.0 Litern.
+💧 Zielwassermenge von 50 Litern wurde nicht erreicht.</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">_on_watering_skipped · WateringSkipped</div>
+    <div class="bubble">🌤️ <b>Zeitplan 'Rasen morgens' übersprungen!</b>
+Regenschwelle überschritten: Gesamt 6.8mm (Gefallen: 5.6mm, Erwartet: 1.2mm, Grenzwert: 2.0mm)</div>
+
+    <div class="src">_on_schedule_failed · ScheduleFailed</div>
+    <div class="bubble">⚠️ <b>Fehler bei Zeitplan 'Hochbeet abends'!</b>
+Fehler beim Ansteuern des Ventils über MQTT.</div>
+
+    <div class="src">_on_inactivity_alert · InactivityAlertTriggered (Ventil)</div>
+    <div class="bubble">⚠️ <i>Verbindung verloren:</i> Ventil "Terrasse" hat seit 24.5 Stunden kein Signal gesendet.</div>
+
+    <div class="src">_on_inactivity_resolved · InactivityAlertResolved (Ventil)</div>
+    <div class="bubble">🟢 <i>Verbindung wiederhergestellt:</i> Ventil "Terrasse" sendet wieder Signale.</div>
+
+    <div class="src">_on_camera_inactivity_alert · CameraInactivityAlertTriggered</div>
+    <div class="bubble">⚠️ <i>Kamera-Verbindung verloren:</i> Kamera "Hochbeet" hat seit 1.5 Stunden kein Bild gesendet.</div>
+
+    <div class="src">_on_camera_inactivity_resolved · CameraInactivityAlertResolved</div>
+    <div class="bubble">🟢 <i>Kamera-Verbindung wiederhergestellt:</i> Kamera "Hochbeet" sendet wieder Bilder.</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">_on_daily_report · DailyReportTriggered (täglich 08:00, mit Chart-Foto)</div>
+    <div class="bubble" style="padding:0; overflow:hidden">
+      <div class="photo-ph">📈 [ Wetter-Chart ]</div>
+    </div>
+    <div class="bubble">📊 <b>Täglicher Statusbericht vom 17.06.2026</b>
+
+💧 In den letzten 24h wurde 1× bewässert — 8.4 Liter gesamt.
+
+Leicht bewölkt, heute 14.1–27.3 °C. 3.6 mm Regen gefallen. Heute wenig Regen erwartet (1.2 mm, 12%).
+
+📡 <b>Terrasse</b> — gutes Signal (Ø 145 LQI, 96 Meldungen, max. 2h Funkstille)</div>
+    <div class="note">Variante mit Problemen:</div>
+    <div class="bubble">📊 <b>Täglicher Statusbericht vom 17.06.2026</b>
+
+💧 In den letzten 24h wurde 2× bewässert — 16.8 Liter gesamt. 1 Zyklus fehlgeschlagen.
+
+Bedeckt, heute 11.0–18.5 °C. Mehr Regen als erwartet: 9.4 mm gefallen (Vorhersage gestern: 2.1 mm). Heute mäßiger Regen erwartet (4.0 mm, 65%).
+
+📡 <b>Terrasse</b> — schwaches Signal (Ø 48 LQI, 40 Meldungen, max. 6h Funkstille) ⚠️ | 🪫 Batterie 18%
+
+⚠️ <b>System-Warnungen:</b>
+- 🚨 <b>System-Dienst gestört:</b> Mittelweg-Dienst (Zigbee2MQTT) ist offline</div>
+    <ul class="variants">
+      <li>Guss-Zeile: <code>nicht bewässert</code> / <code>1× … X Liter</code> / <code>N× …</code> + optional <code>M Zyklen fehlgeschlagen</code></li>
+      <li>Regen-Abweichung &gt; 2 mm → <code>Mehr/Weniger Regen als erwartet …</code></li>
+      <li>Vorhersage: <code>starker (&gt;10mm)</code> / <code>mäßiger (≥2mm)</code> / <code>wenig (&gt;0)</code> / <code>trocken</code></li>
+      <li>Wenn <code>rain_last_source != "measured"</code>: <code>Gemessene Regendaten zurzeit nicht verfügbar.</code></li>
+    </ul>
+  </div>
+
+</div>
+
+<!-- ============ FEHLER & HINWEISE ============ -->
+<h2 class="section">4 · Fehler- &amp; Hinweismeldungen (Auswahl)</h2>
+<div class="grid">
+  <div class="phone">
+    <div class="bubble">❓ <b>Unbekannter Befehl.</b>
+
+Verwenden Sie die Buttons oder <code>/status</code> für eine Übersicht.</div>
+    <div class="bubble">ℹ️ Kein aktiver Bewässerungszyklus gefunden.</div>
+    <div class="bubble">⏳ Eine Ventil-Kopplung läuft bereits im Hintergrund. Bitte warten.</div>
+    <div class="bubble">❌ Es sind keine Kameras gekoppelt.</div>
+    <div class="note">Dazu diverse <code>❌ Ungültiges Format …</code>-Meldungen bei <code>/add</code>, <code>/delete</code>, <code>/toggle</code>, <code>/camera_interval</code>.</div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
