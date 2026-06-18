@@ -1,3 +1,4 @@
+import json as _json_module
 import sys
 import time
 import threading
@@ -360,8 +361,6 @@ class TestTelegramWiringSmoke(unittest.TestCase):
         mock_poll.assert_called_once()
 
 
-import json as _json_module
-
 
 def _make_weather_row(with_forecast=True):
     fc = _json_module.dumps({
@@ -464,6 +463,135 @@ class TestStatusWeatherBlock(unittest.TestCase):
 
         sent_text = mock_client.send_message.call_args[0][1]
         self.assertIn("Keine Daten", sent_text)
+
+
+def _make_valve(wish_name="Terrasse", mqtt_name="garden_valve",
+                battery=100, lqi=150,
+                last_update="2026-06-18T14:00:00",
+                abnormal="normal"):
+    return {"wish_name": wish_name, "mqtt_name": mqtt_name,
+            "battery": battery, "linkquality": lqi,
+            "last_update": last_update, "valve_abnormal_state": abnormal}
+
+
+def _status_call_args(mock_client, mock_db, mock_ctrl, *,
+                      valves=None, services_ok=True, broker=True, bridge=True):
+    """Ruft /status ab und gibt den gesendeten Text zurück."""
+    from daemon.adapters import mqtt_client as mc
+    mock_db.get_all_valves.return_value = valves or []
+    mock_db.get_all_cameras.return_value = []
+    mock_db.get_last_weather.return_value = None
+    mock_db.get_recent_history.return_value = []
+    mock_ctrl.get_active_cycle.return_value = None
+
+    with patch.object(mc, "HAS_PAHO", not services_ok or True), \
+         patch.object(mc, "request_valve_status"), \
+         patch.object(mc, "is_broker_connected", return_value=broker), \
+         patch.object(mc, "get_bridge_status", return_value="online" if bridge else "offline"):
+        _process_message({"chat": {"id": 100}, "text": "/status"})
+
+    return mock_client.send_message.call_args[0][1]
+
+
+class TestStatusGartenAmpel(unittest.TestCase):
+    """Testet Garten-Ampel-Headline und Progressive Disclosure im /status-Befehl."""
+
+    def setUp(self):
+        from daemon.adapters import mqtt_client as mc
+        self._mc = mc
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_headline_gruen_wenn_alles_ok(self, mock_client, mock_db, mock_ctrl):
+        """Wenn alle Ventile ok und Dienste aktiv: 🟢 in der Headline."""
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve()])
+        self.assertIn("🟢", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_headline_gelb_bei_schwacher_batterie(self, mock_client, mock_db, mock_ctrl):
+        """Batterie <= 20 % → 🟡 in der Headline (kein 🔴)."""
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve(battery=20)])
+        self.assertIn("🟡", text)
+        self.assertNotIn("🔴", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_headline_rot_bei_bridge_offline(self, mock_client, mock_db, mock_ctrl):
+        """Bridge offline → 🔴 in der Headline."""
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve()], bridge=False)
+        self.assertIn("🔴", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_headline_rot_bei_ventil_anomalie(self, mock_client, mock_db, mock_ctrl):
+        """Ventil-Anomalie → 🔴 in der Headline."""
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve(abnormal="stuck_open")])
+        self.assertIn("🔴", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_gruen_ventil_kein_mqtt_name_sichtbar(self, mock_client, mock_db, mock_ctrl):
+        """Grünes Ventil: mqtt_name (technische ID) nicht in der Nachricht."""
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve(mqtt_name="garden_valve")])
+        self.assertNotIn("garden_valve", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_gruen_ventil_kein_lqi_zahl_sichtbar(self, mock_client, mock_db, mock_ctrl):
+        """Grünes Ventil: LQI-Zahl nicht sichtbar (nur qualitativ)."""
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve(lqi=150)])
+        self.assertNotIn("150 LQI", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_nicht_gruen_ventil_zeigt_mqtt_name(self, mock_client, mock_db, mock_ctrl):
+        """Nicht-grünes Ventil (schwache Batterie): mqtt_name sichtbar."""
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve(battery=10, mqtt_name="garden_valve")])
+        self.assertIn("garden_valve", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_nicht_gruen_ventil_zeigt_lqi_zahl(self, mock_client, mock_db, mock_ctrl):
+        """Nicht-grünes Ventil: LQI-Zahl sichtbar."""
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve(battery=10, lqi=45)])
+        self.assertIn("45", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_kein_doppelasterisk(self, mock_client, mock_db, mock_ctrl):
+        """Status-Nachricht enthält kein ** (Markdown-Regression)."""
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve()])
+        self.assertNotIn("**", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_keine_sekunden_in_zeitstempel(self, mock_client, mock_db, mock_ctrl):
+        """Zeitstempel im Status enthalten kein ':SS'-Muster (keine Sekunden)."""
+        import re
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve()])
+        self.assertIsNone(re.search(r"\d{2}:\d{2}:\d{2}", text),
+                          f"Sekunden gefunden in: {text}")
 
 
 class TestReportChartIntegration(unittest.TestCase):
@@ -811,6 +939,225 @@ class TestCameraPairingMetadataCleanup(unittest.TestCase):
             self.assertEqual(db.get_metadata("camera_pairing_active"), "0")
 
         os.unlink(temp_db.name)
+
+
+class TestGartenAmpel(unittest.TestCase):
+    """Tests für _garden_ampel_level() — Garten-Ampel Gesundheitsmodell."""
+
+    def setUp(self):
+        from daemon.ui.telegram_ui import _garden_ampel_level
+        self._fn = _garden_ampel_level
+
+    def _valve(self, battery=100, lqi=80, abnormal="normal", last_update="2026-01-01T10:00:00"):
+        return {"battery": battery, "linkquality": lqi,
+                "valve_abnormal_state": abnormal, "last_update": last_update}
+
+    def test_gruen_wenn_alles_ok(self):
+        """Alles grün: Dienste online, Batterie OK, LQI OK, keine Anomalie."""
+        result = self._fn([self._valve()], services_ok=True)
+        self.assertEqual(result, "green")
+
+    def test_gruen_ohne_ventile(self):
+        """Keine Ventile registriert und Dienste ok → grün."""
+        self.assertEqual(self._fn([], services_ok=True), "green")
+
+    def test_rot_wenn_dienst_offline(self):
+        """services_ok=False → sofort rot, unabhängig von Ventil-Daten."""
+        result = self._fn([self._valve()], services_ok=False)
+        self.assertEqual(result, "red")
+
+    def test_rot_bei_ventil_anomalie(self):
+        """valve_abnormal_state != 'normal' → rot."""
+        result = self._fn([self._valve(abnormal="abnormal")], services_ok=True)
+        self.assertEqual(result, "red")
+
+    def test_gelb_bei_niedriger_batterie(self):
+        """Batterie <= BATTERY_WARNING_THRESHOLD (Standard 20) → gelb."""
+        result = self._fn([self._valve(battery=20)], services_ok=True)
+        self.assertEqual(result, "yellow")
+
+    def test_gelb_bei_kritischem_lqi(self):
+        """LQI < 60 → gelb."""
+        result = self._fn([self._valve(lqi=59)], services_ok=True)
+        self.assertEqual(result, "yellow")
+
+    def test_lqi_genau_60_ist_nicht_gelb(self):
+        """LQI == 60 ist noch ok (Grenze ist < 60)."""
+        result = self._fn([self._valve(lqi=60)], services_ok=True)
+        self.assertEqual(result, "green")
+
+    def test_rot_gewinnt_ueber_gelb(self):
+        """Wenn ein Ventil rot und ein anderes gelb: Gesamtergebnis rot."""
+        valves = [self._valve(abnormal="abnormal"), self._valve(battery=10)]
+        self.assertEqual(self._fn(valves, services_ok=True), "red")
+
+    def test_gelb_gewinnt_ueber_gruen(self):
+        """Wenn ein Ventil gelb und ein anderes grün: Gesamtergebnis gelb."""
+        valves = [self._valve(), self._valve(battery=15)]
+        self.assertEqual(self._fn(valves, services_ok=True), "yellow")
+
+    def test_rot_wenn_dienst_offline_trotz_guter_ventile(self):
+        """Dienst offline schlägt immer durch, auch wenn Ventile OK wären."""
+        valves = [self._valve(), self._valve()]
+        self.assertEqual(self._fn(valves, services_ok=False), "red")
+
+
+class TestEreignisBenachrichtigungen(unittest.TestCase):
+    """Tests für Design-System-konforme Event-Benachrichtigungen (Schritt 5)."""
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_watering_started_zeigt_guss_emoji(self, mock_client):
+        """Guss-gestartet-Benachrichtigung enthält 🚿, nicht 🟢."""
+        from daemon.ui.telegram_ui import _on_watering_started
+        from daemon.core.watering_controller import WateringCycleStarted
+        event = WateringCycleStarted(duration=15, target_volume=30, source="manual")
+        _on_watering_started(event)
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("🚿", msg)
+        self.assertNotIn("🟢", msg)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_watering_completed_volumen_zeigt_menge(self, mock_client):
+        """Volumenlimit-Abschluss enthält 🏁 und die geflossene Menge in Liter."""
+        from daemon.ui.telegram_ui import _on_watering_completed
+        from daemon.core.watering_controller import WateringCycleCompleted
+        event = WateringCycleCompleted(duration_run=12, volume_run=28.5,
+                                       source="manual", details="Volumenlimit 30 l erreicht")
+        _on_watering_completed(event)
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("🏁", msg)
+        self.assertIn("l", msg)
+        self.assertIn("28", msg)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_watering_stopped_zeigt_stopp_emoji(self, mock_client):
+        """Guss-gestoppt-Benachrichtigung enthält 🛑, nicht 🔴."""
+        from daemon.ui.telegram_ui import _on_watering_stopped
+        from daemon.core.watering_controller import WateringCycleStopped
+        event = WateringCycleStopped(duration_run=5, volume_run=10.0,
+                                     source="manual", details="")
+        _on_watering_stopped(event)
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("🛑", msg)
+        self.assertNotIn("🔴", msg)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_watering_skipped_zeigt_regen_emoji(self, mock_client):
+        """Regen-Skip enthält 🌧, nicht 🌤️."""
+        from daemon.ui.telegram_ui import _on_watering_skipped
+        from daemon.core.scheduler_events import WateringSkipped
+        event = WateringSkipped(schedule_name="Rasen", details="4 mm Regen")
+        _on_watering_skipped(event)
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("🌧", msg)
+        self.assertNotIn("🌤️", msg)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_watering_failed_keine_ausrufezeichen_kette(self, mock_client):
+        """Notfall-Abschaltung ist sachlich, kein '!!' oder '!*'."""
+        from daemon.ui.telegram_ui import _on_watering_failed
+        from daemon.core.watering_controller import WateringCycleFailed
+        event = WateringCycleFailed(duration_run=10, volume_run=3.0,
+                                    source="schedule",
+                                    details="Zielwassermenge von 5l nicht erreicht")
+        _on_watering_failed(event)
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("⚠️", msg)
+        self.assertNotIn("!!", msg)
+
+
+class TestHauptmenueButtons(unittest.TestCase):
+    """Tests für die Hauptmenü-Button-Texte (Schritt 4 Design-System-Migration)."""
+
+    def test_hauptmenue_hat_guss_button(self):
+        """Hauptmenü enthält '🚿 Bewässern starten', nicht mehr '🟢 Bewässern starten'."""
+        from daemon.ui.telegram_ui import get_main_keyboard
+        kb = get_main_keyboard()
+        texts = [b["text"] for row in kb["keyboard"] for b in row]
+        self.assertIn("🚿 Bewässern starten", texts)
+        self.assertNotIn("🟢 Bewässern starten", texts)
+
+    def test_hauptmenue_hat_stopp_button(self):
+        """Hauptmenü enthält '🛑 Sofort Stopp', nicht mehr '🔴 Sofort Stopp'."""
+        from daemon.ui.telegram_ui import get_main_keyboard
+        kb = get_main_keyboard()
+        texts = [b["text"] for row in kb["keyboard"] for b in row]
+        self.assertIn("🛑 Sofort Stopp", texts)
+        self.assertNotIn("🔴 Sofort Stopp", texts)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_guss_button_loest_wizard_aus(self, mock_client, mock_db):
+        """'🚿 Bewässern starten' startet den Bewässerungs-Assistenten."""
+        mock_db.get_all_valves.return_value = [_make_valve()]
+        _process_message({"chat": {"id": 100}, "text": "🚿 Bewässern starten"})
+        mock_client.send_message.assert_called_once()
+        text = mock_client.send_message.call_args[0][1]
+        self.assertIn("Bewässer", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_stopp_button_stoppt_guss(self, mock_client, mock_ctrl):
+        """'🛑 Sofort Stopp' ruft stop_watering auf."""
+        mock_ctrl.stop_watering.return_value = (True, "gestoppt")
+        _process_message({"chat": {"id": 100}, "text": "🛑 Sofort Stopp"})
+        mock_ctrl.stop_watering.assert_called_once()
+
+
+class TestKeinDoppelAsterisk(unittest.TestCase):
+    """Regression: Kein ** in Nachrichten-Handlern (Telegram Legacy Markdown Bug)."""
+
+    def _msg(self, text, chat_id=100):
+        return {"chat": {"id": chat_id}, "text": text}
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_schedules_leer_kein_doppelasterisk(self, mock_client, mock_db):
+        """/schedules ohne Einträge erzeugt kein **."""
+        mock_db.get_schedules.return_value = []
+        _process_message(self._msg("/schedules"))
+        for call in mock_client.send_message.call_args_list:
+            text = call[0][1] if len(call[0]) > 1 else ""
+            self.assertNotIn("**", text, f"** gefunden in: {text[:120]}")
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_schedules_mit_eintraegen_kein_doppelasterisk(self, mock_client, mock_db):
+        """/schedules mit Einträgen erzeugt kein **."""
+        mock_db.get_schedules.return_value = [
+            {"id": 1, "name": "Rasen", "time": "06:00", "days": "Mon,Wed",
+             "duration_minutes": 15, "target_volume_liters": 30, "is_active": 1}
+        ]
+        _process_message(self._msg("/schedules"))
+        for call in mock_client.send_message.call_args_list:
+            text = call[0][1] if len(call[0]) > 1 else ""
+            self.assertNotIn("**", text, f"** gefunden in: {text[:120]}")
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_start_kein_doppelasterisk(self, mock_client):
+        """/start erzeugt kein **."""
+        _process_message(self._msg("/start"))
+        for call in mock_client.send_message.call_args_list:
+            text = call[0][1] if len(call[0]) > 1 else ""
+            self.assertNotIn("**", text, f"** gefunden in: {text[:120]}")
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_unbekannter_befehl_kein_doppelasterisk(self, mock_client):
+        """Unbekannter Befehl erzeugt kein **."""
+        _process_message(self._msg("/gibtsNicht"))
+        for call in mock_client.send_message.call_args_list:
+            text = call[0][1] if len(call[0]) > 1 else ""
+            self.assertNotIn("**", text, f"** gefunden in: {text[:120]}")
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_guss_starten_kein_doppelasterisk(self, mock_client, mock_db):
+        """Manuellen Guss starten (Schritt 1/2) erzeugt kein **."""
+        mock_db.get_all_valves.return_value = [_make_valve()]
+        _process_message(self._msg("🚿 Bewässern starten"))
+        for call in mock_client.send_message.call_args_list:
+            text = call[0][1] if len(call[0]) > 1 else ""
+            self.assertNotIn("**", text, f"** gefunden in: {text[:120]}")
 
 
 if __name__ == "__main__":

@@ -60,7 +60,7 @@
 
 <header class="doc">
   <h1>Referenz: Telegram-Nachrichten des GartenBots</h1>
-  <div class="meta">Stand: 2026-06-17 · Originalgetreu nach aktueller Implementation (kein Entwurf).</div>
+  <div class="meta">Stand: 2026-06-19 · Originalgetreu nach aktueller Implementation (kein Entwurf). Feature 0017 migriert.</div>
   <div class="meta">Quellen: <code>src/daemon/ui/telegram_ui.py</code> · <code>src/daemon/adapters/daily_report.py</code></div>
   <div class="legend">
     Beispieldaten sind in die echten Textvorlagen eingesetzt. Telegram stellt <b>**Text**</b>/<b>*Text*</b> fett dar,
@@ -75,42 +75,54 @@
 <div class="grid">
 
   <div class="phone">
-    <div class="src">handle_status() · /status · „📊 Status anzeigen"</div>
-    <div class="bubble">📊 <b>System-Status Gartenbewässerung</b>
+    <div class="src">handle_status() · /status · „📊 Status anzeigen" — Normal (alles grün)</div>
+    <div class="bubble">🌱 <b>Dein Garten auf einen Blick</b>
+Do, 19.06. · 14:32 Uhr
 
-🔌 <b>System-Dienste:</b> 🟢 Aktiv
+🟢 Alles im grünen Bereich
 
-⚡ <b>Laufender Zyklus:</b>
-   - Gestartet: MANUAL
-   - Restzeit: 8 Min (12 Sek)
+🔌 Dienste: 🟢 Aktiv
 
-📡 <b>Terrasse</b> (<code>garden_valve</code>):
-   - Verbindung: 🟢 Aktiv (Letztes Signal: 17.06. 14:32:10 Uhr)
-   - Batterie: 🔋 Voll
-   - Signalqualität: 🟢 Gut (145 LQI)
+📡 <b>Ventile</b>
+Terrasse · 🟢 aktiv · 🔋 Voll · 📶 gut
 
-📷 <b>Hochbeet:</b>
-   - Verbindung: 🟢 Aktiv (Letztes Bild: 17.06. 14:15)
-   - Auflösung: UXGA · Qualität: 🌟 Hoch
-   - Intervall: 15 Min
+📷 <b>Kameras</b>
+Hochbeet · 🟢 14:15 Uhr
 
-🌤️ <b>Wetter:</b>
-   🌡 <b>Jetzt</b>  Leicht bewölkt · 22.4°C · 💧 0.0mm
-   🔜 <b>15:00</b>  Bedeckt · 22.1°C · 0.2mm · 15%
+🌡 <b>Wetter</b>
+   🌡 <b>Jetzt</b>  Leicht bewölkt · 22.4 °C · 💧 0.0 mm
+   🔜 <b>15:00</b>  Bedeckt · 22.1 °C · 0.2 mm · 15 %
    <i>(Stand: 14:30 Uhr)</i>
 
-📜 <b>Letzte Zyklen:</b>
+📜 <b>Zuletzt</b>
 ✅ 17.06. 06:00 (12 Min, schedule)
-🌤️ 16.06. 06:00 (0 Min, schedule)
+🌧 16.06. 06:00 (0 Min, schedule)
 ✅ 15.06. 20:15 (15 Min, manual)
 
-🔧 <b>Version:</b> <code>v1.2.1</code></div>
+<i>v1.2.1</i></div>
+    <div class="note">Problem-Variante (Progressive Disclosure — nur für nicht-grüne Geräte):</div>
+    <div class="bubble">🌱 <b>Dein Garten auf einen Blick</b>
+Do, 19.06. · 14:32 Uhr
+
+🟡 Aufmerksamkeit nötig
+
+🔌 Dienste: 🟢 Aktiv
+
+⚡ <b>Laufender Zyklus:</b>
+   Gestartet: MANUAL
+   Restzeit: 8 Min (12 Sek)
+
+📡 <b>Ventile</b>
+🟡 Terrasse
+   🔋 15 % · 📶 ausreichend (80 LQI)
+   Letztes Signal: 19.06. um 12:18 Uhr
+   ID: garden_valve</div>
     <ul class="variants">
-      <li>Dienste: <code>🟢 Aktiv</code> / <code>🔴 Inaktiv (MQTT-Broker …)</code> / <code>🔴 Inaktiv (Mittelweg-Dienst offline)</code> / <code>⚡ Simulationsmodus</code></li>
-      <li>Batterie: <code>🔋 Voll</code> / <code>🔋 Mittel (45%)</code> / <code>🪫 Schwach (15%)</code> / <code>🪫 Unbekannt</code></li>
-      <li>Signal: <code>🟢 Sehr gut</code> / <code>🟢 Gut</code> / <code>🟡 Ausreichend</code> / <code>🔴 Kritisch</code> / <code>🔴 Keine Verbindung</code></li>
-      <li>Zyklen: <code>✅</code> completed · <code>🌤️</code> skipped · <code>❌</code> sonst</li>
-      <li>„Laufender Zyklus" nur bei aktivem Guss; Ventil-/Kamera-Block je Gerät wiederholt.</li>
+      <li>Garten-Ampel-Headline: <code>🟢 Alles im grünen Bereich</code> / <code>🟡 Aufmerksamkeit nötig</code> / <code>🔴 Es gibt ein Problem</code></li>
+      <li>Ventil grün: einzeilig, kein <code>mqtt_name</code>, keine LQI-Zahl</li>
+      <li>Ventil gelb/rot: mehrzeilig mit Batterie-%, LQI-Zahl, Zeitstempel, ID</li>
+      <li>Kamera offline: <code>🔴 kein Bild seit 17.06. um 12:15 Uhr</code></li>
+      <li>Zyklen: <code>✅</code> completed · <code>🌧</code> skipped · <code>❌</code> sonst</li>
     </ul>
   </div>
 
@@ -290,8 +302,8 @@ Erneut versuchen: <code>/camera_setup</code></div>
 
 
   <div class="phone">
-    <div class="src">Manuelle Bewässerung · „🟢 Bewässern starten"</div>
-    <div class="bubble">🟢 <b>Manuelle Bewässerung starten (Schritt 1/2)</b>
+    <div class="src">Manuelle Bewässerung · „🚿 Bewässern starten"</div>
+    <div class="bubble">🚿 <b>Bewässern starten (Schritt 1/2)</b>
 
 Wie lange soll <b>maximal</b> bewässert werden? (Zeitlimit)
 
@@ -299,14 +311,14 @@ Wie lange soll <b>maximal</b> bewässert werden? (Zeitlimit)
     <div class="btnrow"><span class="btn">⏱️ 5 Min</span><span class="btn">⏱️ 10 Min</span></div>
     <div class="btnrow"><span class="btn">⏱️ 15 Min</span><span class="btn">⏱️ 20 Min</span></div>
     <div class="btnrow"><span class="btn">⏱️ 25 Min</span><span class="btn">✏️ Eigene Dauer</span></div>
-    <div class="bubble" style="margin-top:8px">🟢 <b>Manuelle Bewässerung starten (Schritt 2/2)</b>
+    <div class="bubble" style="margin-top:8px">🚿 <b>Bewässern starten (Schritt 2/2)</b>
 
 Wie viel Wasser soll <b>maximal</b> fließen? (Volumenlimit)
 
 <i>Ausgewählte Dauer: 15 Min.</i></div>
     <div class="btnrow"><span class="btn">🌱 10 L</span><span class="btn">🥬 25 L</span></div>
     <div class="btnrow"><span class="btn">🍅 50 L</span><span class="btn">🥦 80 L</span></div>
-    <div class="bubble me" style="margin-top:8px">🟢 <b>Befehl gesendet:</b> Bewässerung gestartet (15 Min / 25l).</div>
+    <div class="bubble me" style="margin-top:8px">🚿 <b>Befehl gesendet:</b> Bewässerung gestartet (15 Min / 25 l).</div>
   </div>
 
   <div class="phone">
@@ -378,37 +390,33 @@ Soll das Update jetzt installiert werden?
 
   <div class="phone">
     <div class="src">_on_watering_started · WateringCycleStarted</div>
-    <div class="bubble">🟢 <b>Bewässerung gestartet!</b>
-⏱️ Zeitlimit: 15 Minuten
-💧 Volumenlimit: 25 Liter
-⏳ Quelle: Manuell</div>
-    <div class="note">Quelle <code>Zeitplan</code> bei <code>source=='schedule'</code>; Volumenlimit <code>Keines</code> wenn 0.</div>
+    <div class="bubble">🚿 <b>Wasser marsch!</b>
+⏱️ Zeitlimit: 15 Min · 💧 Volumen: 25 l
+Quelle: Manuell</div>
+    <div class="note">Quelle <code>Zeitplan</code> bei <code>source=='schedule'</code>; Volumen <code>kein Limit</code> wenn 0.</div>
 
-    <div class="src">_on_watering_completed · WateringCycleCompleted (Volumen)</div>
-    <div class="bubble">🏁 <b>Wassermenge erreicht!</b>
-💧 Bewässerung nach 25 Litern automatisch beendet.
-⏱️ Benötigte Zeit: ca. 6 Minute(n).</div>
+    <div class="src">_on_watering_completed · WateringCycleCompleted (Volumenlimit)</div>
+    <div class="bubble">🏁 <b>Fertig — 25.0 l sind durch!</b>
+⏱️ Laufzeit: ca. 6 Min</div>
 
     <div class="src">_on_watering_completed · WateringCycleCompleted (Zeitlimit)</div>
-    <div class="bubble">🏁 <b>Zeitlimit erreicht!</b>
-⏱️ Bewässerung nach 15 Minuten planmäßig beendet.
-💧 Wassermenge: 18.5 Liter geflossen.</div>
+    <div class="bubble">🏁 <b>Zeitlimit erreicht</b>
+⏱️ 15 Min · 💧 18.5 l</div>
 
     <div class="src">_on_watering_stopped · WateringCycleStopped</div>
-    <div class="bubble">🔴 <b>Bewässerung vorzeitig gestoppt!</b>
-⏱️ Laufzeit: ca. 4 Min
-💧 Geflossene Menge: 8.2 Liter</div>
+    <div class="bubble">🛑 <b>Guss gestoppt</b>
+⏱️ Laufzeit: ca. 4 Min · 💧 8.2 l</div>
 
     <div class="src">_on_watering_failed · WateringCycleFailed</div>
-    <div class="bubble">⚠️ <b>Notfall-Abschaltung ausgelöst!</b>
-⏱️ Abschaltung nach Ablauf von 25 Minuten bei geflossenen 12.0 Litern.
-💧 Zielwassermenge von 50 Litern wurde nicht erreicht.</div>
+    <div class="bubble">⚠️ <b>Notfall-Abschaltung</b>
+Sicherheits-Timer nach 25 Min ausgelöst.
+💧 12.0 l geflossen.</div>
   </div>
 
   <div class="phone">
     <div class="src">_on_watering_skipped · WateringSkipped</div>
-    <div class="bubble">🌤️ <b>Zeitplan 'Rasen morgens' übersprungen!</b>
-Regenschwelle überschritten: Gesamt 6.8mm (Gefallen: 5.6mm, Erwartet: 1.2mm, Grenzwert: 2.0mm)</div>
+    <div class="bubble">🌧 <b>Heute übernimmt der Regen</b>
+Zeitplan 'Rasen morgens' übersprungen -- Regenschwelle überschritten: Gesamt 6.8 mm (Gefallen: 5.6 mm, Erwartet: 1.2 mm, Grenzwert: 2.0 mm)</div>
 
     <div class="src">_on_schedule_failed · ScheduleFailed</div>
     <div class="bubble">⚠️ <b>Fehler bei Zeitplan 'Hochbeet abends'!</b>

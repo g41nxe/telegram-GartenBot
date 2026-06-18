@@ -167,7 +167,7 @@ def get_main_keyboard() -> dict:
     """Erstellt die permanente Haupttastatur unten im Chat."""
     rows = [
         [{"text": "📊 Status anzeigen"}, {"text": "📅 Zeitpläne"}],
-        [{"text": "🟢 Bewässern starten"}, {"text": "🔴 Sofort Stopp"}],
+        [{"text": "🚿 Bewässern starten"}, {"text": "🛑 Sofort Stopp"}],
         [{"text": "📸 Foto anzeigen"}, {"text": "⚙️ Setup"}],
     ]
     return {
@@ -388,6 +388,84 @@ def _get_lqi_description(lqi_val) -> str:
     else:
         return "🔴 Keine Verbindung (0 LQI)"
 
+def _garden_ampel_level(valves: list, services_ok: bool) -> str:
+    """Gibt 'green', 'yellow' oder 'red' zurück — schlimmste aktive Stufe gewinnt."""
+    if not services_ok:
+        return "red"
+    threshold = getattr(config, "BATTERY_WARNING_THRESHOLD", 20)
+    worst = "green"
+    for v in valves:
+        abnormal = v.get("valve_abnormal_state") or "normal"
+        if abnormal != "normal":
+            return "red"
+        battery = v.get("battery")
+        lqi = v.get("linkquality")
+        battery_val = int(battery) if battery is not None else 100
+        lqi_val = int(lqi) if lqi is not None else 100
+        if battery_val <= threshold or lqi_val < 60:
+            worst = "yellow"
+    return worst
+
+
+def _valve_level(valve: dict, services_ok: bool) -> str:
+    """Gibt 'green', 'yellow' oder 'red' für ein einzelnes Ventil zurück."""
+    return _garden_ampel_level([valve], services_ok)
+
+
+def _status_headline(level: str) -> str:
+    if level == "green":
+        return "🟢 Alles im grünen Bereich"
+    elif level == "yellow":
+        return "🟡 Aufmerksamkeit nötig"
+    return "🔴 Es gibt ein Problem"
+
+
+def _get_lqi_label(lqi_val) -> str:
+    """Qualitatives LQI-Label ohne Zahl (für kompakte Darstellung)."""
+    try:
+        lqi = int(lqi_val)
+    except (TypeError, ValueError):
+        lqi = 0
+    if lqi >= 120:
+        return "gut"
+    elif lqi >= 60:
+        return "ausreichend"
+    elif lqi > 0:
+        return "schwach"
+    return "keine Verbindung"
+
+
+def _format_valve_compact(valve: dict) -> str:
+    """Einzeilige Ventil-Darstellung für grüne Geräte (keine technischen IDs)."""
+    battery_label = _get_battery_description(valve.get("battery") or 0)
+    lqi_label = _get_lqi_label(valve.get("linkquality") or 0)
+    return f"{valve['wish_name']} · 🟢 aktiv · 🔋 {battery_label} · 📶 {lqi_label}"
+
+
+def _format_valve_expanded(valve: dict, level: str) -> str:
+    """Mehrzeilige Ventil-Darstellung für nicht-grüne Geräte (mit Details)."""
+    icon = "🟡" if level == "yellow" else "🔴"
+    battery = valve.get("battery")
+    lqi = valve.get("linkquality")
+    battery_val = int(battery) if battery is not None else 0
+    lqi_val = int(lqi) if lqi is not None else 0
+    lqi_desc = _get_lqi_description(lqi_val)
+    last_update_str = valve.get("last_update")
+    last_signal_line = ""
+    if last_update_str:
+        try:
+            last_up = datetime.fromisoformat(last_update_str)
+            last_signal_line = f"\n   Letztes Signal: {last_up.strftime('%d.%m. um %H:%M')} Uhr"
+        except Exception:
+            pass
+    return (
+        f"{icon} {valve['wish_name']}\n"
+        f"   🔋 {battery_val} % · 📶 {lqi_desc}"
+        f"{last_signal_line}\n"
+        f"   ID: {valve['mqtt_name']}"
+    )
+
+
 # --- Befehlsverarbeitung ---
 
 def _start_pairing(chat_id: int, wish_name: str):
@@ -509,7 +587,7 @@ def handle_camera_interval(chat_id: int, text: str):
             )
             
     except ValueError:
-        telegram_client.send_message(chat_id, "❌ **Ungültiges Format.** Nutzen Sie: `/camera_interval <minuten>` (z.B. `/camera_interval 15`)")
+        telegram_client.send_message(chat_id, "❌ *Ungültiges Format.* Nutzen Sie: `/camera_interval <minuten>` (z.B. `/camera_interval 15`)")
 
 def handle_status(chat_id: int):
     from ..adapters import mqtt_client
@@ -522,7 +600,7 @@ def handle_status(chat_id: int):
     bridge_online = mqtt_client.get_bridge_status() == "online"
 
     if not mqtt_client.HAS_PAHO:
-        services_status = "⚡ Simulationsmodus (Lokaler Test)"
+        services_status = "⚡ Simulationsmodus"
         services_ok = True
     elif not broker_connected:
         services_status = "🔴 Inaktiv (MQTT-Broker nicht erreichbar)"
@@ -534,60 +612,42 @@ def handle_status(chat_id: int):
         services_status = "🟢 Aktiv"
         services_ok = True
 
+    now = datetime.now()
+    _days_de = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+    day_str = f"{_days_de[now.weekday()]}, {now.strftime('%d.%m.')} · {now.strftime('%H:%M')} Uhr"
+
     active = _watering_ctrl.get_active_cycle() if _watering_ctrl else None
     active_text = ""
     if active:
         active_text = (
-            f"\n⚡ **Laufender Zyklus:**\n"
-            f"   - Gestartet: {active['source'].upper()}\n"
-            f"   - Restzeit: {int(active['remaining_seconds']/60)} Min ({active['remaining_seconds'] % 60} Sek)\n"
+            f"\n⚡ *Laufender Zyklus:*\n"
+            f"   Gestartet: {active['source'].upper()}\n"
+            f"   Restzeit: {int(active['remaining_seconds']/60)} Min ({active['remaining_seconds'] % 60} Sek)\n"
         )
 
-    # Pro-Ventil-Abschnitt aus der Datenbank
     valves = database.get_all_valves()
-    valve_sections = []
+    level = _garden_ampel_level(valves, services_ok)
+    headline = _status_headline(level)
+
+    valve_lines = []
     for valve in valves:
-        wish_name = valve["wish_name"]
-        mqtt_name = valve["mqtt_name"]
-        battery = valve.get("battery") or 0
-        lqi = valve.get("linkquality") or 0
-        last_update_str = valve.get("last_update")
-        battery_label = _get_battery_description(battery)
-
-        if not services_ok:
-            conn_text = "🔴 Offline (Dienste gestört)"
-        elif not last_update_str:
-            conn_text = "🔴 Nicht gekoppelt / Offline"
+        vlvl = _valve_level(valve, services_ok)
+        if vlvl == "green":
+            valve_lines.append(_format_valve_compact(valve))
         else:
-            try:
-                last_up = datetime.fromisoformat(last_update_str)
-                time_str = last_up.strftime("%d.%m. %H:%M:%S Uhr")
-                conn_text = f"🟢 Aktiv (Letztes Signal: {time_str})"
-            except Exception:
-                conn_text = "🟢 Gekoppelt / Aktiv"
+            valve_lines.append(_format_valve_expanded(valve, vlvl))
+    valves_text = "\n".join(valve_lines) if valve_lines else "Keine Ventile registriert."
 
-        valve_sections.append(
-            f"📡 **{wish_name}** (`{mqtt_name}`):\n"
-            f"   - Verbindung: {conn_text}\n"
-            f"   - Batterie: {battery_label}\n"
-            f"   - Signalqualität: {_get_lqi_description(lqi)}\n"
-        )
-
-    valves_text = "\n".join(valve_sections) if valve_sections else "Keine Ventile registriert.\n"
-
-    # Kamera-Abschnitt
+    # Kamera-Abschnitt (Logik unverändert, Format angepasst)
     cameras = database.get_all_cameras()
     camera_sections = []
     for cam in cameras:
         wish_name = cam["wish_name"]
         last_seen_str = cam.get("last_seen")
         sleep_sec = cam.get("sleep_duration_seconds") or 900
-        resolution = cam.get("resolution") or "UXGA"
-        quality_val = cam.get("quality") or 10
-        quality_label = {10: "🌟 Hoch", 25: "⚡ Mittel", 40: "💨 Niedrig"}.get(quality_val, str(quality_val))
 
         if not last_seen_str:
-            conn_text = "🔴 Noch kein Bild empfangen"
+            cam_status = "🔴 Noch kein Bild empfangen"
         else:
             try:
                 from datetime import timezone
@@ -596,25 +656,20 @@ def handle_status(chat_id: int):
                     last_dt = last_dt.replace(tzinfo=timezone.utc)
                 now_utc = datetime.now(timezone.utc)
                 age_sec = (now_utc - last_dt).total_seconds()
-                time_str = last_dt.strftime("%d.%m. %H:%M")
+                time_str = last_dt.strftime("%H:%M")
                 if age_sec <= sleep_sec * 2:
-                    conn_text = f"🟢 Aktiv (Letztes Bild: {time_str})"
+                    cam_status = f"🟢 {time_str} Uhr"
                 else:
-                    conn_text = f"🔴 Offline (Letztes Bild: {time_str})"
+                    cam_status = f"🔴 kein Bild seit {last_dt.strftime('%d.%m. um %H:%M')} Uhr"
             except Exception:
-                conn_text = "🔴 Unbekannt"
+                cam_status = "🔴 Unbekannt"
 
-        camera_sections.append(
-            f"📷 **{wish_name}:**\n"
-            f"   - Verbindung: {conn_text}\n"
-            f"   - Auflösung: {resolution} · Qualität: {quality_label}\n"
-            f"   - Intervall: {sleep_sec // 60} Min\n"
-        )
+        camera_sections.append(f"{wish_name} · {cam_status}")
 
     cameras_text = "\n".join(camera_sections) if camera_sections else ""
 
     last_weather = database.get_last_weather()
-    weather_text = "   - Keine Daten vorhanden"
+    weather_text = "   Keine Daten vorhanden"
     if last_weather:
         import json as _json
         try:
@@ -628,7 +683,6 @@ def handle_status(chat_id: int):
         desc = _get_wmo_description(code)
         current_precip = last_weather.get("current_precipitation_mm") or 0.0
 
-        # Nächste-Stunde-Vorhersage aus hourly_forecast_json (Index 1)
         next_hour_line = ""
         raw_json = last_weather.get("hourly_forecast_json")
         if raw_json:
@@ -646,13 +700,13 @@ def handle_status(chat_id: int):
                     nxt_prob = fc_prob[1] if len(fc_prob) > 1 else 0
                     nxt_desc = _get_wmo_description(fc_wmo[1] if len(fc_wmo) > 1 else 0)
                     next_hour_line = (
-                        f"\n   🔜 *{nxt_time}*  {nxt_desc} · {nxt_temp}°C · {nxt_precip}mm · {nxt_prob}%"
+                        f"\n   🔜 *{nxt_time}*  {nxt_desc} · {nxt_temp} °C · {nxt_precip} mm · {nxt_prob} %"
                     )
             except Exception:
                 pass
 
         weather_text = (
-            f"   🌡 *Jetzt*  {desc} · {temp}°C · 💧 {current_precip}mm"
+            f"   🌡 *Jetzt*  {desc} · {temp} °C · 💧 {current_precip} mm"
             f"{next_hour_line}\n"
             f"   *(Stand: {time_str})*"
         )
@@ -662,23 +716,24 @@ def handle_status(chat_id: int):
     for h in history:
         time_obj = datetime.fromisoformat(h['timestamp'])
         time_str = time_obj.strftime("%d.%m. %H:%M")
-        status_char = "✅" if h['status'] == "completed" else "🌤️" if h['status'] == "skipped" else "❌"
+        status_char = "✅" if h['status'] == "completed" else "🌧" if h['status'] == "skipped" else "❌"
         history_lines.append(f"{status_char} {time_str} ({h['duration_minutes']} Min, {h['source']})")
     history_text = "\n".join(history_lines) if history_lines else "Keine Einträge vorhanden"
 
-    version_line = f"\n\n🔧 **Version:** `{_read_local_version()}`"
+    version_line = f"\n\n_v{_read_local_version()}_"
 
-    cameras_block = f"\n{cameras_text}\n" if cameras_text else ""
+    cameras_block = f"\n📷 *Kameras*\n{cameras_text}\n" if cameras_text else ""
 
     msg = (
-        f"📊 **System-Status Gartenbewässerung**\n\n"
-        f"🔌 **System-Dienste:** {services_status}\n"
+        f"🌱 *Dein Garten auf einen Blick*\n"
+        f"{day_str}\n\n"
+        f"{headline}\n\n"
+        f"🔌 Dienste: {services_status}\n"
         f"{active_text}"
-        f"\n{valves_text}\n"
+        f"\n📡 *Ventile*\n{valves_text}\n"
         f"{cameras_block}"
-        f"🌤️ **Wetter:**\n"
-        f"{weather_text}\n\n"
-        f"📜 **Letzte Zyklen:**\n{history_text}"
+        f"\n🌡 *Wetter*\n{weather_text}\n\n"
+        f"📜 *Zuletzt*\n{history_text}"
         f"{version_line}"
     )
 
@@ -688,13 +743,13 @@ def handle_schedules(chat_id: int):
     schedules = database.get_schedules()
     if not schedules:
         msg = (
-            "📅 **Zeitsteuerung**\n\n"
+            "📅 *Zeitsteuerung*\n\n"
             "Es sind aktuell keine aktiven Zeitpläne eingerichtet.\n\n"
-            "💡 **Neuen Zeitplan anlegen:**\n"
+            "💡 *Neuen Zeitplan anlegen:*\n"
             "Klicke auf den Button unten, um den geführten Assistenten zu starten, oder nutze den klassischen `/add` Befehl.\n\n"
-            "**Klassischer Befehl:**\n"
+            "*Klassischer Befehl:*\n"
             "`/add <Name>, <Uhrzeit>, <Tage>, <Dauer>, [Menge_Liter]`\n\n"
-            "**Beispiel:**\n"
+            "*Beispiel:*\n"
             "`/add Abend-Guss, 20:15, Mon,Wed,Fri, 15, 50`"
         )
         telegram_client.send_message(chat_id, msg, get_schedules_keyboard())
@@ -706,7 +761,7 @@ def handle_schedules(chat_id: int):
         days_formatted = format_days_german(s['days'].split(',')) if s['days'] else 'Keine'
         vol_str = f"{s['target_volume_liters']} Liter" if s.get('target_volume_liters', 0) > 0 else "Keines"
         lines.append(
-            f"🆔 **ID {s['id']}: {s['name']}**\n"
+            f"🆔 *ID {s['id']}: {s['name']}*\n"
             f"   - ⏰ Startzeit: {s['time']} Uhr\n"
             f"   - 📅 Tage: {days_formatted}\n"
             f"   - ⏳ Dauer: {s['duration_minutes']} Min\n"
@@ -714,7 +769,7 @@ def handle_schedules(chat_id: int):
             f"   - Status: {status}\n"
         )
 
-    msg = "📅 **Aktuelle Zeitsteuerung (Zeitpläne):**\n\n" + "\n".join(lines)
+    msg = "📅 *Aktuelle Zeitsteuerung (Zeitpläne):*\n\n" + "\n".join(lines)
     telegram_client.send_message(chat_id, msg, get_schedules_inline_keyboard(schedules))
 
 def handle_add_schedule(chat_id: int, text: str):
@@ -733,14 +788,14 @@ def handle_add_schedule(chat_id: int, text: str):
 
         db_id = database.add_schedule(name, time_str, days, duration, volume)
         if db_id > 0:
-            telegram_client.send_message(chat_id, f"📅 Zeitplan **'{name}'** erfolgreich mit ID {db_id} angelegt!")
+            telegram_client.send_message(chat_id, f"📅 Zeitplan *'{name}'* erfolgreich mit ID {db_id} angelegt!")
             handle_schedules(chat_id)
         else:
             telegram_client.send_message(chat_id, "❌ Fehler beim Speichern des Zeitplans in der Datenbank.")
     except Exception:
         telegram_client.send_message(
             chat_id,
-            "❌ **Ungültiges Format.**\n\n"
+            "❌ *Ungültiges Format.*\n\n"
             "Nutzen Sie folgendes Format:\n"
             "`/add Name, HH:MM, Tage, Dauer, [Menge_Liter]` (z.B. `/add Abend, 20:00, Mon,Wed,Fri, 12, 30`)\n\n"
             "Tage: `everyday` oder kommagetrennt: `Mon,Tue,Wed,Thu,Fri,Sat,Sun`."
@@ -755,7 +810,7 @@ def handle_delete_schedule(chat_id: int, text: str):
         else:
             telegram_client.send_message(chat_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.")
     except Exception:
-        telegram_client.send_message(chat_id, "❌ **Ungültiges Format.** Nutzen Sie: `/delete <ID>` (z.B. `/delete 2`)")
+        telegram_client.send_message(chat_id, "❌ *Ungültiges Format.* Nutzen Sie: `/delete <ID>` (z.B. `/delete 2`)")
 
 def handle_toggle_schedule(chat_id: int, text: str):
     try:
@@ -770,12 +825,12 @@ def handle_toggle_schedule(chat_id: int, text: str):
                 target["days"], target["duration_minutes"], target.get("target_volume_liters", 0), new_active
             )
             status_text = "AKTIVIERT" if new_active == 1 else "DEAKTIVIERT"
-            telegram_client.send_message(chat_id, f"📅 Zeitplan **'{target['name']}'** wurde {status_text}.")
+            telegram_client.send_message(chat_id, f"📅 Zeitplan *'{target['name']}'* wurde {status_text}.")
             handle_schedules(chat_id)
         else:
             telegram_client.send_message(chat_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.")
     except Exception:
-        telegram_client.send_message(chat_id, "❌ **Ungültiges Format.** Nutzen Sie: `/toggle <ID>` (z.B. `/toggle 1`)")
+        telegram_client.send_message(chat_id, "❌ *Ungültiges Format.* Nutzen Sie: `/toggle <ID>` (z.B. `/toggle 1`)")
 
 # --- Interface-Schicht-Update Callback ---
 
@@ -791,7 +846,7 @@ def _process_message(msg_obj: dict):
             name = del_state["name"]
             _state_del(delete_states, chat_id)
             if database.delete_schedule(sched_id):
-                telegram_client.send_message(chat_id, f"🗑️ Zeitplan **'{name}'** wurde gelöscht.", get_main_keyboard())
+                telegram_client.send_message(chat_id, f"🗑️ Zeitplan *'{name}'* wurde gelöscht.", get_main_keyboard())
                 handle_schedules(chat_id)
             else:
                 telegram_client.send_message(chat_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.", get_main_keyboard())
@@ -807,7 +862,7 @@ def _process_message(msg_obj: dict):
     if state is not None:
         step = state.get("step")
 
-        if text.startswith("/") or text in ["📊 Status anzeigen", "📅 Zeitsteuerung", "📅 Zeitpläne", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
+        if text.startswith("/") or text in ["📊 Status anzeigen", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             _state_del(wizard_states, chat_id)
         else:
             if step == "setup_wish_name":
@@ -885,7 +940,7 @@ def _process_message(msg_obj: dict):
                 _state_touch(wizard_states, chat_id)
                 telegram_client.send_message(
                     chat_id,
-                    f"🆕 **Neuen Zeitplan '{text}' (Schritt 2/6)**\n\nZu welcher **Stunde** soll die Bewässerung starten?",
+                    f"🆕 *Neuen Zeitplan '{text}' (Schritt 2/6)*\n\nZu welcher *Stunde* soll die Bewässerung starten?",
                     get_hour_keyboard()
                 )
                 return
@@ -899,11 +954,11 @@ def _process_message(msg_obj: dict):
                     _state_touch(wizard_states, chat_id)
                     telegram_client.send_message(
                         chat_id,
-                        f"🆕 **Neuen Zeitplan '{state['name']}' (Schritt 5/6)**\n\nWie viel Wasser soll **maximal** fließen? (Volumenlimit)",
+                        f"🆕 *Neuen Zeitplan '{state['name']}' (Schritt 5/6)*\n\nWie viel Wasser soll *maximal* fließen? (Volumenlimit)",
                         get_volume_wizard_keyboard("wiz")
                     )
                 except ValueError:
-                    telegram_client.send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:")
+                    telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:")
                 return
             elif step == "custom_volume":
                 try:
@@ -916,18 +971,18 @@ def _process_message(msg_obj: dict):
                     _state_touch(wizard_states, chat_id)
                     telegram_client.send_message(
                         chat_id,
-                        f"🆕 **Neuen Zeitplan '{state['name']}' (Schritt 6/6)**\n\nWähle die **Wochentage** aus, an denen bewässert werden soll:\n\n*Ausgewählt: Keine*",
+                        f"🆕 *Neuen Zeitplan '{state['name']}' (Schritt 6/6)*\n\nWähle die *Wochentage* aus, an denen bewässert werden soll:\n\n*Ausgewählt: Keine*",
                         get_days_wizard_keyboard([])
                     )
                 except ValueError:
-                    telegram_client.send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl größer als 0 Liter ein:")
+                    telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl größer als 0 Liter ein:")
                 return
 
     man_state = _state_get(manual_states, chat_id)
     if man_state is not None:
         step = man_state.get("step")
 
-        if text.startswith("/") or text in ["📊 Status anzeigen", "📅 Zeitsteuerung", "📅 Zeitpläne", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
+        if text.startswith("/") or text in ["📊 Status anzeigen", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             _state_del(manual_states, chat_id)
         else:
             if step == "man_custom_duration":
@@ -940,11 +995,11 @@ def _process_message(msg_obj: dict):
                     _state_touch(manual_states, chat_id)
                     telegram_client.send_message(
                         chat_id,
-                        "🟢 **Manuelle Bewässerung starten (Schritt 2/2)**\n\nWie viel Wasser soll **maximal** fließen? (Volumenlimit)",
+                        "🟢 *Manuelle Bewässerung starten (Schritt 2/2)*\n\nWie viel Wasser soll *maximal* fließen? (Volumenlimit)",
                         get_volume_wizard_keyboard("man")
                     )
                 except ValueError:
-                    telegram_client.send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:")
+                    telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:")
                 return
             elif step == "man_custom_volume":
                 try:
@@ -962,13 +1017,13 @@ def _process_message(msg_obj: dict):
                     if not success:
                         telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
                 except ValueError:
-                    telegram_client.send_message(chat_id, "❌ **Ungültige Eingabe.** Bitte gib eine Zahl größer als 0 Liter ein:")
+                    telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl größer als 0 Liter ein:")
                 return
 
     if text.startswith("/start"):
         telegram_client.send_message(
             chat_id,
-            "👋 **Willkommen bei der Gartenbewässerung-Steuerung!**\n\n"
+            "👋 *Willkommen bei der Gartenbewässerung-Steuerung!*\n\n"
             "Ich bin Ihr lokaler Assistent. Nutzen Sie die Buttons unten oder "
             "die Chat-Befehle `/status` und `/zeitplan`, um Ihr System zu steuern.",
             get_main_keyboard()
@@ -1003,14 +1058,14 @@ def _process_message(msg_obj: dict):
         handle_camera_setup(chat_id)
     elif text.startswith("/camera_interval"):
         handle_camera_interval(chat_id, text)
-    elif text == "🟢 Bewässern starten":
+    elif text in ("🚿 Bewässern starten", "🟢 Bewässern starten"):
         _state_set(manual_states, chat_id, {"step": 1})
         telegram_client.send_message(
             chat_id,
-            "🟢 **Manuelle Bewässerung starten (Schritt 1/2)**\n\nWie lange soll **maximal** bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
+            "🟢 *Manuelle Bewässerung starten (Schritt 1/2)*\n\nWie lange soll *maximal* bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
             get_duration_wizard_keyboard("man")
         )
-    elif text == "🔴 Sofort Stopp" or text.startswith("/stop"):
+    elif text in ("🛑 Sofort Stopp", "🔴 Sofort Stopp") or text.startswith("/stop"):
         if _watering_ctrl:
             success, response = _watering_ctrl.stop_watering()
         else:
@@ -1028,7 +1083,7 @@ def _process_message(msg_obj: dict):
     else:
         telegram_client.send_message(
             chat_id,
-            "❓ **Unbekannter Befehl.**\n\n"
+            "❓ *Unbekannter Befehl.*\n\n"
             "Verwenden Sie die Buttons oder `/status` für eine Übersicht."
         )
 
@@ -1057,7 +1112,7 @@ def _process_callback_query(cb_obj: dict):
         _state_set(wizard_states, chat_id, {"step": 1})
         telegram_client.send_message(
             chat_id,
-            "🆕 **Neuen Zeitplan anlegen (Schritt 1/6)**\n\nBitte gib einen **Namen** für den Zeitplan ein (z. B. *Rasen morgens* oder *Hochbeet*):",
+            "🆕 *Neuen Zeitplan anlegen (Schritt 1/6)*\n\nBitte gib einen *Namen* für den Zeitplan ein (z. B. *Rasen morgens* oder *Hochbeet*):",
             {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
         )
 
@@ -1071,7 +1126,7 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.answer_callback_query(cb_id, f"Stunde: {hour:02d}")
             telegram_client.edit_message_text(
                 chat_id, message_id,
-                f"🆕 **Neuen Zeitplan '{state['name']}' um {hour:02d}:?? (Schritt 3/6)**\n\nZu welcher **Minute** soll die Bewässerung starten?",
+                f"🆕 *Neuen Zeitplan '{state['name']}' um {hour:02d}:?? (Schritt 3/6)*\n\nZu welcher *Minute* soll die Bewässerung starten?",
                 get_minute_keyboard()
             )
 
@@ -1085,7 +1140,7 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.answer_callback_query(cb_id, f"Minute: {minute:02d}")
             telegram_client.edit_message_text(
                 chat_id, message_id,
-                f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{minute:02d} (Schritt 4/6)**\n\nWie lange soll **maximal** bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
+                f"🆕 *Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{minute:02d} (Schritt 4/6)*\n\nWie lange soll *maximal* bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
                 get_duration_wizard_keyboard("wiz")
             )
 
@@ -1099,7 +1154,7 @@ def _process_callback_query(cb_obj: dict):
                 _state_touch(wizard_states, chat_id)
                 telegram_client.edit_message_text(
                     chat_id, message_id,
-                    f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 4/6)**\n\nBitte gib die gewünschte Dauer in Minuten über die Tastatur ein (Zahl von 1 bis 25):",
+                    f"🆕 *Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 4/6)*\n\nBitte gib die gewünschte Dauer in Minuten über die Tastatur ein (Zahl von 1 bis 25):",
                     {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
                 )
             else:
@@ -1109,7 +1164,7 @@ def _process_callback_query(cb_obj: dict):
                 _state_touch(wizard_states, chat_id)
                 telegram_client.edit_message_text(
                     chat_id, message_id,
-                    f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 5/6)**\n\nWie viel Wasser soll **maximal** fließen? (Volumenlimit)\n\n*Ausgewählte Dauer: {dur} Min.*",
+                    f"🆕 *Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 5/6)*\n\nWie viel Wasser soll *maximal* fließen? (Volumenlimit)\n\n*Ausgewählte Dauer: {dur} Min.*",
                     get_volume_wizard_keyboard("wiz")
                 )
 
@@ -1123,7 +1178,7 @@ def _process_callback_query(cb_obj: dict):
                 _state_touch(wizard_states, chat_id)
                 telegram_client.edit_message_text(
                     chat_id, message_id,
-                    f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 5/6)**\n\nBitte gib die gewünschte Wassermenge in Litern über die Tastatur ein (Zahl > 0):",
+                    f"🆕 *Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 5/6)*\n\nBitte gib die gewünschte Wassermenge in Litern über die Tastatur ein (Zahl > 0):",
                     {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
                 )
             else:
@@ -1134,7 +1189,7 @@ def _process_callback_query(cb_obj: dict):
                 _state_touch(wizard_states, chat_id)
                 telegram_client.edit_message_text(
                     chat_id, message_id,
-                    f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 6/6)**\n\nWähle die **Wochentage** aus, an denen bewässert werden soll:\n\n*Ausgewählt: Keine*",
+                    f"🆕 *Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 6/6)*\n\nWähle die *Wochentage* aus, an denen bewässert werden soll:\n\n*Ausgewählt: Keine*",
                     get_days_wizard_keyboard([])
                 )
 
@@ -1164,7 +1219,7 @@ def _process_callback_query(cb_obj: dict):
             days_str = format_days_german(days)
             telegram_client.edit_message_text(
                 chat_id, message_id,
-                f"🆕 **Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 6/6)**\n\nWähle die **Wochentage** aus, an denen bewässert werden soll:\n\n*Ausgewählt: {days_str}*",
+                f"🆕 *Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 6/6)*\n\nWähle die *Wochentage* aus, an denen bewässert werden soll:\n\n*Ausgewählt: {days_str}*",
                 get_days_wizard_keyboard(days)
             )
 
@@ -1182,13 +1237,13 @@ def _process_callback_query(cb_obj: dict):
             days_str = format_days_german(days)
             telegram_client.edit_message_text(
                 chat_id, message_id,
-                f"📝 **Zusammenfassung & Bestätigung**\n\n"
+                f"📝 *Zusammenfassung & Bestätigung*\n\n"
                 f"Bitte überprüfe die Angaben für den neuen Zeitplan:\n\n"
-                f"• **Name:** {state['name']}\n"
-                f"• **Startzeit:** {state['hour']:02d}:{state['minute']:02d} Uhr\n"
-                f"• **Dauer:** {state['duration']} Min\n"
-                f"• **Wassermenge:** {state['volume']} Liter\n"
-                f"• **Tage:** {days_str}\n\n"
+                f"• *Name:* {state['name']}\n"
+                f"• *Startzeit:* {state['hour']:02d}:{state['minute']:02d} Uhr\n"
+                f"• *Dauer:* {state['duration']} Min\n"
+                f"• *Wassermenge:* {state['volume']} Liter\n"
+                f"• *Tage:* {days_str}\n\n"
                 f"Soll dieser Zeitplan gespeichert werden?",
                 {
                     "inline_keyboard": [
@@ -1215,7 +1270,7 @@ def _process_callback_query(cb_obj: dict):
             _state_del(wizard_states, chat_id)
 
             if db_id > 0:
-                telegram_client.send_message(chat_id, f"📅 Zeitplan **'{name}'** erfolgreich angelegt!", get_main_keyboard())
+                telegram_client.send_message(chat_id, f"📅 Zeitplan *'{name}'* erfolgreich angelegt!", get_main_keyboard())
                 handle_schedules(chat_id)
             else:
                 telegram_client.send_message(chat_id, "❌ Fehler beim Speichern des Zeitplans in der Datenbank.", get_main_keyboard())
@@ -1232,7 +1287,7 @@ def _process_callback_query(cb_obj: dict):
             _state_set(manual_states, chat_id, {"step": "man_custom_duration"})
             telegram_client.edit_message_text(
                 chat_id, message_id,
-                "🟢 **Manuelle Bewässerung starten (Schritt 1/2)**\n\nBitte gib die gewünschte Dauer in Minuten über die Tastatur ein (Zahl von 1 bis 25):",
+                "🟢 *Manuelle Bewässerung starten (Schritt 1/2)*\n\nBitte gib die gewünschte Dauer in Minuten über die Tastatur ein (Zahl von 1 bis 25):",
                 {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]}
             )
         else:
@@ -1240,7 +1295,7 @@ def _process_callback_query(cb_obj: dict):
             _state_set(manual_states, chat_id, {"step": 2, "duration": dur})
             telegram_client.edit_message_text(
                 chat_id, message_id,
-                f"🟢 **Manuelle Bewässerung starten (Schritt 2/2)**\n\nWie viel Wasser soll **maximal** fließen? (Volumenlimit)\n\n*Ausgewählte Dauer: {dur} Min.*",
+                f"🟢 *Manuelle Bewässerung starten (Schritt 2/2)*\n\nWie viel Wasser soll *maximal* fließen? (Volumenlimit)\n\n*Ausgewählte Dauer: {dur} Min.*",
                 get_volume_wizard_keyboard("man")
             )
 
@@ -1254,7 +1309,7 @@ def _process_callback_query(cb_obj: dict):
                 _state_touch(manual_states, chat_id)
                 telegram_client.edit_message_text(
                     chat_id, message_id,
-                    "🟢 **Manuelle Bewässerung starten (Schritt 2/2)**\n\nBitte gib die gewünschte Wassermenge in Litern über die Tastatur ein (Zahl > 0):",
+                    "🟢 *Manuelle Bewässerung starten (Schritt 2/2)*\n\nBitte gib die gewünschte Wassermenge in Litern über die Tastatur ein (Zahl > 0):",
                     {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]}
                 )
             else:
@@ -1269,7 +1324,7 @@ def _process_callback_query(cb_obj: dict):
                 if not success:
                     telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
                 else:
-                    telegram_client.edit_message_text(chat_id, message_id, f"🟢 **Befehl gesendet:** Bewässerung gestartet ({dur} Min / {vol}l).")
+                    telegram_client.edit_message_text(chat_id, message_id, f"🟢 *Befehl gesendet:* Bewässerung gestartet ({dur} Min / {vol}l).")
 
     elif data == "man_cancel":
         _state_del(manual_states, chat_id)
@@ -1313,7 +1368,7 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.answer_callback_query(cb_id)
             telegram_client.send_message(
                 chat_id,
-                f"🗑️ **Zeitplan löschen**\n\nMöchtest du den Zeitplan **'{target['name']}'** wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.",
+                f"🗑️ *Zeitplan löschen*\n\nMöchtest du den Zeitplan *'{target['name']}'* wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.",
                 {
                     "keyboard": [[{"text": "✅ Ja, löschen"}, {"text": "❌ Nein, abbrechen"}]],
                     "resize_keyboard": True,
@@ -1477,48 +1532,41 @@ def on_telegram_update(msg_obj: dict, cb_obj: dict):
 # --- Domain Event Listeners ---
 
 def _on_watering_started(event: WateringCycleStarted):
+    vol_str = f"{event.target_volume} l" if event.target_volume > 0 else "kein Limit"
+    source_str = "Zeitplan" if event.source == "schedule" else "Manuell"
     msg = (
-        f"🟢 **Bewässerung gestartet!**\n"
-        f"⏱️ Zeitlimit: {event.duration} Minuten\n"
-        f"💧 Volumenlimit: {f'{event.target_volume} Liter' if event.target_volume > 0 else 'Keines'}\n"
-        f"⏳ Quelle: {'Zeitplan' if event.source == 'schedule' else 'Manuell'}"
+        f"🚿 *Wasser marsch!*\n"
+        f"⏱️ Zeitlimit: {event.duration} Min · 💧 Volumen: {vol_str}\n"
+        f"Quelle: {source_str}"
     )
     telegram_client.broadcast_notification(msg)
 
 def _on_watering_completed(event: WateringCycleCompleted):
     if "Volumenlimit" in event.details:
-        target_volume = event.volume_run
         msg = (
-            f"🏁 **Wassermenge erreicht!**\n"
-            f"💧 Bewässerung nach {int(target_volume)} Litern automatisch beendet.\n"
-            f"⏱️ Benötigte Zeit: ca. {event.duration_run} Minute(n)."
+            f"🏁 *Fertig — {event.volume_run:.1f} l sind durch!*\n"
+            f"⏱️ Laufzeit: ca. {event.duration_run} Min"
         )
     else:
         msg = (
-            f"🏁 **Zeitlimit erreicht!**\n"
-            f"⏱️ Bewässerung nach {event.duration_run} Minuten planmäßig beendet.\n"
-            f"💧 Wassermenge: {event.volume_run} Liter geflossen."
+            f"🏁 *Zeitlimit erreicht*\n"
+            f"⏱️ {event.duration_run} Min · 💧 {event.volume_run:.1f} l"
         )
     telegram_client.broadcast_notification(msg)
 
 def _on_watering_failed(event: WateringCycleFailed):
-    target_vol = 0
-    if "Zielwassermenge von" in event.details:
-        try:
-            parts = event.details.split("Zielwassermenge von ")
-            target_vol = int(parts[1].split("l")[0])
-        except Exception:
-            pass
-
     msg = (
-        f"⚠️ **Notfall-Abschaltung ausgelöst!**\n"
-        f"⏱️ Abschaltung nach Ablauf von {event.duration_run} Minuten bei geflossenen {event.volume_run} Litern.\n"
-        f"💧 Zielwassermenge von {target_vol} Litern wurde nicht erreicht."
+        f"⚠️ *Notfall-Abschaltung*\n"
+        f"Sicherheits-Timer nach {event.duration_run} Min ausgelöst.\n"
+        f"💧 {event.volume_run:.1f} l geflossen."
     )
     telegram_client.broadcast_notification(msg)
 
 def _on_watering_stopped(event: WateringCycleStopped):
-    msg = f"🔴 **Bewässerung vorzeitig gestoppt!**\n⏱️ Laufzeit: ca. {event.duration_run} Min\n💧 Geflossene Menge: {event.volume_run} Liter"
+    msg = (
+        f"🛑 *Guss gestoppt*\n"
+        f"⏱️ Laufzeit: ca. {event.duration_run} Min · 💧 {event.volume_run:.1f} l"
+    )
     telegram_client.broadcast_notification(msg)
 
 def _on_daily_report(event: DailyReportTriggered):
@@ -1530,10 +1578,13 @@ def _on_daily_report(event: DailyReportTriggered):
     telegram_client.broadcast_notification(event.report_text)
 
 def _on_watering_skipped(event: WateringSkipped):
-    telegram_client.broadcast_notification(f"🌤️ **Zeitplan '{event.schedule_name}' übersprungen!**\n{event.details}")
+    telegram_client.broadcast_notification(
+        f"🌧 *Heute übernimmt der Regen*\n"
+        f"Zeitplan '{event.schedule_name}' übersprungen -- {event.details}"
+    )
 
 def _on_schedule_failed(event: ScheduleFailed):
-    telegram_client.broadcast_notification(f"⚠️ **Fehler bei Zeitplan '{event.schedule_name}'!**\n{event.details}")
+    telegram_client.broadcast_notification(f"⚠️ *Fehler bei Zeitplan '{event.schedule_name}'!*\n{event.details}")
 
 def _on_inactivity_alert(event: InactivityAlertTriggered):
     msg = (

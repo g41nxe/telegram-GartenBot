@@ -28,12 +28,12 @@ def _valve_warnings(valve: dict) -> list[str]:
 
     if battery <= config.BATTERY_WARNING_THRESHOLD:
         warnings.append(
-            f"🪫 **Niedriger Batteriestand ({wish_name}):** {battery}%"
+            f"🪫 *Niedriger Batteriestand ({wish_name}):* {battery}%"
             f" (Grenzwert: {config.BATTERY_WARNING_THRESHOLD}%)"
         )
 
     if abnormal_state != "normal":
-        warnings.append(f"🚨 **Ventil-Anomalie erkannt ({wish_name}):** {abnormal_state}")
+        warnings.append(f"🚨 *Ventil-Anomalie erkannt ({wish_name}):* {abnormal_state}")
 
     return warnings
 
@@ -120,7 +120,7 @@ def _format_valve_line(
         watchdog_text = " ⚠️" if has_watchdog_alert else ""
         signal_text = f"{quality} (Ø {avg_lqi:.0f} LQI, {count} Meldungen{gap_text}){watchdog_text}"
 
-    line = f"📡 **{wish_name}** — {signal_text}"
+    line = f"📡 *{wish_name}* — {signal_text}"
     if warnings:
         line += " | " + ", ".join(warnings)
     return line
@@ -160,9 +160,9 @@ def generate_daily_report(today_str: str) -> str:
     warnings = []
     if mqtt_client.HAS_PAHO:
         if not mqtt_client.is_broker_connected():
-            warnings.append("🚨 **System-Dienst gestört:** MQTT-Broker ist offline")
+            warnings.append("🚨 *System-Dienst gestört:* MQTT-Broker ist offline")
         elif mqtt_client.get_bridge_status() != "online":
-            warnings.append("🚨 **System-Dienst gestört:** Mittelweg-Dienst (Zigbee2MQTT) ist offline")
+            warnings.append("🚨 *System-Dienst gestört:* Mittelweg-Dienst (Zigbee2MQTT) ist offline")
 
     # 5. Pro-Ventil-Status
     valves = database.get_all_valves()
@@ -205,10 +205,10 @@ def generate_daily_report(today_str: str) -> str:
 
     warning_text = ""
     if warnings:
-        warning_text = "\n\n⚠️ **System-Warnungen:**\n" + "\n".join([f"- {w}" for w in warnings])
+        warning_text = "\n\n⚠️ *System-Warnungen:*\n" + "\n".join([f"- {w}" for w in warnings])
 
     return (
-        f"📊 **Täglicher Statusbericht vom {display_date}**\n\n"
+        f"📊 *Täglicher Statusbericht vom {display_date}*\n\n"
         f"{watering_text}\n\n"
         f"{weather_text}\n\n"
         f"{valve_text}"

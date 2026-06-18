@@ -263,5 +263,45 @@ class TestSendDailyReport(unittest.TestCase):
         mocks["db"].set_metadata.assert_called_once_with("last_daily_report_date", "2026-06-14")
 
 
+class TestDailyReportDesignSystem(unittest.TestCase):
+    """Design-System-Konformität des Tagesberichts (Schritt 7 Migration)."""
+
+    def _generate(self):
+        from daemon.adapters.daily_report import generate_daily_report
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.weather") as mock_weather, \
+             patch("daemon.adapters.daily_report.mqtt_client") as mock_mqtt:
+            mock_db.get_watering_stats_last_24h.return_value = (1, 0, 5.0)
+            mock_db.get_all_valves.return_value = []
+            mock_db.get_metadata.return_value = None
+            mock_db.get_daily_forecast_snapshot.return_value = None
+            mock_weather.get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5, "measured")
+            mock_mqtt.HAS_PAHO = False
+            return generate_daily_report("2026-06-18")
+
+    def test_tagesbericht_kein_doppelasterisk(self):
+        """Tagesbericht enthält kein ** (Markdown-Regression)."""
+        text = self._generate()
+        self.assertNotIn("**", text, f"** gefunden in: {text[:200]}")
+
+    def test_ventil_zeile_kein_doppelasterisk(self):
+        """_format_valve_line() erzeugt kein **."""
+        result = dr._format_valve_line(
+            wish_name="Terrasse", mqtt_name="garden_valve",
+            count=48, avg_lqi=145.0, max_gap_hours=1.5,
+            has_watchdog_alert=False, battery=100, abnormal_state="normal",
+        )
+        self.assertNotIn("**", result)
+
+    def test_ventil_zeile_mit_anomalie_kein_doppelasterisk(self):
+        """_format_valve_line() mit Anomalie erzeugt kein **."""
+        result = dr._format_valve_line(
+            wish_name="Terrasse", mqtt_name="garden_valve",
+            count=20, avg_lqi=130.0, max_gap_hours=2.0,
+            has_watchdog_alert=False, battery=100, abnormal_state="stuck_open",
+        )
+        self.assertNotIn("**", result)
+
+
 if __name__ == "__main__":
     unittest.main()
