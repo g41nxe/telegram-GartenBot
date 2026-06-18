@@ -1,3 +1,14 @@
+## v1.3.0 — 2026-06-19
+
+- Telegram Design-System: Garten-Ampel (🟢/🟡/🔴) im /status-Befehl
+- Progressive Disclosure: Technische Details nur bei Geräteproblemen sichtbar
+- Hauptmenü-Buttons 🟢→🚿 und 🔴→🛑 (Ampelfarben freigehalten)
+- Alle Nachrichten auf Legacy-Markdown migriert (* statt **), behebt stille HTTP-400-Fehler bei Telegram
+- Regen-Skip-Emoji: 🌤️ → 🌧
+- Nie-gekoppeltes Ventil korrekt als 🔴 markiert (statt fälschlich grün)
+
+---
+
 ## v1.2.1 — 2026-06-15
 
 - /update: Markdown-Sonderzeichen in Release-Notes werden jetzt escaped
