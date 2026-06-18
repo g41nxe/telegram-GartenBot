@@ -1001,6 +1001,21 @@ class TestGartenAmpel(unittest.TestCase):
         valves = [self._valve(), self._valve()]
         self.assertEqual(self._fn(valves, services_ok=False), "red")
 
+    def test_rot_wenn_kein_letztes_signal(self):
+        """Ventil mit last_update=None (nie kommuniziert) → rot."""
+        v = self._valve()
+        v["last_update"] = None
+        self.assertEqual(self._fn([v], services_ok=True), "red")
+
+    def test_gruen_ventil_mit_letztem_signal_kein_status_gruen(self):
+        """_format_valve_compact für grünes Ventil zeigt kein 🪫/0% wenn battery=None."""
+        from daemon.ui.telegram_ui import _format_valve_compact
+        valve = {"wish_name": "Terrasse", "battery": None, "linkquality": None,
+                 "last_update": "2026-06-18T14:00:00", "valve_abnormal_state": "normal"}
+        text = _format_valve_compact(valve)
+        self.assertNotIn("0 %", text)
+        self.assertNotIn("🪫 Leer", text)
+
 
 class TestEreignisBenachrichtigungen(unittest.TestCase):
     """Tests für Design-System-konforme Event-Benachrichtigungen (Schritt 5)."""
@@ -1102,6 +1117,16 @@ class TestHauptmenueButtons(unittest.TestCase):
         mock_ctrl.stop_watering.return_value = (True, "gestoppt")
         _process_message({"chat": {"id": 100}, "text": "🛑 Sofort Stopp"})
         mock_ctrl.stop_watering.assert_called_once()
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_guss_wizard_schritt1_zeigt_guss_emoji(self, mock_client, mock_db):
+        """Wizard-Schritt 1 zeigt 🚿 im Titel, nicht 🟢."""
+        mock_db.get_all_valves.return_value = [_make_valve()]
+        _process_message({"chat": {"id": 100}, "text": "🚿 Bewässern starten"})
+        text = mock_client.send_message.call_args[0][1]
+        self.assertIn("🚿", text)
+        self.assertNotIn("🟢", text)
 
 
 class TestKeinDoppelAsterisk(unittest.TestCase):

@@ -395,6 +395,8 @@ def _garden_ampel_level(valves: list, services_ok: bool) -> str:
     threshold = getattr(config, "BATTERY_WARNING_THRESHOLD", 20)
     worst = "green"
     for v in valves:
+        if not v.get("last_update"):
+            return "red"
         abnormal = v.get("valve_abnormal_state") or "normal"
         if abnormal != "normal":
             return "red"
@@ -437,8 +439,10 @@ def _get_lqi_label(lqi_val) -> str:
 
 def _format_valve_compact(valve: dict) -> str:
     """Einzeilige Ventil-Darstellung für grüne Geräte (keine technischen IDs)."""
-    battery_label = _get_battery_description(valve.get("battery") or 0)
-    lqi_label = _get_lqi_label(valve.get("linkquality") or 0)
+    battery = valve.get("battery")
+    lqi = valve.get("linkquality")
+    battery_label = _get_battery_description(battery if battery is not None else 100)
+    lqi_label = _get_lqi_label(lqi if lqi is not None else 100)
     return f"{valve['wish_name']} · 🟢 aktiv · 🔋 {battery_label} · 📶 {lqi_label}"
 
 
@@ -995,7 +999,7 @@ def _process_message(msg_obj: dict):
                     _state_touch(manual_states, chat_id)
                     telegram_client.send_message(
                         chat_id,
-                        "🟢 *Manuelle Bewässerung starten (Schritt 2/2)*\n\nWie viel Wasser soll *maximal* fließen? (Volumenlimit)",
+                        "🚿 *Bewässern starten — Schritt 2/2*\n\nWie viel Wasser soll *maximal* fließen? (Volumenlimit)",
                         get_volume_wizard_keyboard("man")
                     )
                 except ValueError:
@@ -1062,7 +1066,7 @@ def _process_message(msg_obj: dict):
         _state_set(manual_states, chat_id, {"step": 1})
         telegram_client.send_message(
             chat_id,
-            "🟢 *Manuelle Bewässerung starten (Schritt 1/2)*\n\nWie lange soll *maximal* bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
+            "🚿 *Bewässern starten — Schritt 1/2*\n\nWie lange soll *maximal* bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
             get_duration_wizard_keyboard("man")
         )
     elif text in ("🛑 Sofort Stopp", "🔴 Sofort Stopp") or text.startswith("/stop"):
@@ -1287,7 +1291,7 @@ def _process_callback_query(cb_obj: dict):
             _state_set(manual_states, chat_id, {"step": "man_custom_duration"})
             telegram_client.edit_message_text(
                 chat_id, message_id,
-                "🟢 *Manuelle Bewässerung starten (Schritt 1/2)*\n\nBitte gib die gewünschte Dauer in Minuten über die Tastatur ein (Zahl von 1 bis 25):",
+                "🚿 *Bewässern starten — Schritt 1/2*\n\nBitte gib die gewünschte Dauer in Minuten über die Tastatur ein (Zahl von 1 bis 25):",
                 {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]}
             )
         else:
@@ -1295,7 +1299,7 @@ def _process_callback_query(cb_obj: dict):
             _state_set(manual_states, chat_id, {"step": 2, "duration": dur})
             telegram_client.edit_message_text(
                 chat_id, message_id,
-                f"🟢 *Manuelle Bewässerung starten (Schritt 2/2)*\n\nWie viel Wasser soll *maximal* fließen? (Volumenlimit)\n\n*Ausgewählte Dauer: {dur} Min.*",
+                f"🚿 *Bewässern starten — Schritt 2/2*\n\nWie viel Wasser soll *maximal* fließen? (Volumenlimit)\n\n*Ausgewählte Dauer: {dur} Min.*",
                 get_volume_wizard_keyboard("man")
             )
 
@@ -1309,7 +1313,7 @@ def _process_callback_query(cb_obj: dict):
                 _state_touch(manual_states, chat_id)
                 telegram_client.edit_message_text(
                     chat_id, message_id,
-                    "🟢 *Manuelle Bewässerung starten (Schritt 2/2)*\n\nBitte gib die gewünschte Wassermenge in Litern über die Tastatur ein (Zahl > 0):",
+                    "🚿 *Bewässern starten — Schritt 2/2*\n\nBitte gib die gewünschte Wassermenge in Litern über die Tastatur ein (Zahl > 0):",
                     {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]}
                 )
             else:
