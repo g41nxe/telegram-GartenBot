@@ -179,7 +179,9 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
         # Kopie als latest.jpg ablegen
         latest_path = cam_dir / "latest.jpg"
         shutil.copy2(file_path, latest_path)
-        
+
+        logger.info(f"Bild von Kamera \"{wish_name}\" empfangen: {len(payload)} Bytes ({filename})")
+
         if _global_bus:
             _global_bus.publish(CameraImageReceived(mac, wish_name, str(file_path)))
             

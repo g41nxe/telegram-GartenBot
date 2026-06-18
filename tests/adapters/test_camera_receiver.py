@@ -1,5 +1,6 @@
 import pytest
 import time
+import logging
 import urllib.request
 import urllib.error
 import json
@@ -79,6 +80,26 @@ def test_upload_image(running_server):
 
     latest_path = os.path.join(config.CAMERA_IMAGE_DIR, "UploadCam", "latest.jpg")
     assert os.path.exists(latest_path)
+
+def test_upload_logs_success(running_server, caplog):
+    """Ein erfolgreicher Upload schreibt eine INFO-Log-Zeile mit Kamera-Name und Bildgröße."""
+    database.add_camera("DD:EE:FF", "LogCam")
+    url = f"http://127.0.0.1:{running_server}/upload"
+    payload = b'\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00'
+
+    with caplog.at_level(logging.INFO, logger="garden_camera_receiver"):
+        req = urllib.request.Request(
+            url,
+            headers={"X-Camera-MAC": "DD:EE:FF", "Content-Type": "image/jpeg"},
+            data=payload,
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+
+    messages = [r.getMessage() for r in caplog.records if r.name == "garden_camera_receiver"]
+    assert any("LogCam" in m and str(len(payload)) in m for m in messages), \
+        f"Erwartete Upload-Log-Zeile fehlt, gesehen: {messages}"
 
 def test_upload_rejected_when_exceeds_config_limit(running_server):
     """Upload > CAMERA_MAX_UPLOAD_BYTES wird mit 400 abgelehnt (nicht 2-MB-Hardcode)."""
