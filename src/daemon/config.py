@@ -140,8 +140,8 @@ def get_setting(name: str, default=None):
             if isinstance(default, int):
                 return int(db_val)
             return db_val
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"get_setting({name!r}): DB-Zugriff fehlgeschlagen, verwende Modulkonstante: {e}")
     import sys
     mod = sys.modules[__name__]
     if hasattr(mod, name):

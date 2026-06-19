@@ -165,7 +165,7 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
         battery = None
         if battery_header is not None:
             try:
-                battery = int(battery_header)
+                battery = int(float(battery_header))
                 if not (0 <= battery <= 100):
                     battery = None
             except ValueError:

@@ -84,8 +84,9 @@ class WateringController:
 
         if duration_minutes <= 0:
             return False, "Ungültiges Zeitlimit."
-        if duration_minutes > config.SAFETY_TIMEOUT_MINUTES:
-            return False, f"Zeitlimit überschreitet das Sicherheitslimit ({config.SAFETY_TIMEOUT_MINUTES} Min)."
+        _safety_min = config.get_setting("SAFETY_TIMEOUT_MINUTES", 30)
+        if duration_minutes > _safety_min:
+            return False, f"Zeitlimit überschreitet das Sicherheitslimit ({_safety_min} Min)."
         if target_volume_liters < 0:
             return False, "Ungültiges Volumenlimit."
 

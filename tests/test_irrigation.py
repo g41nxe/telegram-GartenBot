@@ -356,11 +356,11 @@ class TestGardenIrrigation(unittest.TestCase):
             database.update_valve_status("garden_valve", 90, 140, datetime.now().isoformat(), "normal")
 
             report = generate_daily_report("2026-06-07")
-            self.assertIn("Statusbericht vom 07.06.2026", report)
+            self.assertIn("07.06.", report)
             self.assertIn("💧", report)  # Wässerungs-Sektion
-            self.assertIn("12.5–25.0 °C", report)  # Temperatur-Range
-            self.assertIn("mäßiger Regen", report)  # Neue verbale Regenvorhersage
-            self.assertNotIn("System-Warnungen", report)
+            self.assertIn("12–25 °C", report)  # Temperatur-Range (gerundet)
+            self.assertIn("2.0 mm erwartet", report)  # Regen-Info im neuen Format
+            self.assertIn("alles in Ordnung", report)  # System-OK-Zeile
 
             # 2. Fall: Batterie schwach, Watchdog-Flag gesetzt, abnormaler Zustand (Warnungen)
             old_time = (datetime.now() - timedelta(hours=25)).isoformat()
@@ -369,31 +369,28 @@ class TestGardenIrrigation(unittest.TestCase):
             database.set_metadata(f"watchdog_alert_active_valve_{valve['id']}", "1")
 
             report_warn = generate_daily_report("2026-06-07")
-            # Warnungen werden jetzt in der Ventil-Zeile eingebettet, nicht in System-Warnungen
-            self.assertIn("🪫 Batterie 15%", report_warn)
-            self.assertIn("🚨 Anomalie: water_shortage", report_warn)
+            self.assertIn("Anomalie erkannt (water_shortage)", report_warn)
+            self.assertIn("kein Signal (Watchdog aktiv)", report_warn)
 
             # DB-Status und Watchdog-Flag für Folgetests zurücksetzen
             database.update_valve_status("garden_valve", 95, 140, datetime.now().isoformat(), "normal")
             database.set_metadata(f"watchdog_alert_active_valve_{valve['id']}", "0")
 
             # 3. Fall: Broker disconnected, Mittelweg-Dienst offline
-            mqtt_client.HAS_PAHO = True
+            try:
+                mqtt_client.HAS_PAHO = True
 
-            with patch("daemon.adapters.mqtt_client.is_broker_connected", return_value=False), \
-                 patch("daemon.adapters.mqtt_client.get_bridge_status", return_value="offline"):
-                report_serv_offline = generate_daily_report("2026-06-07")
-                self.assertIn("System-Warnungen", report_serv_offline)
-                self.assertIn("MQTT-Broker ist offline", report_serv_offline)
+                with patch("daemon.adapters.mqtt_client.is_broker_connected", return_value=False), \
+                     patch("daemon.adapters.mqtt_client.get_bridge_status", return_value="offline"):
+                    report_serv_offline = generate_daily_report("2026-06-07")
+                    self.assertIn("MQTT-Broker nicht erreichbar", report_serv_offline)
 
-            with patch("daemon.adapters.mqtt_client.is_broker_connected", return_value=True), \
-                 patch("daemon.adapters.mqtt_client.get_bridge_status", return_value="offline"):
-                report_z2m_offline = generate_daily_report("2026-06-07")
-                self.assertIn("System-Warnungen", report_z2m_offline)
-                self.assertIn("Mittelweg-Dienst (Zigbee2MQTT) ist offline", report_z2m_offline)
-
-            # Zurücksetzen für nachfolgende Tests
-            mqtt_client.HAS_PAHO = False
+                with patch("daemon.adapters.mqtt_client.is_broker_connected", return_value=True), \
+                     patch("daemon.adapters.mqtt_client.get_bridge_status", return_value="offline"):
+                    report_z2m_offline = generate_daily_report("2026-06-07")
+                    self.assertIn("Mittelweg-Dienst (Zigbee2MQTT) offline", report_z2m_offline)
+            finally:
+                mqtt_client.HAS_PAHO = False
 
     def test_13_device_status_stats(self):
         """Testet das passive Loggen des Gerätestatus und die Berechnung der LQI- und Funklücken-Statistik."""
@@ -526,7 +523,7 @@ class TestGardenIrrigation(unittest.TestCase):
         from daemon import scheduler
         with patch("daemon.adapters.weather.get_weather_data", side_effect=Exception("API error")):
             report = generate_daily_report("2026-06-09")
-            self.assertIn("Statusbericht vom 09.06.2026", report)
+            self.assertIn("09.06.", report)  # Datum erscheint auch bei Wetterfehler
 
     def test_19_scheduler_sequential_multi_valve(self):
         """_trigger_scheduled_watering startet mehrere Ventile nacheinander (sequentiell)."""
@@ -608,11 +605,9 @@ class TestGardenIrrigation(unittest.TestCase):
             database.delete_schedule(sched_id)
 
     def test_22_daily_report_iterates_all_valves(self):
-        """Täglicher Bericht enthält einen Abschnitt pro registriertem Ventil."""
+        """Morgen-Bericht iteriert alle Ventile: grüner Pfad zeigt Kurzform, Problemfall zeigt Ventilname."""
         from datetime import datetime
-        from daemon import scheduler
 
-        # Zweites Test-Ventil anlegen und DB-Status für beide setzen
         valve2_id = database.add_valve("Rasen", "valve_report_test")
         if valve2_id <= 0:
             existing = database.get_valve_by_mqtt_name("valve_report_test")
@@ -626,9 +621,19 @@ class TestGardenIrrigation(unittest.TestCase):
             mock_weather.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 10, "measured")
             report = generate_daily_report("2026-06-13")
 
-        # Beide Ventile müssen im Bericht erscheinen (anhand ihrer wish_names)
-        self.assertIn("Ventil", report, "Standard-Ventil fehlt im Bericht")
-        self.assertIn("Rasen", report, "Wunschname des zweiten Ventils fehlt im Bericht")
+        # Grüner Pfad: beide Ventile OK → Kurzform ohne Ventildetails
+        self.assertIn("alles in Ordnung", report)
+        self.assertNotIn("Anomalie", report)
+
+        # Problemfall: Rasen-Ventil hat schwache Batterie → erscheint im Bericht
+        database.update_valve_status("valve_report_test", 10, 120, now_str, "normal")
+        with patch("daemon.adapters.weather.get_weather_data") as mock_weather:
+            mock_weather.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 10, "measured")
+            report_warn = generate_daily_report("2026-06-13")
+        self.assertIn("Rasen", report_warn)
+        self.assertIn("Batterie schwach", report_warn)
+        # Aufräumen
+        database.update_valve_status("valve_report_test", 80, 120, now_str, "normal")
 
     def test_21_scheduler_fallback_garden_valve(self):
         """_trigger_scheduled_watering fällt auf garden_valve zurück wenn keine Ventile zugewiesen."""
