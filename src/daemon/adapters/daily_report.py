@@ -39,7 +39,8 @@ def _valve_warnings(valve: dict) -> list[str]:
     """Gibt Warnungen für ein einzelnes Ventil zurück."""
     warnings = []
     wish_name = valve["wish_name"]
-    battery = valve.get("battery") or 100
+    battery_raw = valve.get("battery")
+    battery = battery_raw if battery_raw is not None else 100
     abnormal_state = valve.get("valve_abnormal_state") or "normal"
 
     _bat_threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
@@ -53,6 +54,40 @@ def _valve_warnings(valve: dict) -> list[str]:
         warnings.append(f"🚨 *Ventil-Anomalie erkannt ({wish_name}):* {abnormal_state}")
 
     return warnings
+
+
+def _format_morning_report_short(
+    date_display: str,
+    watering_line: str,
+    weather_line: str,
+    rain_extra_line: "str | None",
+) -> str:
+    """Kurzform des Morgen-Berichts (3–4 Zeilen, alles grün)."""
+    parts = [f"🌿 *Guten Morgen, {date_display}!*", ""]
+    parts.append(weather_line)
+    if rain_extra_line:
+        parts.append(rain_extra_line)
+    parts.append(watering_line)
+    parts.append("✅ System: alles in Ordnung")
+    return "\n".join(parts)
+
+
+def _format_morning_report_problem(
+    date_display: str,
+    issues: list,
+    watering_line: str,
+    weather_line: str,
+    rain_extra_line: "str | None",
+) -> str:
+    """Erweiterter Morgen-Bericht mit Problem-Block (sortiert nach Schwere)."""
+    parts = [f"🌿 *Guten Morgen, {date_display}!*", ""]
+    parts.extend(issues)
+    parts.append("")
+    parts.append(weather_line)
+    if rain_extra_line:
+        parts.append(rain_extra_line)
+    parts.append(watering_line)
+    return "\n".join(parts)
 
 
 def _is_report_green(valves: list, services_ok: bool) -> bool:
@@ -204,16 +239,17 @@ def _format_valve_line(
 
 
 def generate_daily_report(today_str: str) -> str:
-    """Generiert den Text für den täglichen Statusbericht."""
-    # 1. Guss-Statistiken der letzten 24h
+    """Generiert den Morgen-Bericht (Kurzform wenn grün, Problemfall sonst)."""
+    # 1. Guss-Statistiken
     success_count, failed_count, total_volume = database.get_watering_stats_last_24h()
+    skip_count = database.get_watering_skip_count_last_24h()
 
     # 2. Wetterdaten (Live-Abfrage)
     weather_result = None
     try:
         weather_result = weather.get_weather_data(config.LATITUDE, config.LONGITUDE)
     except Exception as e:
-        logger.error(f"Fehler beim Abrufen der Wetterdaten für Statusbericht: {e}")
+        logger.error(f"Fehler beim Abrufen der Wetterdaten für Morgen-Bericht: {e}")
     if weather_result is not None:
         rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source = weather_result
         weather_desc = get_wmo_description(weather_code)
@@ -221,79 +257,58 @@ def generate_daily_report(today_str: str) -> str:
         rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0, "forecast"
         weather_desc = "Unbekannt"
 
-    # 3. Gestrige Regenvorhersage für Abweichungsvergleich
-    snapshot = database.get_daily_forecast_snapshot()
-    yesterday_rain_next = None
-    if snapshot:
-        try:
-            from datetime import timedelta
-            yesterday_str = (datetime.strptime(today_str, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-            if snapshot.get("date") == yesterday_str:
-                yesterday_rain_next = snapshot.get("rain_next_mm")
-        except ValueError:
-            pass
-
-    # 4. System-Warnungen
-    warnings = []
+    # 3. Systemzustand
     if mqtt_client.HAS_PAHO:
-        if not mqtt_client.is_broker_connected():
-            warnings.append("🚨 *System-Dienst gestört:* MQTT-Broker ist offline")
-        elif mqtt_client.get_bridge_status() != "online":
-            warnings.append("🚨 *System-Dienst gestört:* Mittelweg-Dienst (Zigbee2MQTT) ist offline")
+        broker_ok = mqtt_client.is_broker_connected()
+        bridge_ok = mqtt_client.get_bridge_status() == "online"
+        services_ok = broker_ok and bridge_ok
+    else:
+        services_ok = True
 
-    for cam in database.get_all_cameras():
-        warnings.extend(_camera_warnings(cam))
-
-    # 5. Pro-Ventil-Status
+    # 4. Ventile
     valves = database.get_all_valves()
-    valve_lines = []
-    for valve in valves:
-        mqtt_name = valve["mqtt_name"]
-        wish_name = valve["wish_name"]
-        conn_stats = database.get_device_status_stats_last_24h(mqtt_name)
-        flag_key = f"watchdog_alert_active_valve_{valve['id']}"
-        has_watchdog_alert = database.get_metadata(flag_key) == "1"
-        battery = valve.get("battery") or 100
-        abnormal_state = valve.get("valve_abnormal_state") or "normal"
 
-        valve_lines.append(_format_valve_line(
-            wish_name=wish_name,
-            mqtt_name=mqtt_name,
-            count=conn_stats["count"],
-            avg_lqi=conn_stats["avg_lqi"],
-            max_gap_hours=conn_stats["max_gap_hours"],
-            has_watchdog_alert=has_watchdog_alert,
-            battery=battery,
-            abnormal_state=abnormal_state,
-        ))
-
+    # 5. Datum (Wochentag-Kurzform)
+    _days_de = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
     try:
         date_obj = datetime.strptime(today_str, "%Y-%m-%d")
-        display_date = date_obj.strftime("%d.%m.%Y")
+        date_display = f"{_days_de[date_obj.weekday()]} {date_obj.strftime('%d.%m.')}"
     except Exception:
-        display_date = today_str
+        date_display = today_str
 
-    watering_text = _format_watering_section(success_count, failed_count, total_volume)
-    weather_text = _format_weather_section(
-        temp=temp, temp_min=temp_min, temp_max=temp_max,
-        weather_desc=weather_desc,
-        rain_last=rain_last, rain_next=rain_next, rain_prob=rain_prob,
-        yesterday_rain_next=yesterday_rain_next,
-        rain_last_source=rain_last_source,
-    )
-    valve_text = "\n".join(valve_lines) if valve_lines else "Keine Ventile registriert."
+    # 6. Gemeinsame Bausteine
+    watering_line = _format_watering_morning(success_count, failed_count, total_volume, skip_count, rain_last)
+    weather_line, rain_extra = _format_weather_morning(temp_min, temp_max, weather_desc, rain_next, rain_prob)
 
-    warning_text = ""
-    if warnings:
-        warning_text = "\n\n⚠️ *System-Warnungen:*\n" + "\n".join([f"- {w}" for w in warnings])
+    # 7. Grün-Prüfung → Pfad wählen
+    if _is_report_green(valves, services_ok):
+        return _format_morning_report_short(date_display, watering_line, weather_line, rain_extra)
 
-    return (
-        f"📊 *Täglicher Statusbericht vom {display_date}*\n\n"
-        f"{watering_text}\n\n"
-        f"{weather_text}\n\n"
-        f"{valve_text}"
-        f"{warning_text}"
-    )
+    # Problem-Pfad: Issues nach Schwere aufsammeln
+    threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
+    issues = []
+
+    if not services_ok:
+        if mqtt_client.HAS_PAHO and not mqtt_client.is_broker_connected():
+            issues.append("🔴 MQTT-Broker nicht erreichbar")
+        else:
+            issues.append("🔴 Mittelweg-Dienst (Zigbee2MQTT) offline")
+
+    for valve in valves:
+        wish_name = valve["wish_name"]
+        abnormal = (valve.get("valve_abnormal_state") or "normal")
+        battery = valve.get("battery")
+        flag_key = f"watchdog_alert_active_valve_{valve['id']}"
+        has_watchdog = database.get_metadata(flag_key) == "1"
+
+        if abnormal != "normal":
+            issues.append(f"🚨 {wish_name}: Anomalie erkannt ({abnormal})")
+        elif battery is not None and int(battery) <= threshold:
+            issues.append(f"🟡 {wish_name}: Batterie schwach ({battery}%)")
+        if has_watchdog:
+            issues.append(f"⚠️ {wish_name}: kein Signal (Watchdog aktiv)")
+
+    return _format_morning_report_problem(date_display, issues, watering_line, weather_line, rain_extra)
 
 
 def send_daily_report(today_str: str):
