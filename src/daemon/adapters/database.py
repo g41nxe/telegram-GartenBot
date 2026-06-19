@@ -232,6 +232,20 @@ def get_schedules():
     finally:
         conn.close()
 
+def get_schedule_by_id(schedule_id: int) -> dict | None:
+    """Gibt einen einzelnen Zeitplan anhand seiner ID zurück, oder None."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM schedules WHERE id = ?", (schedule_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"Fehler beim Laden des Zeitplans {schedule_id}: {e}")
+        return None
+    finally:
+        conn.close()
+
 def add_schedule(name: str, time: str, days: str, duration_minutes: int, target_volume_liters: int = 0, is_active: int = 1) -> int:
     """Fügt einen neuen Zeitplan hinzu und gibt dessen ID zurück."""
     conn = get_connection()

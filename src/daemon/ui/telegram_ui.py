@@ -42,6 +42,7 @@ def set_watering_controller(ctrl) -> None:
 wizard_states = {}  # { chat_id: { "step": int/str, "name": str, ..., "last_active": datetime } }
 manual_states = {}  # { chat_id: { "step": int/str, "duration": int, "volume": int, "last_active": datetime } }
 delete_states = {}  # { chat_id: { "schedule_id": int, "name": str, "last_active": datetime } }
+edit_states = {}    # { chat_id: { "sched_id": int, "field": str|None, "edit_days": list, "last_active": datetime } }
 
 _state_lock = threading.Lock()
 WIZARD_TTL_SECONDS = 600  # 10 minutes of inactivity expires a wizard session
@@ -210,16 +211,34 @@ def get_schedules_keyboard() -> dict:
     }
 
 def get_schedules_inline_keyboard(schedules: list) -> dict:
-    """Erstellt ein Inline-Keyboard mit Toggle- und Lösch-Button pro Zeitplan."""
+    """Erstellt ein Inline-Keyboard mit Toggle-, Bearbeiten- und Lösch-Button pro Zeitplan."""
     rows = []
     for s in schedules:
         icon = "🟢" if s['is_active'] == 1 else "🔴"
         rows.append([
             {"text": f"{icon} {s['name']} ({s['time']})", "callback_data": f"sched_toggle_{s['id']}"},
+            {"text": "✏️", "callback_data": f"sched_edit_{s['id']}"},
             {"text": "🗑️", "callback_data": f"sched_delete_ask_{s['id']}"}
         ])
     rows.append([{"text": "➕ Neuer Zeitplan", "callback_data": "wiz_start"}])
     return {"inline_keyboard": rows}
+
+
+def _get_edit_days_keyboard(sched_id: int, selected: list) -> dict:
+    """Inline-Keyboard für Tage-Auswahl im Edit-Modus."""
+    _DAY_MAP = [("Mon", "Mo"), ("Tue", "Di"), ("Wed", "Mi"), ("Thu", "Do"),
+                ("Fri", "Fr"), ("Sat", "Sa"), ("Sun", "So")]
+    row1 = [{"text": ("✅ " if d[0] in selected else "") + d[1],
+             "callback_data": f"sched_editday_{sched_id}_{d[0]}"} for d in _DAY_MAP[:4]]
+    row2 = [{"text": ("✅ " if d[0] in selected else "") + d[1],
+             "callback_data": f"sched_editday_{sched_id}_{d[0]}"} for d in _DAY_MAP[4:]]
+    everyday_sel = "everyday" in selected
+    row2.append({"text": ("✅ " if everyday_sel else "") + "Täglich",
+                 "callback_data": f"sched_editday_{sched_id}_everyday"})
+    return {"inline_keyboard": [row1, row2, [
+        {"text": "💾 Speichern", "callback_data": f"sched_editday_save_{sched_id}"},
+        {"text": "❌ Abbrechen",  "callback_data": "sched_edit_cancel"},
+    ]]}
 
 def get_hour_keyboard() -> dict:
     """Erstellt ein kompaktes 6x4 Grid für alle 24 Stunden."""
@@ -873,6 +892,24 @@ def _process_message(msg_obj: dict):
             return
         else:
             _state_del(delete_states, chat_id)
+
+    ed_state = _state_get(edit_states, chat_id)
+    if ed_state is not None and ed_state.get("field") == "name":
+        new_name = text.strip()
+        if not new_name or len(new_name) > 50 or text.startswith("/"):
+            telegram_client.send_message(chat_id, "❌ Name muss 1–50 Zeichen lang sein.")
+            return
+        sched_id = ed_state["sched_id"]
+        schedule = database.get_schedule_by_id(sched_id)
+        if schedule:
+            database.update_schedule(
+                sched_id, new_name, schedule["time"], schedule["days"],
+                schedule["duration_minutes"], schedule.get("target_volume_liters") or 0, schedule["is_active"]
+            )
+            _state_del(edit_states, chat_id)
+            telegram_client.send_message(chat_id, f"✅ Name auf *\"{new_name}\"* geändert.")
+            handle_schedules(chat_id)
+        return
 
     state = _state_get(wizard_states, chat_id)
     if state is not None:
@@ -1530,6 +1567,207 @@ def _process_callback_query(cb_obj: dict):
         wish_name = data.split("_", 1)[1]
         telegram_client.answer_callback_query(cb_id, f"Lade Foto von {wish_name}...")
         _send_latest_photo(chat_id, wish_name)
+
+    elif data.startswith("sched_edit_") and not data.startswith("sched_editfield_") and not data.startswith("sched_editday_"):
+        if data == "sched_edit_cancel":
+            _state_del(edit_states, chat_id)
+            telegram_client.answer_callback_query(cb_id, "Bearbeitung abgebrochen.")
+            handle_schedules(chat_id)
+        else:
+            sched_id = int(data.split("_")[2])
+            schedule = database.get_schedule_by_id(sched_id)
+            if not schedule:
+                telegram_client.answer_callback_query(cb_id, "Zeitplan nicht gefunden.", show_alert=True)
+                return
+            _state_set(edit_states, chat_id, {"sched_id": sched_id})
+            telegram_client.answer_callback_query(cb_id)
+            days_str = format_days_german(schedule["days"].split(",") if schedule["days"] else [])
+            vol = schedule.get("target_volume_liters") or 0
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                f"*✏️ Zeitplan bearbeiten — \"{schedule['name']}\"*\n\n"
+                f"• Zeit: {schedule['time']} Uhr\n"
+                f"• Tage: {days_str}\n"
+                f"• Dauer: {schedule['duration_minutes']} Min\n"
+                f"• Menge: {'∞' if vol == 0 else str(vol) + ' L'}\n\n"
+                "Was möchtest du ändern?",
+                {"inline_keyboard": [
+                    [{"text": "⏰ Zeit",   "callback_data": f"sched_editfield_time_{sched_id}"},
+                     {"text": "📅 Tage",  "callback_data": f"sched_editfield_days_{sched_id}"}],
+                    [{"text": "⏳ Dauer",  "callback_data": f"sched_editfield_duration_{sched_id}"},
+                     {"text": "💧 Menge", "callback_data": f"sched_editfield_volume_{sched_id}"}],
+                    [{"text": "✏️ Name",  "callback_data": f"sched_editfield_name_{sched_id}"}],
+                    [{"text": "❌ Abbrechen", "callback_data": "sched_edit_cancel"}],
+                ]},
+            )
+
+    elif data.startswith("sched_editfield_"):
+        parts = data.split("_")
+        field = parts[2]
+        sched_id = int(parts[3])
+        schedule = database.get_schedule_by_id(sched_id)
+        if not schedule:
+            telegram_client.answer_callback_query(cb_id, "Zeitplan nicht mehr vorhanden.", show_alert=True)
+            return
+        _state_set(edit_states, chat_id, {"sched_id": sched_id, "field": field})
+        telegram_client.answer_callback_query(cb_id)
+
+        if field == "duration":
+            durations = [5, 10, 15, 20, 25]
+            rows = [
+                [{"text": f"{d} Min", "callback_data": f"sched_setdur_{sched_id}_{d}"} for d in durations],
+                [{"text": "❌ Abbrechen", "callback_data": "sched_edit_cancel"}],
+            ]
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                f"*✏️ Dauer — \"{schedule['name']}\"*\n\nAktuell: *{schedule['duration_minutes']} Min*\n\nNeue Dauer wählen:",
+                {"inline_keyboard": rows}
+            )
+
+        elif field == "volume":
+            volumes = [0, 5, 10, 15, 20, 25, 30, 40]
+            rows = [
+                [{"text": ("∞" if v == 0 else f"{v} L"), "callback_data": f"sched_setvol_{sched_id}_{v}"} for v in volumes[:4]],
+                [{"text": ("∞" if v == 0 else f"{v} L"), "callback_data": f"sched_setvol_{sched_id}_{v}"} for v in volumes[4:]],
+                [{"text": "❌ Abbrechen", "callback_data": "sched_edit_cancel"}],
+            ]
+            cur_vol = schedule.get("target_volume_liters") or 0
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                f"*✏️ Menge — \"{schedule['name']}\"*\n\nAktuell: *{'∞ (kein Limit)' if cur_vol == 0 else str(cur_vol) + ' L'}*\n\nNeue Menge wählen:",
+                {"inline_keyboard": rows}
+            )
+
+        elif field == "time":
+            rows = []
+            for i in range(0, 24, 6):
+                rows.append([{"text": f"{h:02d}", "callback_data": f"sched_edithour_{sched_id}_{h}"} for h in range(i, i + 6)])
+            rows.append([{"text": "❌ Abbrechen", "callback_data": "sched_edit_cancel"}])
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                f"*✏️ Zeit — \"{schedule['name']}\"*\n\nAktuell: *{schedule['time']} Uhr*\n\nNeue Stunde wählen:",
+                {"inline_keyboard": rows}
+            )
+
+        elif field == "name":
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                f"*✏️ Name — \"{schedule['name']}\"*\n\nAktuell: *{schedule['name']}*\n\nNeuen Namen eingeben:",
+                {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "sched_edit_cancel"}]]}
+            )
+
+        elif field == "days":
+            current_days = schedule["days"].split(",") if schedule["days"] else []
+            _state_set(edit_states, chat_id, {"sched_id": sched_id, "field": "days", "edit_days": list(current_days)})
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                f"*✏️ Tage — \"{schedule['name']}\"*\n\nWochentage wählen:",
+                _get_edit_days_keyboard(sched_id, current_days)
+            )
+
+    elif data.startswith("sched_edithour_"):
+        parts = data.split("_")
+        sched_id, hour = int(parts[2]), int(parts[3])
+        state = _state_get(edit_states, chat_id)
+        if state:
+            state["hour"] = hour
+            _state_touch(edit_states, chat_id)
+        telegram_client.answer_callback_query(cb_id)
+        rows = []
+        for i in range(0, 60, 15):
+            rows.append([{"text": f":{m:02d}", "callback_data": f"sched_editmin_{sched_id}_{hour}_{m}"}
+                         for m in range(i, min(i + 15, 60), 5)])
+        rows.append([{"text": "❌ Abbrechen", "callback_data": "sched_edit_cancel"}])
+        telegram_client.edit_message_text(
+            chat_id, message_id,
+            f"*✏️ Zeit*\n\nStunde: *{hour:02d}*\nMinuten wählen:",
+            {"inline_keyboard": rows}
+        )
+
+    elif data.startswith("sched_editmin_"):
+        parts = data.split("_")
+        sched_id, hour, minute = int(parts[2]), int(parts[3]), int(parts[4])
+        schedule = database.get_schedule_by_id(sched_id)
+        if schedule:
+            new_time = f"{hour:02d}:{minute:02d}"
+            database.update_schedule(
+                sched_id, schedule["name"], new_time, schedule["days"],
+                schedule["duration_minutes"], schedule.get("target_volume_liters") or 0, schedule["is_active"]
+            )
+            telegram_client.answer_callback_query(cb_id, f"Zeit auf {new_time} Uhr gesetzt.")
+            _state_del(edit_states, chat_id)
+            handle_schedules(chat_id)
+
+    elif data.startswith("sched_setdur_"):
+        parts = data.split("_")
+        sched_id, dur = int(parts[2]), int(parts[3])
+        schedule = database.get_schedule_by_id(sched_id)
+        if schedule:
+            database.update_schedule(
+                sched_id, schedule["name"], schedule["time"], schedule["days"],
+                dur, schedule.get("target_volume_liters") or 0, schedule["is_active"]
+            )
+            telegram_client.answer_callback_query(cb_id, f"Dauer auf {dur} Min gesetzt.")
+            _state_del(edit_states, chat_id)
+            handle_schedules(chat_id)
+
+    elif data.startswith("sched_setvol_"):
+        parts = data.split("_")
+        sched_id, vol = int(parts[2]), int(parts[3])
+        schedule = database.get_schedule_by_id(sched_id)
+        if schedule:
+            database.update_schedule(
+                sched_id, schedule["name"], schedule["time"], schedule["days"],
+                schedule["duration_minutes"], vol, schedule["is_active"]
+            )
+            label = "∞ (kein Limit)" if vol == 0 else f"{vol} L"
+            telegram_client.answer_callback_query(cb_id, f"Menge auf {label} gesetzt.")
+            _state_del(edit_states, chat_id)
+            handle_schedules(chat_id)
+
+    elif data.startswith("sched_editday_save_"):
+        sched_id = int(data.split("_")[3])
+        state = _state_get(edit_states, chat_id)
+        if state:
+            days = state.get("edit_days", [])
+            if not days:
+                telegram_client.answer_callback_query(cb_id, "⚠️ Mind. einen Tag auswählen!", show_alert=True)
+                return
+            schedule = database.get_schedule_by_id(sched_id)
+            if schedule:
+                days_str = ",".join(days)
+                database.update_schedule(
+                    sched_id, schedule["name"], schedule["time"], days_str,
+                    schedule["duration_minutes"], schedule.get("target_volume_liters") or 0, schedule["is_active"]
+                )
+                telegram_client.answer_callback_query(cb_id, "Tage gespeichert.")
+                _state_del(edit_states, chat_id)
+                handle_schedules(chat_id)
+
+    elif data.startswith("sched_editday_"):
+        parts = data.split("_")
+        sched_id, day = int(parts[2]), parts[3]
+        state = _state_get(edit_states, chat_id)
+        if state:
+            days = list(state.get("edit_days", []))
+            if day == "everyday":
+                days = [] if "everyday" in days else ["everyday"]
+            else:
+                if "everyday" in days:
+                    days.remove("everyday")
+                if day in days:
+                    days.remove(day)
+                else:
+                    days.append(day)
+            state["edit_days"] = days
+            _state_touch(edit_states, chat_id)
+            telegram_client.answer_callback_query(cb_id)
+            schedule = database.get_schedule_by_id(sched_id)
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                f"*✏️ Tage — \"{schedule['name'] if schedule else ''}\"*\n\nWochentage wählen:",
+                _get_edit_days_keyboard(sched_id, days)
+            )
 
     elif data.startswith("camint_"):
         try:

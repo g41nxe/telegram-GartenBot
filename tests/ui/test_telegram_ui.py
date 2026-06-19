@@ -15,6 +15,7 @@ from daemon.ui.telegram_ui import (
     wizard_states,
     manual_states,
     delete_states,
+    edit_states,
     _state_get,
     _state_set,
     _state_del,
@@ -175,8 +176,9 @@ class TestSchedulesInlineKeyboard(unittest.TestCase):
 
     def test_delete_button_callback_data(self):
         kb = get_schedules_inline_keyboard([self._s(3, "Test", "08:00", 1)])
-        btn = kb["inline_keyboard"][0][1]
-        self.assertEqual(btn["callback_data"], "sched_delete_ask_3")
+        row = kb["inline_keyboard"][0]
+        delete_btn = next((b for b in row if b["callback_data"] == "sched_delete_ask_3"), None)
+        self.assertIsNotNone(delete_btn, "Kein Lösch-Button mit sched_delete_ask_3 gefunden")
 
     def test_add_button_is_last_row(self):
         kb = get_schedules_inline_keyboard([self._s(1, "Test", "07:00", 1)])
@@ -186,6 +188,139 @@ class TestSchedulesInlineKeyboard(unittest.TestCase):
         schedules = [self._s(1, "A", "07:00", 1), self._s(2, "B", "20:00", 0)]
         kb = get_schedules_inline_keyboard(schedules)
         self.assertEqual(len(kb["inline_keyboard"]), 3)  # 2 schedule rows + add row
+
+
+class TestScheduleEditFlow(unittest.TestCase):
+
+    def _cb(self, data, chat_id=100, msg_id=1):
+        return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
+
+    def _msg(self, text, chat_id=100):
+        return {"chat": {"id": chat_id}, "text": text, "message_id": 1}
+
+    def _schedule(self, id=7, name="Abend", time="20:00", days="Mon", dur=15, vol=0, active=1):
+        return {"id": id, "name": name, "time": time, "days": days,
+                "duration_minutes": dur, "target_volume_liters": vol, "is_active": active}
+
+    def setUp(self):
+        from daemon.ui.telegram_ui import edit_states
+        edit_states.clear()
+
+    def tearDown(self):
+        from daemon.ui.telegram_ui import edit_states
+        edit_states.clear()
+
+    def test_edit_button_in_keyboard(self):
+        """Jeder Zeitplan hat einen ✏️-Button mit sched_edit_ID Callback."""
+        kb = get_schedules_inline_keyboard([{"id": 7, "name": "Abend", "time": "20:00", "is_active": 1}])
+        row = kb["inline_keyboard"][0]
+        callbacks = [b["callback_data"] for b in row]
+        self.assertIn("sched_edit_7", callbacks)
+        edit_btn = next(b for b in row if b["callback_data"] == "sched_edit_7")
+        self.assertEqual(edit_btn["text"], "✏️")
+
+    def test_delete_button_still_present(self):
+        """🗑️ Button ist nach dem Hinzufügen des Edit-Buttons weiterhin vorhanden."""
+        kb = get_schedules_inline_keyboard([{"id": 7, "name": "Abend", "time": "20:00", "is_active": 1}])
+        row = kb["inline_keyboard"][0]
+        callbacks = [b["callback_data"] for b in row]
+        self.assertIn("sched_delete_ask_7", callbacks)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_sched_edit_zeigt_feld_auswahlmenue(self, mock_client, mock_db):
+        """sched_edit_7 zeigt ein Menü mit den bearbeitbaren Feldern."""
+        mock_db.get_schedule_by_id.return_value = self._schedule()
+        _process_callback_query(self._cb("sched_edit_7"))
+        mock_client.edit_message_text.assert_called_once()
+        text = mock_client.edit_message_text.call_args[0][2]
+        self.assertIn("✏️", text)
+        kb = mock_client.edit_message_text.call_args[0][3]
+        callbacks = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
+        self.assertIn("sched_editfield_duration_7", callbacks)
+        self.assertIn("sched_editfield_time_7", callbacks)
+        self.assertIn("sched_editfield_days_7", callbacks)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_sched_edit_unbekannte_id_zeigt_alert(self, mock_client, mock_db):
+        """sched_edit_99 zeigt Alert wenn Zeitplan nicht gefunden."""
+        mock_db.get_schedule_by_id.return_value = None
+        _process_callback_query(self._cb("sched_edit_99"))
+        mock_client.edit_message_text.assert_not_called()
+        mock_client.answer_callback_query.assert_called()
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_sched_editfield_duration_zeigt_keyboard(self, mock_client, mock_db):
+        """sched_editfield_duration_7 zeigt ein Dauer-Auswahl-Keyboard."""
+        mock_db.get_schedule_by_id.return_value = self._schedule()
+        _process_callback_query(self._cb("sched_editfield_duration_7"))
+        mock_client.edit_message_text.assert_called_once()
+        kb = mock_client.edit_message_text.call_args[0][3]
+        callbacks = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
+        self.assertTrue(any("sched_setdur_7_" in c for c in callbacks))
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_sched_setdur_speichert_neue_dauer(self, mock_client, mock_db):
+        """sched_setdur_7_20 ruft update_schedule mit neuer Dauer auf."""
+        mock_db.get_schedule_by_id.return_value = self._schedule()
+        mock_db.get_schedules.return_value = []
+        _process_callback_query(self._cb("sched_setdur_7_20"))
+        mock_db.update_schedule.assert_called_once_with(7, "Abend", "20:00", "Mon", 20, 0, 1)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_sched_setvol_speichert_neue_menge(self, mock_client, mock_db):
+        """sched_setvol_7_25 ruft update_schedule mit neuer Menge auf."""
+        mock_db.get_schedule_by_id.return_value = self._schedule()
+        mock_db.get_schedules.return_value = []
+        _process_callback_query(self._cb("sched_setvol_7_25"))
+        mock_db.update_schedule.assert_called_once_with(7, "Abend", "20:00", "Mon", 15, 25, 1)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_sched_edit_cancel_schliesst_dialog(self, mock_client, mock_db):
+        """sched_edit_cancel schließt den Edit-Dialog ohne Änderung."""
+        mock_db.get_schedules.return_value = []
+        _process_callback_query(self._cb("sched_edit_cancel"))
+        mock_client.update_schedule = lambda *a: None
+        mock_db.update_schedule.assert_not_called()
+        mock_client.answer_callback_query.assert_called()
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_name_texteingabe_speichert_namen(self, mock_client, mock_db):
+        """Texteingabe wenn edit_states field='name' speichert den neuen Namen."""
+        from daemon.ui.telegram_ui import edit_states, _state_set
+        _state_set(edit_states, 100, {"sched_id": 7, "field": "name"})
+        mock_db.get_schedule_by_id.return_value = self._schedule()
+        mock_db.get_schedules.return_value = []
+        _process_message(self._msg("Neuer Zeitplan"))
+        mock_db.update_schedule.assert_called_once_with(7, "Neuer Zeitplan", "20:00", "Mon", 15, 0, 1)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_sched_editfield_days_zeigt_vorauswahl(self, mock_client, mock_db):
+        """sched_editfield_days_7 zeigt Tage-Keyboard mit aktuellen Tagen vorausgewählt."""
+        mock_db.get_schedule_by_id.return_value = self._schedule(days="Mon")
+        _process_callback_query(self._cb("sched_editfield_days_7"))
+        mock_client.edit_message_text.assert_called_once()
+        kb = mock_client.edit_message_text.call_args[0][3]
+        callbacks = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
+        self.assertTrue(any("sched_editday_save_7" in c for c in callbacks))
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_sched_editday_save_speichert_tage(self, mock_client, mock_db):
+        """sched_editday_save_7 speichert die ausgewählten Tage."""
+        from daemon.ui.telegram_ui import edit_states, _state_set
+        _state_set(edit_states, 100, {"sched_id": 7, "field": "days", "edit_days": ["Mon", "Wed"]})
+        mock_db.get_schedule_by_id.return_value = self._schedule()
+        mock_db.get_schedules.return_value = []
+        _process_callback_query(self._cb("sched_editday_save_7"))
+        mock_db.update_schedule.assert_called_once_with(7, "Abend", "20:00", "Mon,Wed", 15, 0, 1)
 
 
 class TestScheduleToggleCallback(unittest.TestCase):
