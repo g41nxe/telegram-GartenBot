@@ -72,6 +72,26 @@ def _is_report_green(valves: list, services_ok: bool) -> bool:
     return True
 
 
+def _format_weather_morning(
+    temp_min: float,
+    temp_max: float,
+    weather_desc: str,
+    rain_next: float,
+    rain_prob: int,
+) -> tuple[str, "str | None"]:
+    """Wetter-Zusammenfassung für den Morgen-Bericht. Gibt (Hauptzeile, optionale Regenzeile) zurück."""
+    if rain_next >= 2.0:
+        emoji = "🌧"
+    elif rain_next >= 0.5:
+        emoji = "🌦"
+    else:
+        emoji = "☀️"
+
+    main = f"{emoji} Heute {temp_min:.0f}–{temp_max:.0f} °C · {weather_desc} ({rain_prob} % ☂)"
+    extra = f"🌧 {rain_next} mm erwartet" if rain_next >= 0.5 else None
+    return main, extra
+
+
 def _format_watering_morning(
     success_count: int,
     failed_count: int,

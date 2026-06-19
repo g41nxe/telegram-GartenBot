@@ -326,6 +326,36 @@ class TestKameraWarnungen(unittest.TestCase):
         self.assertEqual(result, [])
 
 
+class TestFormatWeatherMorning(unittest.TestCase):
+
+    def test_dry_day_returns_sunny_emoji(self):
+        main, extra = dr._format_weather_morning(14.0, 24.0, "Sonnig", rain_next=0.0, rain_prob=5)
+        self.assertIn("☀️", main)
+        self.assertIn("14", main)
+        self.assertIn("24", main)
+        self.assertIsNone(extra)
+
+    def test_light_rain_returns_partly_cloudy_emoji_and_extra_line(self):
+        main, extra = dr._format_weather_morning(12.0, 18.0, "Bewölkt", rain_next=0.8, rain_prob=40)
+        self.assertIn("🌦", main)
+        self.assertIsNotNone(extra)
+        self.assertIn("0.8", extra)
+
+    def test_heavy_rain_returns_rain_emoji(self):
+        main, extra = dr._format_weather_morning(10.0, 15.0, "Regen", rain_next=8.0, rain_prob=85)
+        self.assertIn("🌧", main)
+        self.assertIsNotNone(extra)
+        self.assertIn("8.0", extra)
+
+    def test_below_threshold_no_extra_line(self):
+        main, extra = dr._format_weather_morning(14.0, 22.0, "Leicht bewölkt", rain_next=0.3, rain_prob=10)
+        self.assertIsNone(extra)
+
+    def test_no_double_asterisk(self):
+        main, _ = dr._format_weather_morning(14.0, 24.0, "Sonnig", rain_next=0.0, rain_prob=5)
+        self.assertNotIn("**", main)
+
+
 class TestFormatWateringMorning(unittest.TestCase):
 
     def test_no_activity_returns_nicht_bewaessert(self):
