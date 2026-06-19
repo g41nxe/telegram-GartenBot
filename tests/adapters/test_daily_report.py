@@ -195,15 +195,18 @@ class TestSendDailyReport(unittest.TestCase):
             self.addCleanup(p.stop)
         return mocks
 
+    def _setup_db_mock(self, mocks, success=1, failed=0, volume=5.0, skip_count=0, valves=None):
+        mocks["db"].get_watering_stats_last_24h.return_value = (success, failed, volume)
+        mocks["db"].get_watering_skip_count_last_24h.return_value = skip_count
+        mocks["db"].get_all_valves.return_value = valves or []
+        mocks["db"].get_metadata.return_value = None
+
     def test_send_daily_report_does_not_sleep(self):
         """send_daily_report() must not block — scheduler thread owns the wait."""
         from daemon.adapters.daily_report import send_daily_report
 
         mocks = self._make_patches()
-        mocks["db"].get_watering_stats_last_24h.return_value = (1, 0, 5.0)
-        mocks["db"].get_all_valves.return_value = []
-        mocks["db"].get_metadata.return_value = None
-        mocks["db"].get_daily_forecast_snapshot.return_value = None
+        self._setup_db_mock(mocks)
         mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
 
@@ -215,10 +218,7 @@ class TestSendDailyReport(unittest.TestCase):
         from daemon.adapters.daily_report import send_daily_report
 
         mocks = self._make_patches()
-        mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
-        mocks["db"].get_all_valves.return_value = []
-        mocks["db"].get_metadata.return_value = None
-        mocks["db"].get_daily_forecast_snapshot.return_value = None
+        self._setup_db_mock(mocks, success=0, failed=0, volume=0.0)
         mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
 
@@ -232,10 +232,7 @@ class TestSendDailyReport(unittest.TestCase):
         from daemon.core.scheduler_events import DailyReportTriggered
 
         mocks = self._make_patches()
-        mocks["db"].get_watering_stats_last_24h.return_value = (2, 1, 8.5)
-        mocks["db"].get_all_valves.return_value = []
-        mocks["db"].get_metadata.return_value = None
-        mocks["db"].get_daily_forecast_snapshot.return_value = None
+        self._setup_db_mock(mocks, success=2, failed=1, volume=8.5)
         mocks["weather"].get_weather_data.return_value = (3.0, 1.0, 18.0, 61, 14.0, 22.0, 80, "measured")
         mocks["mqtt"].HAS_PAHO = False
 
@@ -251,10 +248,7 @@ class TestSendDailyReport(unittest.TestCase):
         from daemon.adapters.daily_report import send_daily_report
 
         mocks = self._make_patches()
-        mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
-        mocks["db"].get_all_valves.return_value = []
-        mocks["db"].get_metadata.return_value = None
-        mocks["db"].get_daily_forecast_snapshot.return_value = None
+        self._setup_db_mock(mocks, success=0, failed=0, volume=0.0)
         mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
 
@@ -272,9 +266,9 @@ class TestDailyReportDesignSystem(unittest.TestCase):
              patch("daemon.adapters.daily_report.weather") as mock_weather, \
              patch("daemon.adapters.daily_report.mqtt_client") as mock_mqtt:
             mock_db.get_watering_stats_last_24h.return_value = (1, 0, 5.0)
+            mock_db.get_watering_skip_count_last_24h.return_value = 0
             mock_db.get_all_valves.return_value = []
             mock_db.get_metadata.return_value = None
-            mock_db.get_daily_forecast_snapshot.return_value = None
             mock_weather.get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5, "measured")
             mock_mqtt.HAS_PAHO = False
             return generate_daily_report("2026-06-18")
@@ -324,6 +318,254 @@ class TestKameraWarnungen(unittest.TestCase):
         with patch("daemon.config.get_setting", return_value=20):
             result = dr._camera_warnings({"wish_name": "Hochbeet", "battery": None})
         self.assertEqual(result, [])
+
+
+class TestMorningReportAssembly(unittest.TestCase):
+
+    def test_short_form_starts_with_guten_morgen(self):
+        result = dr._format_morning_report_short(
+            date_display="Do 19.06.",
+            watering_line="💧 Gestern 1× bewässert · 45 L",
+            weather_line="☀️ Heute 14–24 °C · Sonnig (5 % ☂)",
+            rain_extra_line=None,
+        )
+        self.assertIn("Guten Morgen", result)
+        self.assertIn("✅ System: alles in Ordnung", result)
+        self.assertNotIn("LQI", result)
+
+    def test_short_form_includes_rain_extra_when_present(self):
+        result = dr._format_morning_report_short(
+            date_display="Do 19.06.",
+            watering_line="💧 Gestern 1× bewässert · 45 L",
+            weather_line="🌦 Heute 12–18 °C · Bewölkt (40 % ☂)",
+            rain_extra_line="🌧 0.8 mm erwartet",
+        )
+        self.assertIn("0.8 mm", result)
+
+    def test_problem_form_shows_issue_first(self):
+        result = dr._format_morning_report_problem(
+            date_display="Do 19.06.",
+            issues=["🟡 Terrasse: Batterie schwach (15%)"],
+            watering_line="💧 Gestern 1× bewässert · 45 L",
+            weather_line="☀️ Heute 14–24 °C · Sonnig (5 % ☂)",
+            rain_extra_line=None,
+        )
+        self.assertIn("Guten Morgen", result)
+        self.assertIn("Batterie schwach", result)
+        self.assertLess(result.index("Batterie"), result.index("bewässert"))
+
+    def test_problem_form_no_double_asterisk(self):
+        result = dr._format_morning_report_problem(
+            date_display="Do 19.06.",
+            issues=["🔴 MQTT-Broker nicht erreichbar"],
+            watering_line="💧 Gestern nicht bewässert",
+            weather_line="☀️ Heute 14–24 °C · Sonnig (5 % ☂)",
+            rain_extra_line=None,
+        )
+        self.assertNotIn("**", result)
+
+
+class TestGenerateDailyReportIntegration(unittest.TestCase):
+
+    def _make_patches(self):
+        patches = {
+            "db": patch("daemon.adapters.daily_report.database"),
+            "weather": patch("daemon.adapters.daily_report.weather"),
+            "mqtt": patch("daemon.adapters.daily_report.mqtt_client"),
+        }
+        mocks = {k: p.start() for k, p in patches.items()}
+        for p in patches.values():
+            self.addCleanup(p.stop)
+        return mocks
+
+    def _generate(self, success=1, failed=0, volume=45.0, skip_count=0, valves=None):
+        from daemon.adapters.daily_report import generate_daily_report
+        mocks = self._make_patches()
+        mocks["db"].get_watering_stats_last_24h.return_value = (success, failed, volume)
+        mocks["db"].get_watering_skip_count_last_24h.return_value = skip_count
+        mocks["db"].get_all_valves.return_value = valves or []
+        mocks["db"].get_metadata.return_value = None
+        mocks["weather"].get_weather_data.return_value = (0.5, 0.0, 20.0, 0, 14.0, 24.0, 5, "measured")
+        mocks["mqtt"].HAS_PAHO = False
+        return generate_daily_report("2026-06-19")
+
+    def test_green_case_starts_with_guten_morgen(self):
+        result = self._generate()
+        self.assertIn("Guten Morgen", result)
+
+    def test_green_case_has_system_ok_line(self):
+        result = self._generate()
+        self.assertIn("alles in Ordnung", result)
+
+    def test_green_case_no_lqi_number(self):
+        result = self._generate()
+        self.assertNotIn("LQI", result)
+        self.assertNotIn("Meldungen", result)
+
+    def test_green_case_no_old_header(self):
+        result = self._generate()
+        self.assertNotIn("Täglicher Statusbericht", result)
+
+    def test_problem_case_battery_shows_warning(self):
+        from daemon.adapters.daily_report import generate_daily_report
+        valve = {"id": 1, "wish_name": "Terrasse", "mqtt_name": "garden_valve",
+                 "battery": 15, "valve_abnormal_state": "normal", "last_update": None}
+        mocks = self._make_patches()
+        mocks["db"].get_watering_stats_last_24h.return_value = (1, 0, 30.0)
+        mocks["db"].get_watering_skip_count_last_24h.return_value = 0
+        mocks["db"].get_all_valves.return_value = [valve]
+        mocks["db"].get_metadata.return_value = None
+        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 14.0, 24.0, 5, "measured")
+        mocks["mqtt"].HAS_PAHO = False
+        with patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_cfg.get_setting.return_value = 20
+            mock_cfg.LATITUDE = 48.0
+            mock_cfg.LONGITUDE = 11.0
+            result = generate_daily_report("2026-06-19")
+        self.assertIn("Batterie", result)
+        self.assertIn("15", result)
+        self.assertNotIn("alles in Ordnung", result)
+
+    def test_problem_case_no_lqi_number(self):
+        from daemon.adapters.daily_report import generate_daily_report
+        valve = {"id": 1, "wish_name": "Terrasse", "mqtt_name": "garden_valve",
+                 "battery": 15, "valve_abnormal_state": "normal", "last_update": None}
+        mocks = self._make_patches()
+        mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
+        mocks["db"].get_watering_skip_count_last_24h.return_value = 0
+        mocks["db"].get_all_valves.return_value = [valve]
+        mocks["db"].get_metadata.return_value = None
+        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 14.0, 24.0, 5, "measured")
+        mocks["mqtt"].HAS_PAHO = False
+        with patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_cfg.get_setting.return_value = 20
+            mock_cfg.LATITUDE = 48.0
+            mock_cfg.LONGITUDE = 11.0
+            result = generate_daily_report("2026-06-19")
+        self.assertNotIn("LQI", result)
+        self.assertNotIn("Meldungen", result)
+
+    def test_no_double_asterisk_in_any_case(self):
+        result = self._generate()
+        self.assertNotIn("**", result)
+
+
+class TestFormatWeatherMorning(unittest.TestCase):
+
+    def test_dry_day_returns_sunny_emoji(self):
+        main, extra = dr._format_weather_morning(14.0, 24.0, "Sonnig", rain_next=0.0, rain_prob=5)
+        self.assertIn("☀️", main)
+        self.assertIn("14", main)
+        self.assertIn("24", main)
+        self.assertIsNone(extra)
+
+    def test_light_rain_returns_partly_cloudy_emoji_and_extra_line(self):
+        main, extra = dr._format_weather_morning(12.0, 18.0, "Bewölkt", rain_next=0.8, rain_prob=40)
+        self.assertIn("🌦", main)
+        self.assertIsNotNone(extra)
+        self.assertIn("0.8", extra)
+
+    def test_heavy_rain_returns_rain_emoji(self):
+        main, extra = dr._format_weather_morning(10.0, 15.0, "Regen", rain_next=8.0, rain_prob=85)
+        self.assertIn("🌧", main)
+        self.assertIsNotNone(extra)
+        self.assertIn("8.0", extra)
+
+    def test_below_threshold_no_extra_line(self):
+        main, extra = dr._format_weather_morning(14.0, 22.0, "Leicht bewölkt", rain_next=0.3, rain_prob=10)
+        self.assertIsNone(extra)
+
+    def test_no_double_asterisk(self):
+        main, _ = dr._format_weather_morning(14.0, 24.0, "Sonnig", rain_next=0.0, rain_prob=5)
+        self.assertNotIn("**", main)
+
+
+class TestFormatWateringMorning(unittest.TestCase):
+
+    def test_no_activity_returns_nicht_bewaessert(self):
+        result = dr._format_watering_morning(0, 0, 0.0, skip_count=0)
+        self.assertIn("nicht bewässert", result)
+        self.assertTrue(result.startswith("💧"))
+
+    def test_one_cycle_shows_volume(self):
+        result = dr._format_watering_morning(1, 0, 45.0, skip_count=0)
+        self.assertIn("1×", result)
+        self.assertIn("45", result)
+        self.assertTrue(result.startswith("💧"))
+
+    def test_multiple_cycles_shows_gesamt(self):
+        result = dr._format_watering_morning(3, 0, 90.0, skip_count=0)
+        self.assertIn("3×", result)
+        self.assertIn("gesamt", result)
+
+    def test_skip_with_no_success_shows_uebersprungen(self):
+        result = dr._format_watering_morning(0, 0, 0.0, skip_count=1, rain_last=2.5)
+        self.assertIn("übersprungen", result)
+        self.assertIn("2.5", result)
+        self.assertTrue(result.startswith("🌧"))
+
+    def test_failed_cycle_noted(self):
+        result = dr._format_watering_morning(0, 2, 0.0, skip_count=0)
+        self.assertIn("Fehler", result)
+        self.assertNotIn("LQI", result)
+
+    def test_no_double_asterisk(self):
+        result = dr._format_watering_morning(1, 0, 30.0, skip_count=0)
+        self.assertNotIn("**", result)
+
+
+class TestIsReportGreen(unittest.TestCase):
+
+    def _valve(self, battery=100, abnormal_state="normal", valve_id=1):
+        return {"id": valve_id, "battery": battery, "valve_abnormal_state": abnormal_state, "wish_name": "Terrasse"}
+
+    def test_all_healthy_services_ok_returns_true(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_metadata.return_value = None
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([self._valve()], services_ok=True)
+        self.assertTrue(result)
+
+    def test_services_not_ok_returns_false(self):
+        result = dr._is_report_green([self._valve()], services_ok=False)
+        self.assertFalse(result)
+
+    def test_low_battery_returns_false(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_metadata.return_value = None
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([self._valve(battery=15)], services_ok=True)
+        self.assertFalse(result)
+
+    def test_battery_exactly_at_threshold_returns_false(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_metadata.return_value = None
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([self._valve(battery=20)], services_ok=True)
+        self.assertFalse(result)
+
+    def test_abnormal_state_returns_false(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_metadata.return_value = None
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([self._valve(abnormal_state="stuck_open")], services_ok=True)
+        self.assertFalse(result)
+
+    def test_watchdog_alert_active_returns_false(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_metadata.return_value = "1"
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([self._valve()], services_ok=True)
+        self.assertFalse(result)
+
+    def test_no_valves_services_ok_returns_true(self):
+        result = dr._is_report_green([], services_ok=True)
+        self.assertTrue(result)
 
 
 if __name__ == "__main__":
