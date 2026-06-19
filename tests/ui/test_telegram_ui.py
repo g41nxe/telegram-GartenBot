@@ -1520,5 +1520,57 @@ class TestKameraAkkustandImStatus(unittest.TestCase):
         self.assertIn("🟡", text)
 
 
+class TestGetNextSchedule(unittest.TestCase):
+
+    def _sched(self, name, time_str, days, is_active=1, sched_id=1):
+        return {"id": sched_id, "name": name, "time": time_str, "days": days,
+                "duration_minutes": 15, "target_volume_liters": 30, "is_active": is_active}
+
+    def test_no_schedules_returns_none(self):
+        from daemon.ui.telegram_ui import _get_next_schedule
+        now = datetime(2026, 6, 19, 14, 0)
+        self.assertIsNone(_get_next_schedule([], now))
+
+    def test_inactive_schedule_ignored(self):
+        from daemon.ui.telegram_ui import _get_next_schedule
+        now = datetime(2026, 6, 19, 14, 0)
+        s = self._sched("Rasen", "20:00", "everyday", is_active=0)
+        self.assertIsNone(_get_next_schedule([s], now))
+
+    def test_future_schedule_today_returned(self):
+        from daemon.ui.telegram_ui import _get_next_schedule
+        now = datetime(2026, 6, 19, 14, 0)  # Donnerstag 14:00
+        s = self._sched("Rasen", "20:15", "everyday")
+        result = _get_next_schedule([s], now)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["_next_dt"].hour, 20)
+        self.assertEqual(result["_next_dt"].minute, 15)
+        self.assertEqual(result["_next_dt"].date(), now.date())
+
+    def test_past_schedule_today_rolls_to_tomorrow(self):
+        from daemon.ui.telegram_ui import _get_next_schedule
+        now = datetime(2026, 6, 19, 21, 0)  # Donnerstag 21:00
+        s = self._sched("Rasen", "06:00", "everyday")
+        result = _get_next_schedule([s], now)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["_next_dt"].day, 20)  # Freitag
+
+    def test_wrong_weekday_skips_to_correct_day(self):
+        from daemon.ui.telegram_ui import _get_next_schedule
+        now = datetime(2026, 6, 18, 14, 0)  # Donnerstag (18.06.2026)
+        s = self._sched("Hochbeet", "06:00", "Mon,Wed,Fri")
+        result = _get_next_schedule([s], now)
+        self.assertIsNotNone(result)
+        self.assertEqual(result["_next_dt"].weekday(), 4)  # 4 = Freitag (19.06.2026)
+
+    def test_earliest_of_two_schedules_returned(self):
+        from daemon.ui.telegram_ui import _get_next_schedule
+        now = datetime(2026, 6, 19, 14, 0)
+        s1 = self._sched("Spät", "22:00", "everyday", sched_id=1)
+        s2 = self._sched("Früh", "16:00", "everyday", sched_id=2)
+        result = _get_next_schedule([s1, s2], now)
+        self.assertEqual(result["name"], "Früh")
+
+
 if __name__ == "__main__":
     unittest.main()

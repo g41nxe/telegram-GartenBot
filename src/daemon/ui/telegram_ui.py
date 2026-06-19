@@ -407,7 +407,7 @@ def _get_lqi_description(lqi_val) -> str:
     else:
         return "🔴 Keine Verbindung (0 LQI)"
 
-def _garden_ampel_level(valves: list, services_ok: bool) -> str:
+def _garden_ampel_level(valves: list, services_ok: bool, cameras: list | None = None) -> str:
     """Gibt 'green', 'yellow' oder 'red' zurück — schlimmste aktive Stufe gewinnt."""
     if not services_ok:
         return "red"
@@ -425,16 +425,16 @@ def _garden_ampel_level(valves: list, services_ok: bool) -> str:
         lqi_val = int(lqi) if lqi is not None else 100
         if battery_val <= threshold or lqi_val < 60:
             worst = "yellow"
-    for cam in database.get_all_cameras():
+    for cam in (cameras if cameras is not None else database.get_all_cameras()):
         cam_battery = cam.get("battery")
         if cam_battery is not None and int(cam_battery) <= threshold:
             worst = "yellow"
     return worst
 
 
-def _valve_level(valve: dict, services_ok: bool) -> str:
+def _valve_level(valve: dict, services_ok: bool, cameras: list | None = None) -> str:
     """Gibt 'green', 'yellow' oder 'red' für ein einzelnes Ventil zurück."""
-    return _garden_ampel_level([valve], services_ok)
+    return _garden_ampel_level([valve], services_ok, cameras)
 
 
 def _status_headline(level: str) -> str:
@@ -616,6 +616,42 @@ def handle_camera_interval(chat_id: int, text: str):
     except ValueError:
         telegram_client.send_message(chat_id, "❌ *Ungültiges Format.* Nutzen Sie: `/camera_interval <minuten>` (z.B. `/camera_interval 15`)")
 
+_WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def _get_next_schedule(schedules: list, now: datetime) -> dict | None:
+    """Gibt den nächsten aktiven Zeitplan zurück, der nach `now` feuert (inkl. _next_dt key)."""
+    best = None
+    best_delta = None
+
+    for s in schedules:
+        if not s.get("is_active"):
+            continue
+        try:
+            h, m = map(int, s["time"].split(":"))
+        except (ValueError, KeyError):
+            continue
+        days_raw = s.get("days", "")
+        days = [d.strip() for d in days_raw.split(",")] if days_raw else []
+
+        for offset in range(7):
+            candidate = (now + timedelta(days=offset)).replace(
+                hour=h, minute=m, second=0, microsecond=0
+            )
+            if candidate <= now:
+                continue
+            day_name = _WEEKDAY_NAMES[candidate.weekday()]
+            if "everyday" in days or day_name in days:
+                delta = (candidate - now).total_seconds()
+                if best_delta is None or delta < best_delta:
+                    best_delta = delta
+                    best = dict(s)
+                    best["_next_dt"] = candidate
+                break
+
+    return best
+
+
 def handle_status(chat_id: int):
     from ..adapters import mqtt_client
     from ..core.valve_events import ValveStatusReported
@@ -665,12 +701,13 @@ def handle_status(chat_id: int):
         )
 
     valves = database.get_all_valves()
-    level = _garden_ampel_level(valves, services_ok)
+    cameras = database.get_all_cameras()
+    level = _garden_ampel_level(valves, services_ok, cameras)
     headline = _status_headline(level)
 
     valve_lines = []
     for valve in valves:
-        vlvl = _valve_level(valve, services_ok)
+        vlvl = _valve_level(valve, services_ok, cameras)
         if vlvl == "green":
             valve_lines.append(_format_valve_compact(valve))
         else:
@@ -678,7 +715,6 @@ def handle_status(chat_id: int):
     valves_text = "\n".join(valve_lines) if valve_lines else "Keine Ventile registriert."
 
     # Kamera-Abschnitt (Logik unverändert, Format angepasst)
-    cameras = database.get_all_cameras()
     camera_sections = []
     for cam in cameras:
         wish_name = cam["wish_name"]
@@ -903,7 +939,7 @@ _SETTINGS_META = {
 }
 
 
-def handle_einstellungen(chat_id: int):
+def handle_einstellungen(chat_id: int, message_id: int | None = None):
     """Zeigt die aktuellen konfigurierbaren Werte und Bearbeitungs-Buttons."""
     lines = ["*⚙️ Einstellungen*\n"]
     for key, meta in _SETTINGS_META.items():
@@ -915,7 +951,12 @@ def handle_einstellungen(chat_id: int):
         for key, meta in _SETTINGS_META.items()
     ]
     rows.append([{"text": "✅ Schließen", "callback_data": "einst_close"}])
-    telegram_client.send_message(chat_id, "\n".join(lines), {"inline_keyboard": rows})
+    markup = {"inline_keyboard": rows}
+    text = "\n".join(lines)
+    if message_id:
+        telegram_client.edit_message_text(chat_id, message_id, text, markup)
+    else:
+        telegram_client.send_message(chat_id, text, markup)
 
 
 def _process_message(msg_obj: dict):
@@ -1870,7 +1911,7 @@ def _process_callback_query(cb_obj: dict):
             return
         config.set_setting("RAIN_THRESHOLD_MM", val)
         telegram_client.answer_callback_query(cb_id, f"Regenschwelle auf {val} mm gesetzt.")
-        handle_einstellungen(chat_id)
+        handle_einstellungen(chat_id, message_id)
 
     elif data.startswith("set_battery_"):
         val_str = data[len("set_battery_"):]
@@ -1884,7 +1925,7 @@ def _process_callback_query(cb_obj: dict):
             return
         config.set_setting("BATTERY_WARNING_THRESHOLD", val)
         telegram_client.answer_callback_query(cb_id, f"Batterie-Warnschwelle auf {val}% gesetzt.")
-        handle_einstellungen(chat_id)
+        handle_einstellungen(chat_id, message_id)
 
     elif data.startswith("set_safety_"):
         val_str = data[len("set_safety_"):]
@@ -1898,7 +1939,7 @@ def _process_callback_query(cb_obj: dict):
             return
         config.set_setting("SAFETY_TIMEOUT_MINUTES", val)
         telegram_client.answer_callback_query(cb_id, f"Sicherheits-Timeout auf {val} Min gesetzt.")
-        handle_einstellungen(chat_id)
+        handle_einstellungen(chat_id, message_id)
 
     elif data.startswith("reset_setting_"):
         key = data[len("reset_setting_"):]
@@ -1908,10 +1949,11 @@ def _process_callback_query(cb_obj: dict):
             return
         config.reset_setting(key)
         telegram_client.answer_callback_query(cb_id, f"{meta['label']} zurückgesetzt.")
-        handle_einstellungen(chat_id)
+        handle_einstellungen(chat_id, message_id)
 
     elif data == "einst_close":
-        telegram_client.answer_callback_query(cb_id, "Einstellungen geschlossen.")
+        telegram_client.answer_callback_query(cb_id)
+        telegram_client.edit_message_text(chat_id, message_id, "_Einstellungen geschlossen._", {"inline_keyboard": []})
 
     else:
         telegram_client.answer_callback_query(cb_id)
