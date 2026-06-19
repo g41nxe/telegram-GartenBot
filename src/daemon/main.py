@@ -16,6 +16,23 @@ logging.basicConfig(
 logger = logging.getLogger("garden_main")
 
 
+def register_telegram_commands():
+    """Registriert das native Telegram-Befehlsmenü (sichtbar im '/' Eingabefeld des Chats)."""
+    from .ui import telegram_client
+    commands = [
+        {"command": "status",        "description": "Systemstatus anzeigen"},
+        {"command": "zeitplan",      "description": "Zeitpläne verwalten"},
+        {"command": "report",        "description": "Tagesbericht anzeigen"},
+        {"command": "stop",          "description": "Bewässerung sofort stoppen"},
+        {"command": "setup",         "description": "Ventil koppeln"},
+        {"command": "photo",         "description": "Aktuelles Kamerabild"},
+        {"command": "camera_setup",  "description": "Kamera koppeln"},
+        {"command": "camera_clear",  "description": "Bild-Historie löschen"},
+        {"command": "update",        "description": "Software-Update starten"},
+    ]
+    telegram_client.set_my_commands(commands)
+
+
 def main():
     logger.info("==============================================")
     logger.info("Starte Gartenbewässerungs-Steuerung Daemon...")
@@ -72,6 +89,7 @@ def main():
         from .ui import telegram_client
         telegram_client.register_update_callback(_telegram_ui.on_telegram_update)
         telegram_client.start_polling()
+        register_telegram_commands()
         logger.info("Telegram-Bot-System (entkoppelter Client & UI-Controller) erfolgreich initialisiert.")
 
     logger.info("----------------------------------------------")

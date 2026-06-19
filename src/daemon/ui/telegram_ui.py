@@ -595,10 +595,22 @@ def handle_camera_interval(chat_id: int, text: str):
 
 def handle_status(chat_id: int):
     from ..adapters import mqtt_client
-    import time
+    from ..core.valve_events import ValveStatusReported
 
-    mqtt_client.request_valve_status()
-    time.sleep(1.5)
+    telegram_client.send_chat_action(chat_id, "typing")
+
+    if mqtt_client.HAS_PAHO:
+        _valve_event = threading.Event()
+        def _on_valve_status(ev):
+            _valve_event.set()
+        _global_bus.subscribe(ValveStatusReported, _on_valve_status)
+        try:
+            mqtt_client.request_valve_status()
+            _valve_event.wait(timeout=3.0)
+        finally:
+            _global_bus.unsubscribe(ValveStatusReported, _on_valve_status)
+    else:
+        mqtt_client.request_valve_status()
 
     broker_connected = mqtt_client.is_broker_connected()
     bridge_online = mqtt_client.get_bridge_status() == "online"
@@ -1036,10 +1048,22 @@ def _process_message(msg_obj: dict):
         handle_status(chat_id)
     elif text.startswith("/report") or text.startswith("/statusbericht"):
         from ..adapters import mqtt_client as _mc, chart as _chart
-        import time as _time
+        from ..core.valve_events import ValveStatusReported
 
-        _mc.request_valve_status()
-        _time.sleep(5.0)
+        telegram_client.send_chat_action(chat_id, "typing")
+
+        if _mc.HAS_PAHO:
+            _rpt_event = threading.Event()
+            def _on_rpt_valve(ev):
+                _rpt_event.set()
+            _global_bus.subscribe(ValveStatusReported, _on_rpt_valve)
+            try:
+                _mc.request_valve_status()
+                _rpt_event.wait(timeout=5.0)
+            finally:
+                _global_bus.unsubscribe(ValveStatusReported, _on_rpt_valve)
+        else:
+            _mc.request_valve_status()
 
         today_str = datetime.now().strftime("%Y-%m-%d")
         report_text = _generate_daily_report(today_str)

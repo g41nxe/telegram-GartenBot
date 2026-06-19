@@ -360,6 +360,21 @@ class TestTelegramWiringSmoke(unittest.TestCase):
         mock_reg.assert_called_once_with(telegram_ui.on_telegram_update)
         mock_poll.assert_called_once()
 
+    def test_register_telegram_commands_ruft_set_my_commands_auf(self):
+        """register_telegram_commands in main.py registriert status, zeitplan und stop."""
+        from daemon.ui import telegram_client
+        with patch.object(telegram_client, "set_my_commands") as mock_cmds:
+            from daemon.main import register_telegram_commands
+            register_telegram_commands()
+            mock_cmds.assert_called_once()
+            commands = mock_cmds.call_args[0][0]
+            self.assertIsInstance(commands, list)
+            self.assertGreater(len(commands), 3)
+            cmd_names = [c["command"] for c in commands]
+            self.assertIn("status", cmd_names)
+            self.assertIn("zeitplan", cmd_names)
+            self.assertIn("stop", cmd_names)
+
 
 
 def _make_weather_row(with_forecast=True):
@@ -1183,6 +1198,44 @@ class TestKeinDoppelAsterisk(unittest.TestCase):
         for call in mock_client.send_message.call_args_list:
             text = call[0][1] if len(call[0]) > 1 else ""
             self.assertNotIn("**", text, f"** gefunden in: {text[:120]}")
+
+
+class TestTypingIndikator(unittest.TestCase):
+    """Testet dass handle_status und /report den Typing-Indikator vor der Antwort senden."""
+
+    def _msg(self, text, chat_id=100):
+        return {"chat": {"id": chat_id}, "from": {"id": 100}, "text": text, "message_id": 1}
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_handle_status_sendet_typing_vor_antwort(self, mock_client, mock_db, mock_ctrl):
+        from daemon.adapters import mqtt_client as mc
+        mock_db.get_last_weather.return_value = None
+        mock_db.get_all_valves.return_value = []
+        mock_db.get_all_cameras.return_value = []
+        mock_db.get_recent_history.return_value = []
+        mock_ctrl.get_active_cycle.return_value = None
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"):
+            _process_message(self._msg("/status"))
+        mock_client.send_chat_action.assert_called_once_with(100, "typing")
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_report_sendet_typing_vor_bericht(self, mock_client, mock_db, mock_ctrl):
+        from daemon.adapters import mqtt_client as mc
+        mock_db.get_last_weather.return_value = None
+        mock_db.get_all_valves.return_value = []
+        mock_ctrl.get_active_cycle.return_value = None
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"), \
+             patch("daemon.ui.telegram_ui._generate_daily_report", return_value="Bericht"), \
+             patch("daemon.adapters.chart.generate_weather_chart", return_value=None):
+            _process_message(self._msg("/report"))
+        calls = [c[0] for c in mock_client.send_chat_action.call_args_list]
+        self.assertIn((100, "typing"), calls)
 
 
 if __name__ == "__main__":

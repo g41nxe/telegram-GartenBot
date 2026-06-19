@@ -143,6 +143,43 @@ def answer_callback_query(callback_query_id: str, text: str = None, show_alert: 
     except Exception as e:
         logger.error(f"Fehler beim Quittieren der Callback-Query: {e}")
 
+def send_chat_action(chat_id: int, action: str) -> None:
+    """Sendet eine Chat-Aktion (z.B. 'typing') an Telegram."""
+    if not config.TELEGRAM_BOT_TOKEN:
+        return
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendChatAction"
+    payload = {"chat_id": chat_id, "action": action}
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=5):
+            pass
+    except Exception as e:
+        logger.debug(f"send_chat_action fehlgeschlagen: {e}")
+
+
+def set_my_commands(commands: list) -> None:
+    """Registriert die Bot-Befehle im nativen Telegram-Befehlsmenü."""
+    if not config.TELEGRAM_BOT_TOKEN:
+        return
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/setMyCommands"
+    payload = {"commands": commands}
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+        logger.info("Telegram-Befehlsmenü registriert.")
+    except Exception as e:
+        logger.error(f"set_my_commands fehlgeschlagen: {e}")
+
+
 def broadcast_notification(message: str):
     """Sendet eine Push-Meldung an alle bekannten autorisierten Benutzer."""
     for user_id in config.TELEGRAM_ALLOWED_USER_IDS:

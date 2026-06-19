@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 import urllib.error
@@ -99,6 +100,46 @@ class TestSendPhoto(unittest.TestCase):
         telegram_client.send_photo(chat_id=100, image_bytes=_FAKE_PNG, caption=None)
 
         self.assertNotIn(b"caption", captured["data"])
+
+
+class TestSendChatAction(unittest.TestCase):
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_send_chat_action_posts_correct_payload(self, mock_urlopen):
+        mock_urlopen.side_effect = _mock_urlopen_200()
+        telegram_client.send_chat_action(12345, "typing")
+        call_args = mock_urlopen.call_args[0][0]
+        payload = json.loads(call_args.data.decode())
+        self.assertEqual(payload["chat_id"], 12345)
+        self.assertEqual(payload["action"], "typing")
+        self.assertIn("sendChatAction", call_args.full_url)
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", "")
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_send_chat_action_skips_without_token(self, mock_urlopen):
+        telegram_client.send_chat_action(12345, "typing")
+        mock_urlopen.assert_not_called()
+
+
+class TestSetMyCommands(unittest.TestCase):
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_set_my_commands_posts_commands_list(self, mock_urlopen):
+        mock_urlopen.side_effect = _mock_urlopen_200()
+        commands = [{"command": "status", "description": "Systemstatus anzeigen"}]
+        telegram_client.set_my_commands(commands)
+        call_args = mock_urlopen.call_args[0][0]
+        payload = json.loads(call_args.data.decode())
+        self.assertEqual(payload["commands"], commands)
+        self.assertIn("setMyCommands", call_args.full_url)
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", "")
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_set_my_commands_skips_without_token(self, mock_urlopen):
+        telegram_client.set_my_commands([{"command": "status", "description": "Test"}])
+        mock_urlopen.assert_not_called()
 
 
 if __name__ == "__main__":
