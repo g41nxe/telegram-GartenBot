@@ -55,6 +55,23 @@ def _valve_warnings(valve: dict) -> list[str]:
     return warnings
 
 
+def _is_report_green(valves: list, services_ok: bool) -> bool:
+    """True wenn System und alle Ventile im Normalzustand — Kurzform des Morgen-Berichts wird verwendet."""
+    if not services_ok:
+        return False
+    threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
+    for valve in valves:
+        battery = valve.get("battery")
+        if battery is not None and int(battery) <= threshold:
+            return False
+        if (valve.get("valve_abnormal_state") or "normal") != "normal":
+            return False
+        flag_key = f"watchdog_alert_active_valve_{valve['id']}"
+        if database.get_metadata(flag_key) == "1":
+            return False
+    return True
+
+
 _RAIN_DEVIATION_THRESHOLD_MM = 2.0  # DWD-Schwellenwert für signifikante Abweichung
 
 

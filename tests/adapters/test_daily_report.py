@@ -326,5 +326,59 @@ class TestKameraWarnungen(unittest.TestCase):
         self.assertEqual(result, [])
 
 
+class TestIsReportGreen(unittest.TestCase):
+
+    def _valve(self, battery=100, abnormal_state="normal", valve_id=1):
+        return {"id": valve_id, "battery": battery, "valve_abnormal_state": abnormal_state, "wish_name": "Terrasse"}
+
+    def test_all_healthy_services_ok_returns_true(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_metadata.return_value = None
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([self._valve()], services_ok=True)
+        self.assertTrue(result)
+
+    def test_services_not_ok_returns_false(self):
+        result = dr._is_report_green([self._valve()], services_ok=False)
+        self.assertFalse(result)
+
+    def test_low_battery_returns_false(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_metadata.return_value = None
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([self._valve(battery=15)], services_ok=True)
+        self.assertFalse(result)
+
+    def test_battery_exactly_at_threshold_returns_false(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_metadata.return_value = None
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([self._valve(battery=20)], services_ok=True)
+        self.assertFalse(result)
+
+    def test_abnormal_state_returns_false(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_metadata.return_value = None
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([self._valve(abnormal_state="stuck_open")], services_ok=True)
+        self.assertFalse(result)
+
+    def test_watchdog_alert_active_returns_false(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_metadata.return_value = "1"
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([self._valve()], services_ok=True)
+        self.assertFalse(result)
+
+    def test_no_valves_services_ok_returns_true(self):
+        result = dr._is_report_green([], services_ok=True)
+        self.assertTrue(result)
+
+
 if __name__ == "__main__":
     unittest.main()
