@@ -19,6 +19,22 @@ def _lqi_label(avg_lqi: float) -> str:
     return "Kritisch"
 
 
+def _camera_warnings(camera: dict) -> list[str]:
+    """Gibt Warnungen für eine einzelne Kamera zurück (aktuell: Akkustand)."""
+    warnings = []
+    battery = camera.get("battery")
+    if battery is None:
+        return warnings
+    wish_name = camera["wish_name"]
+    _bat_threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
+    if int(battery) <= _bat_threshold:
+        warnings.append(
+            f"🪫 *Niedriger Akkustand ({wish_name}):* {battery}%"
+            f" (Grenzwert: {_bat_threshold}%)"
+        )
+    return warnings
+
+
 def _valve_warnings(valve: dict) -> list[str]:
     """Gibt Warnungen für ein einzelnes Ventil zurück."""
     warnings = []
@@ -26,10 +42,11 @@ def _valve_warnings(valve: dict) -> list[str]:
     battery = valve.get("battery") or 100
     abnormal_state = valve.get("valve_abnormal_state") or "normal"
 
-    if battery <= config.BATTERY_WARNING_THRESHOLD:
+    _bat_threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
+    if battery <= _bat_threshold:
         warnings.append(
             f"🪫 *Niedriger Batteriestand ({wish_name}):* {battery}%"
-            f" (Grenzwert: {config.BATTERY_WARNING_THRESHOLD}%)"
+            f" (Grenzwert: {_bat_threshold}%)"
         )
 
     if abnormal_state != "normal":
@@ -100,7 +117,7 @@ def _format_valve_line(
     has_watchdog_alert: bool, battery: int, abnormal_state: str,
 ) -> str:
     warnings = []
-    if battery <= config.BATTERY_WARNING_THRESHOLD:
+    if battery <= config.get_setting("BATTERY_WARNING_THRESHOLD", 20):
         warnings.append(f"🪫 Batterie {battery}%")
     if abnormal_state != "normal":
         warnings.append(f"🚨 Anomalie: {abnormal_state}")
@@ -163,6 +180,9 @@ def generate_daily_report(today_str: str) -> str:
             warnings.append("🚨 *System-Dienst gestört:* MQTT-Broker ist offline")
         elif mqtt_client.get_bridge_status() != "online":
             warnings.append("🚨 *System-Dienst gestört:* Mittelweg-Dienst (Zigbee2MQTT) ist offline")
+
+    for cam in database.get_all_cameras():
+        warnings.extend(_camera_warnings(cam))
 
     # 5. Pro-Ventil-Status
     valves = database.get_all_valves()

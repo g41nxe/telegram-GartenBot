@@ -122,3 +122,41 @@ def test_upload_rejected_when_exceeds_config_limit(running_server):
             assert e.code == 400
     finally:
         config.CAMERA_MAX_UPLOAD_BYTES = original_limit
+
+
+def test_upload_speichert_akkustand(running_server):
+    """X-Battery-Level Header wird beim Upload in der DB gespeichert."""
+    database.add_camera("BA:BB:CC:DD:EE:FF", "AkkuCam")
+    url = f"http://127.0.0.1:{running_server}/upload"
+    payload = b'\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00'
+    req = urllib.request.Request(
+        url,
+        headers={"X-Camera-MAC": "BA:BB:CC:DD:EE:FF", "X-Battery-Level": "78"},
+        data=payload,
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200
+
+    cam = database.get_camera("BA:BB:CC:DD:EE:FF")
+    assert cam["battery"] == 78
+
+
+def test_upload_ohne_akkuheader_behaelt_wert(running_server):
+    """Fehlt X-Battery-Level, bleibt der gespeicherte Wert unverändert."""
+    database.add_camera("CA:BB:CC:DD:EE:FF", "NoBatCam")
+    database.update_camera_on_upload("CA:BB:CC:DD:EE:FF", battery=55)
+
+    url = f"http://127.0.0.1:{running_server}/upload"
+    payload = b'\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00'
+    req = urllib.request.Request(
+        url,
+        headers={"X-Camera-MAC": "CA:BB:CC:DD:EE:FF"},
+        data=payload,
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200
+
+    cam = database.get_camera("CA:BB:CC:DD:EE:FF")
+    assert cam["battery"] == 55

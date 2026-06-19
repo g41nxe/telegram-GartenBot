@@ -87,11 +87,11 @@ Do, 19.06. · 14:32 Uhr
 Terrasse · 🟢 aktiv · 🔋 Voll · 📶 gut
 
 📷 <b>Kameras</b>
-Hochbeet · 🟢 14:15 Uhr
+Hochbeet · 🟢 14:15 Uhr · 🔋 Voll (78%)
 
 🌡 <b>Wetter</b>
-   🌡 <b>Jetzt</b>  Leicht bewölkt · 22.4 °C · 💧 0.0 mm
-   🔜 <b>15:00</b>  Bedeckt · 22.1 °C · 0.2 mm · 15 %
+   <b>Jetzt</b>  Leicht bewölkt · 22.4 °C · 💧 0.0 mm
+   <b>15:00</b>  Bedeckt · 22.1 °C · 0.2 mm · 15 %
    <i>(Stand: 14:30 Uhr)</i>
 
 📜 <b>Zuletzt</b>
@@ -122,6 +122,8 @@ Do, 19.06. · 14:32 Uhr
       <li>Ventil grün: einzeilig, kein <code>mqtt_name</code>, keine LQI-Zahl</li>
       <li>Ventil gelb/rot: mehrzeilig mit Batterie-%, LQI-Zahl, Zeitstempel, ID</li>
       <li>Kamera offline: <code>🔴 kein Bild seit 17.06. um 12:15 Uhr</code></li>
+      <li>Kamera mit Akkustand: <code>Hochbeet · 🟢 14:15 Uhr · 🔋 Voll (78%)</code> — Akkustand ≤ Schwellenwert kippt Garten-Ampel auf 🟡</li>
+      <li>Kamera ohne bekannten Akkustand (battery = NULL): kein Batterie-Label</li>
       <li>Zyklen: <code>✅</code> completed · <code>🌧</code> skipped · <code>❌</code> sonst</li>
     </ul>
   </div>
@@ -152,10 +154,41 @@ Do, 19.06. · 14:32 Uhr
    - ⏳ Dauer: 15 Min
    - 💧 Menge: 50 Liter
    - Status: ❌ Inaktiv</div>
-    <div class="btnrow"><span class="btn">🟢 Rasen morgens (06:00)</span><span class="btn narrow">🗑️</span></div>
-    <div class="btnrow"><span class="btn">🔴 Hochbeet abends (20:15)</span><span class="btn narrow">🗑️</span></div>
+    <div class="btnrow"><span class="btn">🟢 Rasen morgens (06:00)</span><span class="btn narrow">✏️</span><span class="btn narrow">🗑️</span></div>
+    <div class="btnrow"><span class="btn">🔴 Hochbeet abends (20:15)</span><span class="btn narrow">✏️</span><span class="btn narrow">🗑️</span></div>
     <div class="btnrow"><span class="btn">➕ Neuer Zeitplan</span></div>
-    <div class="note">Leerzustand zeigt stattdessen Anleitung zum <code>/add</code>-Befehl + Button „➕ Neuer Zeitplan".</div>
+    <div class="note">Leerzustand zeigt stattdessen Anleitung zum <code>/add</code>-Befehl + Button „➕ Neuer Zeitplan". Jede Zeile enthält nun ✏️ (Zeitplan-Bearbeitung, Feature 0021).</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">handle_einstellungen() · /einstellungen</div>
+    <div class="bubble">⚙️ <b>Einstellungen</b>
+
+• <b>Regenschwelle:</b> 2.0 mm
+• <b>Batterie-Warnschwelle:</b> 20 %
+• <b>Hardware-Sicherheits-Timeout:</b> 30 Min
+
+Was möchtest du ändern?</div>
+    <div class="btnrow"><span class="btn">✏️ Regenschwelle</span></div>
+    <div class="btnrow"><span class="btn">✏️ Batterie-Warnschwelle</span></div>
+    <div class="btnrow"><span class="btn">✏️ Hardware-Sicherheits-Timeout</span></div>
+    <div class="btnrow"><span class="btn">✅ Schließen</span></div>
+    <div class="note">Wert-Auswahl nach „✏️ Regenschwelle" (einst_edit_RAIN_THRESHOLD_MM):</div>
+    <div class="bubble">⚙️ <b>Regenschwelle ändern</b>
+
+Aktuell: <b>2.0 mm</b>
+
+Wähle einen neuen Wert:</div>
+    <div class="btnrow"><span class="btn">1.0 mm</span><span class="btn">2.0 mm ✓</span><span class="btn">3.0 mm</span></div>
+    <div class="btnrow"><span class="btn">5.0 mm</span><span class="btn">8.0 mm</span><span class="btn">10.0 mm</span></div>
+    <div class="btnrow"><span class="btn">↩️ Zurücksetzen</span><span class="btn">❌ Schließen</span></div>
+    <ul class="variants">
+      <li>Nach Auswahl: Toast-Alert z. B. <code>Regenschwelle auf 5.0 mm gesetzt.</code></li>
+      <li>Ungültige Werte (&lt; 0.5 mm oder &gt; 30 mm) → Alert <code>Ungültiger Wert</code>, kein Speichern</li>
+      <li>„↩️ Zurücksetzen" löscht DB-Override → .env/garden.conf-Wert greift wieder</li>
+      <li>Batterie-Optionen: 10 %, 15 %, 20 %, 25 %, 30 %</li>
+      <li>Sicherheits-Timeout-Optionen: 10, 20, 30, 45, 60 Min</li>
+    </ul>
   </div>
 
   <div class="phone">
@@ -457,8 +490,10 @@ Bedeckt, heute 11.0–18.5 °C. Mehr Regen als erwartet: 9.4 mm gefallen (Vorher
 📡 <b>Terrasse</b> — schwaches Signal (Ø 48 LQI, 40 Meldungen, max. 6h Funkstille) ⚠️ | 🪫 Batterie 18%
 
 ⚠️ <b>System-Warnungen:</b>
-- 🚨 <b>System-Dienst gestört:</b> Mittelweg-Dienst (Zigbee2MQTT) ist offline</div>
+- 🚨 <b>System-Dienst gestört:</b> Mittelweg-Dienst (Zigbee2MQTT) ist offline
+- 🪫 <b>Niedriger Akkustand (Hochbeet):</b> 12% (Grenzwert: 20%)</div>
     <ul class="variants">
+      <li>Kamera-Batteriewarnung erscheint wenn <code>battery ≤ BATTERY_WARNING_THRESHOLD</code> (Standard: 20 %): <code>🪫 *Niedriger Akkustand (Hochbeet):* 12% (Grenzwert: 20%)</code></li>
       <li>Guss-Zeile: <code>nicht bewässert</code> / <code>1× … X Liter</code> / <code>N× …</code> + optional <code>M Zyklen fehlgeschlagen</code></li>
       <li>Regen-Abweichung &gt; 2 mm → <code>Mehr/Weniger Regen als erwartet …</code></li>
       <li>Vorhersage: <code>starker (&gt;10mm)</code> / <code>mäßiger (≥2mm)</code> / <code>wenig (&gt;0)</code> / <code>trocken</code></li>

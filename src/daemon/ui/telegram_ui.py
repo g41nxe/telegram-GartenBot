@@ -411,7 +411,7 @@ def _garden_ampel_level(valves: list, services_ok: bool) -> str:
     """Gibt 'green', 'yellow' oder 'red' zurück — schlimmste aktive Stufe gewinnt."""
     if not services_ok:
         return "red"
-    threshold = getattr(config, "BATTERY_WARNING_THRESHOLD", 20)
+    threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
     worst = "green"
     for v in valves:
         if not v.get("last_update"):
@@ -424,6 +424,10 @@ def _garden_ampel_level(valves: list, services_ok: bool) -> str:
         battery_val = int(battery) if battery is not None else 100
         lqi_val = int(lqi) if lqi is not None else 100
         if battery_val <= threshold or lqi_val < 60:
+            worst = "yellow"
+    for cam in database.get_all_cameras():
+        cam_battery = cam.get("battery")
+        if cam_battery is not None and int(cam_battery) <= threshold:
             worst = "yellow"
     return worst
 
@@ -462,7 +466,7 @@ def _format_valve_compact(valve: dict) -> str:
     lqi = valve.get("linkquality")
     battery_label = _get_battery_description(battery if battery is not None else 100)
     lqi_label = _get_lqi_label(lqi if lqi is not None else 100)
-    return f"{valve['wish_name']} · 🟢 aktiv · 🔋 {battery_label} · 📶 {lqi_label}"
+    return f"{valve['wish_name']} · 🟢 aktiv · {battery_label} · 📶 {lqi_label}"
 
 
 def _format_valve_expanded(valve: dict, level: str) -> str:
@@ -699,7 +703,9 @@ def handle_status(chat_id: int):
             except Exception:
                 cam_status = "🔴 Unbekannt"
 
-        camera_sections.append(f"{wish_name} · {cam_status}")
+        battery = cam.get("battery")
+        battery_label = f" · {_get_battery_description(battery)}" if battery is not None else ""
+        camera_sections.append(f"{wish_name} · {cam_status}{battery_label}")
 
     cameras_text = "\n".join(camera_sections) if camera_sections else ""
 
@@ -735,13 +741,13 @@ def handle_status(chat_id: int):
                     nxt_prob = fc_prob[1] if len(fc_prob) > 1 else 0
                     nxt_desc = _get_wmo_description(fc_wmo[1] if len(fc_wmo) > 1 else 0)
                     next_hour_line = (
-                        f"\n   🔜 *{nxt_time}*  {nxt_desc} · {nxt_temp} °C · {nxt_precip} mm · {nxt_prob} %"
+                        f"\n   *{nxt_time}*  {nxt_desc} · {nxt_temp} °C · {nxt_precip} mm · {nxt_prob} %"
                     )
             except Exception:
                 pass
 
         weather_text = (
-            f"   🌡 *Jetzt*  {desc} · {temp} °C · 💧 {current_precip} mm"
+            f"   *Jetzt*  {desc} · {temp} °C · 💧 {current_precip} mm"
             f"{next_hour_line}\n"
             f"   *(Stand: {time_str})*"
         )
@@ -868,6 +874,49 @@ def handle_toggle_schedule(chat_id: int, text: str):
         telegram_client.send_message(chat_id, "❌ *Ungültiges Format.* Nutzen Sie: `/toggle <ID>` (z.B. `/toggle 1`)")
 
 # --- Interface-Schicht-Update Callback ---
+
+_SETTINGS_META = {
+    "RAIN_THRESHOLD_MM": {
+        "label": "Regenschwelle",
+        "unit": "mm",
+        "options": [1.0, 2.0, 3.0, 5.0, 8.0, 10.0],
+        "min": 0.5, "max": 30.0,
+        "cb_prefix": "set_rain",
+        "typ": float,
+    },
+    "BATTERY_WARNING_THRESHOLD": {
+        "label": "Batterie-Warnschwelle",
+        "unit": "%",
+        "options": [10, 15, 20, 25, 30],
+        "min": 1, "max": 99,
+        "cb_prefix": "set_battery",
+        "typ": int,
+    },
+    "SAFETY_TIMEOUT_MINUTES": {
+        "label": "Hardware-Sicherheits-Timeout",
+        "unit": "Min",
+        "options": [10, 20, 30, 45, 60],
+        "min": 1, "max": 120,
+        "cb_prefix": "set_safety",
+        "typ": int,
+    },
+}
+
+
+def handle_einstellungen(chat_id: int):
+    """Zeigt die aktuellen konfigurierbaren Werte und Bearbeitungs-Buttons."""
+    lines = ["*⚙️ Einstellungen*\n"]
+    for key, meta in _SETTINGS_META.items():
+        val = config.get_setting(key, meta["options"][0])
+        lines.append(f"• *{meta['label']}:* {val} {meta['unit']}")
+    lines.append("\nWas möchtest du ändern?")
+    rows = [
+        [{"text": f"✏️ {meta['label']}", "callback_data": f"einst_edit_{key}"}]
+        for key, meta in _SETTINGS_META.items()
+    ]
+    rows.append([{"text": "✅ Schließen", "callback_data": "einst_close"}])
+    telegram_client.send_message(chat_id, "\n".join(lines), {"inline_keyboard": rows})
+
 
 def _process_message(msg_obj: dict):
     _cleanup_expired_states()
@@ -1145,6 +1194,8 @@ def _process_message(msg_obj: dict):
         handle_toggle_schedule(chat_id, text)
     elif text.startswith("/update"):
         handle_update(chat_id)
+    elif text.startswith("/einstellungen"):
+        handle_einstellungen(chat_id)
     else:
         telegram_client.send_message(
             chat_id,
@@ -1784,6 +1835,83 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.edit_message_text(chat_id, message_id, f"✅ Intervall für '{camera['wish_name']}' wurde auf {minutes} Minuten gesetzt.")
         else:
             telegram_client.answer_callback_query(cb_id, "Kamera nicht gefunden", show_alert=True)
+
+    elif data.startswith("einst_edit_"):
+        key = data[len("einst_edit_"):]
+        meta = _SETTINGS_META.get(key)
+        if not meta:
+            telegram_client.answer_callback_query(cb_id, "Unbekannte Einstellung", show_alert=True)
+            return
+        telegram_client.answer_callback_query(cb_id)
+        cur = config.get_setting(key, meta["options"][0])
+        rows = [
+            [{"text": f"{v} {meta['unit']}{' ✓' if v == cur else ''}", "callback_data": f"{meta['cb_prefix']}_{v}"}
+             for v in meta["options"][:3]],
+            [{"text": f"{v} {meta['unit']}{' ✓' if v == cur else ''}", "callback_data": f"{meta['cb_prefix']}_{v}"}
+             for v in meta["options"][3:]],
+        ]
+        rows.append([{"text": "↩️ Zurücksetzen", "callback_data": f"reset_setting_{key}"},
+                     {"text": "❌ Schließen",  "callback_data": "einst_close"}])
+        telegram_client.edit_message_text(
+            chat_id, message_id,
+            f"*⚙️ {meta['label']} ändern*\n\nAktuell: *{cur} {meta['unit']}*\n\nWähle einen neuen Wert:",
+            {"inline_keyboard": rows}
+        )
+
+    elif data.startswith("set_rain_"):
+        val_str = data[len("set_rain_"):]
+        try:
+            val = float(val_str)
+            meta = _SETTINGS_META["RAIN_THRESHOLD_MM"]
+            if not (meta["min"] <= val <= meta["max"]):
+                raise ValueError
+        except (ValueError, KeyError):
+            telegram_client.answer_callback_query(cb_id, "Ungültiger Wert", show_alert=True)
+            return
+        config.set_setting("RAIN_THRESHOLD_MM", val)
+        telegram_client.answer_callback_query(cb_id, f"Regenschwelle auf {val} mm gesetzt.")
+        handle_einstellungen(chat_id)
+
+    elif data.startswith("set_battery_"):
+        val_str = data[len("set_battery_"):]
+        try:
+            val = int(val_str)
+            meta = _SETTINGS_META["BATTERY_WARNING_THRESHOLD"]
+            if not (meta["min"] <= val <= meta["max"]):
+                raise ValueError
+        except (ValueError, KeyError):
+            telegram_client.answer_callback_query(cb_id, "Ungültiger Wert", show_alert=True)
+            return
+        config.set_setting("BATTERY_WARNING_THRESHOLD", val)
+        telegram_client.answer_callback_query(cb_id, f"Batterie-Warnschwelle auf {val}% gesetzt.")
+        handle_einstellungen(chat_id)
+
+    elif data.startswith("set_safety_"):
+        val_str = data[len("set_safety_"):]
+        try:
+            val = int(val_str)
+            meta = _SETTINGS_META["SAFETY_TIMEOUT_MINUTES"]
+            if not (meta["min"] <= val <= meta["max"]):
+                raise ValueError
+        except (ValueError, KeyError):
+            telegram_client.answer_callback_query(cb_id, "Ungültiger Wert", show_alert=True)
+            return
+        config.set_setting("SAFETY_TIMEOUT_MINUTES", val)
+        telegram_client.answer_callback_query(cb_id, f"Sicherheits-Timeout auf {val} Min gesetzt.")
+        handle_einstellungen(chat_id)
+
+    elif data.startswith("reset_setting_"):
+        key = data[len("reset_setting_"):]
+        meta = _SETTINGS_META.get(key)
+        if not meta:
+            telegram_client.answer_callback_query(cb_id, "Unbekannte Einstellung", show_alert=True)
+            return
+        config.reset_setting(key)
+        telegram_client.answer_callback_query(cb_id, f"{meta['label']} zurückgesetzt.")
+        handle_einstellungen(chat_id)
+
+    elif data == "einst_close":
+        telegram_client.answer_callback_query(cb_id, "Einstellungen geschlossen.")
 
     else:
         telegram_client.answer_callback_query(cb_id)

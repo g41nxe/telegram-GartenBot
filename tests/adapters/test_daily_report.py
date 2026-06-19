@@ -303,5 +303,28 @@ class TestDailyReportDesignSystem(unittest.TestCase):
         self.assertNotIn("**", result)
 
 
+class TestKameraWarnungen(unittest.TestCase):
+
+    def test_niedrige_kamera_batterie_erzeugt_warnung(self):
+        """Kamera mit Akku <= Schwellenwert erscheint in den Warnungen."""
+        with patch("daemon.config.get_setting", return_value=20):
+            result = dr._camera_warnings({"wish_name": "Hochbeet", "battery": 10})
+        self.assertEqual(len(result), 1)
+        self.assertIn("Hochbeet", result[0])
+        self.assertIn("10%", result[0])
+
+    def test_volle_kamera_batterie_keine_warnung(self):
+        """Kamera mit vollem Akku erzeugt keine Warnung."""
+        with patch("daemon.config.get_setting", return_value=20):
+            result = dr._camera_warnings({"wish_name": "Hochbeet", "battery": 80})
+        self.assertEqual(result, [])
+
+    def test_kamera_ohne_akkustand_keine_warnung(self):
+        """Kamera ohne bekannten Akkustand (None) erzeugt keine Warnung."""
+        with patch("daemon.config.get_setting", return_value=20):
+            result = dr._camera_warnings({"wish_name": "Hochbeet", "battery": None})
+        self.assertEqual(result, [])
+
+
 if __name__ == "__main__":
     unittest.main()

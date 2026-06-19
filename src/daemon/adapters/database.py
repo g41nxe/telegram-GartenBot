@@ -189,6 +189,12 @@ def init_db():
             logger.info("Migriere Datenbank: Füge rain_last_source Spalte zu weather_history hinzu...")
             cursor.execute("ALTER TABLE weather_history ADD COLUMN rain_last_source TEXT DEFAULT 'measured'")
 
+        try:
+            cursor.execute("SELECT battery FROM cameras LIMIT 1")
+        except sqlite3.OperationalError:
+            logger.info("Migriere Datenbank: Füge battery Spalte zu cameras hinzu...")
+            cursor.execute("ALTER TABLE cameras ADD COLUMN battery INTEGER")
+
         # Daten-Migrationen: Standard-Ventil anlegen und Altdaten verknüpfen
         cursor.execute("SELECT COUNT(*) FROM valves")
         if cursor.fetchone()[0] == 0:
@@ -389,6 +395,18 @@ def set_metadata(key: str, value: str):
         conn.commit()
     except Exception as e:
         logger.error(f"Fehler beim Speichern der Metadaten für {key}: {e}")
+    finally:
+        conn.close()
+
+def delete_metadata(key: str) -> None:
+    """Entfernt einen Metadatenwert aus der system_metadata-Tabelle."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM system_metadata WHERE key = ?", (key,))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Fehler beim Löschen des Metadatenwerts für {key}: {e}")
     finally:
         conn.close()
 
@@ -693,17 +711,23 @@ def add_camera(mac_address: str, wish_name: str) -> bool:
     finally:
         conn.close()
 
-def update_camera_last_seen(mac_address: str):
-    """Aktualisiert den Zeitstempel des letzten Kontakts einer Kamera."""
+def update_camera_on_upload(mac_address: str, battery: int | None = None):
+    """Aktualisiert last_seen und optional den Akkustand nach einem Bild-Upload."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
         from datetime import datetime
         timestamp = datetime.now().isoformat()
-        cursor.execute(
-            "UPDATE cameras SET last_seen = ? WHERE mac_address = ?",
-            (timestamp, mac_address)
-        )
+        if battery is not None:
+            cursor.execute(
+                "UPDATE cameras SET last_seen = ?, battery = ? WHERE mac_address = ?",
+                (timestamp, battery, mac_address)
+            )
+        else:
+            cursor.execute(
+                "UPDATE cameras SET last_seen = ? WHERE mac_address = ?",
+                (timestamp, mac_address)
+            )
         conn.commit()
     except Exception as e:
         logger.error(f"Fehler beim Aktualisieren des Status für Kamera '{mac_address}': {e}")

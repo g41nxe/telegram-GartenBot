@@ -161,7 +161,16 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
             
-        database.update_camera_last_seen(mac)
+        battery_header = self.headers.get("X-Battery-Level")
+        battery = None
+        if battery_header is not None:
+            try:
+                battery = int(battery_header)
+                if not (0 <= battery <= 100):
+                    battery = None
+            except ValueError:
+                battery = None
+        database.update_camera_on_upload(mac, battery=battery)
         wish_name = camera.get("wish_name", "unknown")
         
         now = datetime.now()

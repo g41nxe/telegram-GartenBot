@@ -1373,5 +1373,152 @@ class TestTypingIndikator(unittest.TestCase):
         self.assertIn((100, "typing"), calls)
 
 
+class TestEinstellungenHandler(unittest.TestCase):
+    """Tests für /einstellungen — In-Chat-Konfiguration der drei Schwellenwerte."""
+
+    def _cb(self, data, chat_id=100, msg_id=1):
+        return {"id": "cb1", "from": {"id": chat_id}, "data": data,
+                "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
+
+    @patch("daemon.config.get_setting", side_effect=lambda n, d: {
+        "RAIN_THRESHOLD_MM": 2.5, "BATTERY_WARNING_THRESHOLD": 20, "SAFETY_TIMEOUT_MINUTES": 30
+    }.get(n, d))
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_einstellungen_zeigt_aktuelle_werte(self, mock_client, mock_get):
+        """handle_einstellungen sendet Nachricht mit den drei aktuellen Werten."""
+        from daemon.ui.telegram_ui import handle_einstellungen
+        handle_einstellungen(100)
+        mock_client.send_message.assert_called_once()
+        text = mock_client.send_message.call_args[0][1]
+        self.assertIn("2.5", text)
+        self.assertIn("20", text)
+        self.assertIn("30", text)
+
+    @patch("daemon.config.get_setting", return_value=2.0)
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_einstellungen_befehl_in_process_message(self, mock_client, mock_get):
+        """/einstellungen-Befehl wird in _process_message verarbeitet."""
+        _process_message({"chat": {"id": 100}, "from": {"id": 100}, "text": "/einstellungen"})
+        mock_client.send_message.assert_called()
+
+    @patch("daemon.config.set_setting")
+    @patch("daemon.config.get_setting", return_value=2.0)
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_set_rain_gueltig_speichert(self, mock_client, mock_get, mock_set):
+        """set_rain_VALUE-Callback speichert validen Regenschwellen-Wert."""
+        _process_callback_query(self._cb("set_rain_4.0"))
+        mock_set.assert_called_once_with("RAIN_THRESHOLD_MM", 4.0)
+
+    @patch("daemon.config.set_setting")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_set_rain_ungueltig_abgelehnt(self, mock_client, mock_set):
+        """set_rain mit Wert > Maximalwert wird abgewiesen ohne zu speichern."""
+        _process_callback_query(self._cb("set_rain_99.0"))
+        mock_set.assert_not_called()
+
+    @patch("daemon.config.set_setting")
+    @patch("daemon.config.get_setting", return_value=20)
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_set_battery_gueltig_speichert(self, mock_client, mock_get, mock_set):
+        """set_battery_VALUE-Callback speichert validen Batterie-Schwellenwert."""
+        _process_callback_query(self._cb("set_battery_15"))
+        mock_set.assert_called_once_with("BATTERY_WARNING_THRESHOLD", 15)
+
+    @patch("daemon.config.set_setting")
+    @patch("daemon.config.get_setting", return_value=30)
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_set_safety_gueltig_speichert(self, mock_client, mock_get, mock_set):
+        """set_safety_VALUE-Callback speichert validen Safety-Timeout-Wert."""
+        _process_callback_query(self._cb("set_safety_20"))
+        mock_set.assert_called_once_with("SAFETY_TIMEOUT_MINUTES", 20)
+
+    @patch("daemon.config.reset_setting")
+    @patch("daemon.config.get_setting", return_value=2.0)
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_reset_einstellung_ruft_reset_setting(self, mock_client, mock_get, mock_reset):
+        """reset_setting_KEY-Callback entfernt den DB-Override."""
+        _process_callback_query(self._cb("reset_setting_RAIN_THRESHOLD_MM"))
+        mock_reset.assert_called_once_with("RAIN_THRESHOLD_MM")
+
+    @patch("daemon.config.get_setting", return_value=2.0)
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_einst_close_sendet_alert(self, mock_client, mock_get):
+        """einst_close schließt den Dialog per answerCallbackQuery."""
+        _process_callback_query(self._cb("einst_close"))
+        mock_client.answer_callback_query.assert_called()
+
+    @patch("daemon.config.get_setting", return_value=2.0)
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_einst_edit_rain_zeigt_optionen(self, mock_client, mock_get):
+        """einst_edit_RAIN_THRESHOLD_MM zeigt Auswahlmenü mit gültigen Werten."""
+        _process_callback_query(self._cb("einst_edit_RAIN_THRESHOLD_MM"))
+        mock_client.edit_message_text.assert_called()
+        args = mock_client.edit_message_text.call_args
+        text = args[0][2] if len(args[0]) > 2 else args[1].get("text", "")
+        self.assertIn("Regen", text)
+
+    @patch("daemon.config.get_setting", return_value=2.0)
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_einstellungen_kein_doppelasterisk(self, mock_client, mock_get):
+        """handle_einstellungen erzeugt kein ** in der Nachricht."""
+        from daemon.ui.telegram_ui import handle_einstellungen
+        handle_einstellungen(100)
+        text = mock_client.send_message.call_args[0][1]
+        self.assertNotIn("**", text)
+
+
+class TestKameraAkkustandImStatus(unittest.TestCase):
+
+    def _status_call(self, mock_client, mock_db, mock_ctrl, cameras):
+        from daemon.adapters import mqtt_client as mc
+        mock_db.get_last_weather.return_value = None
+        mock_db.get_all_valves.return_value = []
+        mock_db.get_all_cameras.return_value = cameras
+        mock_db.get_recent_history.return_value = []
+        mock_ctrl.get_active_cycle.return_value = None
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"), \
+             patch.object(mc, "is_broker_connected", return_value=True), \
+             patch.object(mc, "get_bridge_status", return_value="online"):
+            from daemon.ui.telegram_ui import handle_status
+            handle_status(100)
+        return mock_client.send_message.call_args[0][1]
+
+    def _make_cam(self, battery=None):
+        from datetime import datetime, timezone
+        return {
+            "wish_name": "Hochbeet",
+            "last_seen": datetime.now(timezone.utc).isoformat(),
+            "sleep_duration_seconds": 900,
+            "battery": battery,
+        }
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_kamera_akkustand_wird_angezeigt(self, mock_client, mock_db, mock_ctrl):
+        """Kamera-Akkustand erscheint im Status wenn vorhanden."""
+        text = self._status_call(mock_client, mock_db, mock_ctrl, [self._make_cam(battery=78)])
+        self.assertIn("78", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_kamera_kein_akkustand_kein_crash(self, mock_client, mock_db, mock_ctrl):
+        """Kamera ohne Akkustand (None) zeigt kein Batterie-Label, kein Crash."""
+        text = self._status_call(mock_client, mock_db, mock_ctrl, [self._make_cam(battery=None)])
+        self.assertIn("Hochbeet", text)
+
+    @patch("daemon.config.get_setting", return_value=20)
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_kamera_niedrig_akkustand_kippt_ampel(self, mock_client, mock_db, mock_ctrl, mock_get):
+        """Kamera mit Akku <= Schwellenwert kippt Garten-Ampel auf 🟡."""
+        mock_db.get_all_cameras.return_value = [self._make_cam(battery=10)]
+        text = self._status_call(mock_client, mock_db, mock_ctrl, [self._make_cam(battery=10)])
+        self.assertIn("🟡", text)
+
+
 if __name__ == "__main__":
     unittest.main()
