@@ -60,7 +60,7 @@
 
 <header class="doc">
   <h1>Referenz: Telegram-Nachrichten des GartenBots</h1>
-  <div class="meta">Stand: 2026-06-19 · Originalgetreu nach aktueller Implementation (kein Entwurf). Feature 0017 migriert.</div>
+  <div class="meta">Stand: 2026-06-20 · Originalgetreu nach aktueller Implementation (kein Entwurf). Features 0017, 0025 integriert.</div>
   <div class="meta">Quellen: <code>src/daemon/ui/telegram_ui.py</code> · <code>src/daemon/adapters/daily_report.py</code></div>
   <div class="legend">
     Beispieldaten sind in die echten Textvorlagen eingesetzt. Telegram stellt <b>**Text**</b>/<b>*Text*</b> fett dar,
@@ -77,14 +77,14 @@
   <div class="phone">
     <div class="src">handle_status() · /status · „📊 Status anzeigen" — Normal (alles grün)</div>
     <div class="bubble">🌱 <b>Dein Garten auf einen Blick</b>
-Do, 19.06. · 14:32 Uhr
+Fr, 19.06. · 14:32 Uhr
 
 🟢 Alles im grünen Bereich
 
-🔌 Dienste: 🟢 Aktiv
-
 📡 <b>Ventile</b>
 Terrasse · 🟢 aktiv · 🔋 Voll · 📶 gut
+
+⏰ <b>Nächster Guss:</b> heute 20:15 Uhr · Hochbeet abends · 15 Min
 
 📷 <b>Kameras</b>
 Hochbeet · 🟢 14:15 Uhr · 🔋 Voll (78%)
@@ -95,14 +95,12 @@ Hochbeet · 🟢 14:15 Uhr · 🔋 Voll (78%)
    <i>(Stand: 14:30 Uhr)</i>
 
 📜 <b>Zuletzt</b>
-✅ 17.06. 06:00 (12 Min, schedule)
-🌧 16.06. 06:00 (0 Min, schedule)
-✅ 15.06. 20:15 (15 Min, manual)
-
-<i>v1.2.1</i></div>
+✅ 17.06. 06:00 · 12 Min · 30 L · Zeitplan
+🌧 16.06. 06:00 · 0 Min · Zeitplan
+✅ 15.06. 20:15 · 15 Min · 45 L · Manuell</div>
     <div class="note">Problem-Variante (Progressive Disclosure — nur für nicht-grüne Geräte):</div>
     <div class="bubble">🌱 <b>Dein Garten auf einen Blick</b>
-Do, 19.06. · 14:32 Uhr
+Fr, 19.06. · 14:32 Uhr
 
 🟡 Aufmerksamkeit nötig
 
@@ -116,25 +114,51 @@ Do, 19.06. · 14:32 Uhr
 🟡 Terrasse
    🔋 15 % · 📶 ausreichend (80 LQI)
    Letztes Signal: 19.06. um 12:18 Uhr
-   ID: garden_valve</div>
+   ID: garden_valve
+
+⏰ <b>Nächster Guss:</b> heute 20:15 Uhr · Hochbeet abends · 15 Min</div>
     <ul class="variants">
       <li>Garten-Ampel-Headline: <code>🟢 Alles im grünen Bereich</code> / <code>🟡 Aufmerksamkeit nötig</code> / <code>🔴 Es gibt ein Problem</code></li>
+      <li>Dienste-Zeile (<code>🔌 Dienste: …</code>) erscheint nur bei nicht-grünem Systemzustand (Progressive Disclosure)</li>
+      <li>Versionszeile entfällt (Feature 0025)</li>
+      <li>Nächster-Guss-Sektion entfällt wenn kein aktiver Zeitplan vorhanden</li>
       <li>Ventil grün: einzeilig, kein <code>mqtt_name</code>, keine LQI-Zahl</li>
       <li>Ventil gelb/rot: mehrzeilig mit Batterie-%, LQI-Zahl, Zeitstempel, ID</li>
       <li>Kamera offline: <code>🔴 kein Bild seit 17.06. um 12:15 Uhr</code></li>
       <li>Kamera mit Akkustand: <code>Hochbeet · 🟢 14:15 Uhr · 🔋 Voll (78%)</code> — Akkustand ≤ Schwellenwert kippt Garten-Ampel auf 🟡</li>
       <li>Kamera ohne bekannten Akkustand (battery = NULL): kein Batterie-Label</li>
       <li>Zyklen: <code>✅</code> completed · <code>🌧</code> skipped · <code>❌</code> sonst</li>
+      <li>Historie-Format: <code>✅ 17.06. 06:00 · 12 Min · 30 L · Zeitplan</code> (Volumen und deutschen Quell-Label neu ab Feature 0025)</li>
     </ul>
   </div>
 
   <div class="phone">
-    <div class="src">/report · /statusbericht — Wetter-Chart-Foto, dann Bericht</div>
+    <div class="src">handle_report() · /report · /statusbericht — Kurzform (alles grün)</div>
     <div class="bubble" style="padding:0; overflow:hidden">
       <div class="photo-ph">📈 [ Wetter-Chart QuickChart.io ]</div>
       <div style="padding:8px 12px">🌦 Wettervorhersage &amp; Niederschlag (nächste 24h)</div>
     </div>
-    <div class="note">Danach folgt derselbe Text wie der automatische Tagesbericht → Abschnitt 3.</div>
+    <div class="bubble">🌿 <b>Guten Morgen, Fr 19.06.!</b>
+
+☀️ Heute 14–24 °C · Leicht bewölkt (15 % ☂)
+💧 Gestern 1× bewässert · 45 L
+✅ System: alles in Ordnung</div>
+    <div class="note">Problemfall-Variante (mind. eine Warnung):</div>
+    <div class="bubble">🌿 <b>Guten Morgen, Fr 19.06.!</b>
+
+🟡 Terrasse: Batterie schwach (15%)
+
+☀️ Heute 14–24 °C · Leicht bewölkt (15 % ☂)
+💧 Gestern 1× bewässert · 45 L</div>
+    <div class="note">Manuelle Auslösung (/report) und automatischer 08:00-Bericht erzeugen identischen Text.</div>
+    <ul class="variants">
+      <li>Kurzform nur wenn: Dienste OK, kein Watchdog, keine Ventil-Anomalie, alle Batterien über Schwellenwert</li>
+      <li>Problem-Reihenfolge: 🔴 Systemausfall → 🚨 Anomalie → 🟡 Batterie → ⚠️ Watchdog</li>
+      <li>Regen-Extrazeile: <code>🌧 0.8 mm erwartet</code> (wenn rain_next ≥ 0.5 mm)</li>
+      <li>Guss übersprungen: <code>🌧 Guss übersprungen · 2.5 mm gefallen</code></li>
+      <li>Kein Guss, kein Skip: <code>💧 Gestern nicht bewässert</code></li>
+      <li>LQI-Zahlenwerte und Meldungsanzahlen erscheinen nie im Bericht</li>
+    </ul>
   </div>
 
   <div class="phone">
@@ -469,35 +493,38 @@ Fehler beim Ansteuern des Ventils über MQTT.</div>
   </div>
 
   <div class="phone">
-    <div class="src">_on_daily_report · DailyReportTriggered (täglich 08:00, mit Chart-Foto)</div>
+    <div class="src">_on_daily_report · DailyReportTriggered (täglich 08:00, mit Chart-Foto) — Kurzform</div>
     <div class="bubble" style="padding:0; overflow:hidden">
-      <div class="photo-ph">📈 [ Wetter-Chart ]</div>
+      <div class="photo-ph">📈 [ Wetter-Chart QuickChart.io ]</div>
+      <div style="padding:8px 12px">🌦 Wettervorhersage &amp; Niederschlag (nächste 24h)</div>
     </div>
-    <div class="bubble">📊 <b>Täglicher Statusbericht vom 17.06.2026</b>
+    <div class="bubble">🌿 <b>Guten Morgen, Di 17.06.!</b>
 
-💧 In den letzten 24h wurde 1× bewässert — 8.4 Liter gesamt.
+☀️ Heute 14–27 °C · Leicht bewölkt (12 % ☂)
+💧 Gestern 1× bewässert · 8 L
+✅ System: alles in Ordnung</div>
+    <div class="note">Problemfall-Variante (Batterie schwach):</div>
+    <div class="bubble">🌿 <b>Guten Morgen, Di 17.06.!</b>
 
-Leicht bewölkt, heute 14.1–27.3 °C. 3.6 mm Regen gefallen. Heute wenig Regen erwartet (1.2 mm, 12%).
+🟡 Terrasse: Batterie schwach (18%)
 
-📡 <b>Terrasse</b> — gutes Signal (Ø 145 LQI, 96 Meldungen, max. 2h Funkstille)</div>
-    <div class="note">Variante mit Problemen:</div>
-    <div class="bubble">📊 <b>Täglicher Statusbericht vom 17.06.2026</b>
+🌦 Heute 11–19 °C · Bewölkt (65 % ☂)
+🌧 4.0 mm erwartet
+💧 Gestern 2× bewässert · 17 L gesamt · 1 Fehler</div>
+    <div class="note">Problemfall-Variante (Systemausfall):</div>
+    <div class="bubble">🌿 <b>Guten Morgen, Di 17.06.!</b>
 
-💧 In den letzten 24h wurde 2× bewässert — 16.8 Liter gesamt. 1 Zyklus fehlgeschlagen.
+🔴 Mittelweg-Dienst (Zigbee2MQTT) offline
 
-Bedeckt, heute 11.0–18.5 °C. Mehr Regen als erwartet: 9.4 mm gefallen (Vorhersage gestern: 2.1 mm). Heute mäßiger Regen erwartet (4.0 mm, 65%).
-
-📡 <b>Terrasse</b> — schwaches Signal (Ø 48 LQI, 40 Meldungen, max. 6h Funkstille) ⚠️ | 🪫 Batterie 18%
-
-⚠️ <b>System-Warnungen:</b>
-- 🚨 <b>System-Dienst gestört:</b> Mittelweg-Dienst (Zigbee2MQTT) ist offline
-- 🪫 <b>Niedriger Akkustand (Hochbeet):</b> 12% (Grenzwert: 20%)</div>
+☀️ Heute 14–27 °C · Sonnig (5 % ☂)
+💧 Gestern nicht bewässert</div>
     <ul class="variants">
-      <li>Kamera-Batteriewarnung erscheint wenn <code>battery ≤ BATTERY_WARNING_THRESHOLD</code> (Standard: 20 %): <code>🪫 *Niedriger Akkustand (Hochbeet):* 12% (Grenzwert: 20%)</code></li>
-      <li>Guss-Zeile: <code>nicht bewässert</code> / <code>1× … X Liter</code> / <code>N× …</code> + optional <code>M Zyklen fehlgeschlagen</code></li>
-      <li>Regen-Abweichung &gt; 2 mm → <code>Mehr/Weniger Regen als erwartet …</code></li>
-      <li>Vorhersage: <code>starker (&gt;10mm)</code> / <code>mäßiger (≥2mm)</code> / <code>wenig (&gt;0)</code> / <code>trocken</code></li>
-      <li>Wenn <code>rain_last_source != "measured"</code>: <code>Gemessene Regendaten zurzeit nicht verfügbar.</code></li>
+      <li>Kurzform (✅-Pfad): alle Dienste OK, kein Watchdog, keine Anomalie, alle Batterien über Schwellenwert</li>
+      <li>Problem-Reihenfolge: 🔴 Systemausfall → 🚨 Anomalie → 🟡 Batterie → ⚠️ Watchdog</li>
+      <li>Bewässerungszeile: <code>💧 Gestern 1× bewässert · 8 L</code> / <code>N× … gesamt</code> / <code>nicht bewässert</code> / <code>🌧 Guss übersprungen · 2.5 mm gefallen</code></li>
+      <li>Regen-Extrazeile <code>🌧 X mm erwartet</code>: nur wenn rain_next ≥ 0.5 mm</li>
+      <li>Wetter-Emoji: ☀️ (trocken) · 🌦 (0.5–2 mm) · 🌧 (≥ 2 mm)</li>
+      <li>Kein LQI-Zahlenwert, keine Meldungsanzahl im Bericht (ab Feature 0025)</li>
     </ul>
   </div>
 
