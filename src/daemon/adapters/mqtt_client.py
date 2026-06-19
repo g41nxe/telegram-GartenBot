@@ -220,17 +220,18 @@ class PahoMqttAdapter(MqttClient):
         set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
         # The SWV-ZFE converter (hasFlowMeter=true) validates all fields together;
         # omitting irrigation_mode causes it to return early without writing fail_safe.
+        _safety_min = config.get_setting("SAFETY_TIMEOUT_MINUTES", 30)
         payload = {
             "manual_default_settings": {
                 "irrigation_mode": "duration",
-                "irrigation_duration": config.SAFETY_TIMEOUT_MINUTES,
+                "irrigation_duration": _safety_min,
                 "irrigation_amount_unit": "liter",
                 "irrigation_amount": 0,
-                "fail_safe": config.SAFETY_TIMEOUT_MINUTES,
+                "fail_safe": _safety_min,
             }
         }
         self.publish(set_topic, json.dumps(payload), retain=True)
-        logger.info(f"Hardware-Sicherheits-Timeout ({config.SAFETY_TIMEOUT_MINUTES} Min) via manual_default_settings.fail_safe gesendet.")
+        logger.info(f"Hardware-Sicherheits-Timeout ({_safety_min} Min) via manual_default_settings.fail_safe gesendet.")
 
 # --- Simulated Adapter (Simulation/Mock Mode) ---
 

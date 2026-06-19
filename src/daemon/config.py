@@ -127,3 +127,35 @@ try:
     CAMERA_MAX_UPLOAD_BYTES = int(os.getenv("CAMERA_MAX_UPLOAD_BYTES", "512000"))
 except ValueError:
     CAMERA_MAX_UPLOAD_BYTES = 512000
+
+
+def get_setting(name: str, default=None):
+    """Liest einen Konfigurationswert — DB-Override hat Vorrang vor Modulkonstante."""
+    try:
+        from .adapters import database
+        db_val = database.get_metadata(f"setting_{name}")
+        if db_val is not None:
+            if isinstance(default, float):
+                return float(db_val)
+            if isinstance(default, int):
+                return int(db_val)
+            return db_val
+    except Exception:
+        pass
+    import sys
+    mod = sys.modules[__name__]
+    if hasattr(mod, name):
+        return getattr(mod, name)
+    return default
+
+
+def set_setting(name: str, value) -> None:
+    """Speichert einen Laufzeit-Override für einen Konfigurationswert in der DB."""
+    from .adapters import database
+    database.set_metadata(f"setting_{name}", str(value))
+
+
+def reset_setting(name: str) -> None:
+    """Entfernt den DB-Override — der Wert aus garden.conf/.env greift wieder."""
+    from .adapters import database
+    database.delete_metadata(f"setting_{name}")

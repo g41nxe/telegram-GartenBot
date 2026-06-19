@@ -194,17 +194,18 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
     return None
 
 def _evaluate_skip(rain_last: float, rain_next: float) -> tuple[bool, str]:
-    result = evaluate_rain_window(rain_last, rain_next, config.RAIN_THRESHOLD_MM)
+    _threshold = config.get_setting("RAIN_THRESHOLD_MM", 2.0)
+    result = evaluate_rain_window(rain_last, rain_next, _threshold)
     if result.skip:
         details = (
             f"Regenschwelle überschritten: Gesamt {result.total_mm}mm "
-            f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {config.RAIN_THRESHOLD_MM}mm)"
+            f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {_threshold}mm)"
         )
         logger.info(f"Bewässerung überspringen: {details}")
         return True, details
     details = (
         f"Regen liegt unter Grenzwert: Gesamt {result.total_mm}mm "
-        f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {config.RAIN_THRESHOLD_MM}mm)"
+        f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {_threshold}mm)"
     )
     logger.info(f"Bewässerung freigegeben: {details}")
     return False, details

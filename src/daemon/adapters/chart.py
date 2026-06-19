@@ -25,7 +25,7 @@ def _bar_color(prob: int) -> str:
 
 
 def _build_caption(rain_last_24h_mm: float, rain_next_24h_mm: float) -> str:
-    result = evaluate_rain_window(rain_last_24h_mm, rain_next_24h_mm, config.RAIN_THRESHOLD_MM)
+    result = evaluate_rain_window(rain_last_24h_mm, rain_next_24h_mm, config.get_setting("RAIN_THRESHOLD_MM", 2.0))
     if result.skip:
         return f"🌤 Wetterverlauf — nächste 24h\n☔ Kein Gießen nötig — Regen erwartet ({result.total_mm:.1f}mm)"
     return "🌤 Wetterverlauf — nächste 24h\n🌱 Gießen empfohlen — trocken bis morgen"

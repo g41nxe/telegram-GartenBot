@@ -29,6 +29,7 @@ def register_telegram_commands():
         {"command": "camera_setup",  "description": "Kamera koppeln"},
         {"command": "camera_clear",  "description": "Bild-Historie löschen"},
         {"command": "update",        "description": "Software-Update starten"},
+        {"command": "einstellungen", "description": "Schwellenwerte anpassen"},
     ]
     telegram_client.set_my_commands(commands)
 
