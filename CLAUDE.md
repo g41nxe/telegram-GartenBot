@@ -43,7 +43,8 @@ python -m daemon.main
 ### Deploy to Raspberry Pi (Windows → Pi)
 ```powershell
 .\scripts\deploy.ps1
-# Builds vendor/zigbee2mqtt locally via npm, then scp-transfers src/, scripts/, .env, tools/ to the Pi
+# Builds vendor/zigbee2mqtt locally via npm, then scp-transfers src/, scripts/, config/, tools/ to the Pi
+# Add -CopyEnv to also transfer .env (first-time setup only)
 ```
 
 ### Apply Python/DB changes on Pi (no full setup needed)
@@ -67,7 +68,7 @@ The daemon follows **Hexagonal Architecture** with an event-driven inner core. S
 
 ```
 src/daemon/
-├── config.py              # Loads .env; all runtime config constants live here
+├── config.py              # Loads config/garden.conf then .env; all runtime config constants live here
 ├── scheduler.py           # Scheduler loop (1-min poll); facade over WateringController
 ├── main.py                # Entry point; wires all layers together (IoC)
 │
@@ -114,11 +115,12 @@ Violations of these rules should be refactored before proceeding.
 
 ## Configuration
 
-Copy `.env.template` to `.env` and fill in required values:
-- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_USER_IDS` — whitelist-based access control
-- `LATITUDE` / `LONGITUDE` — for Open-Meteo weather queries
-- `MQTT_VALVE_TOPIC` — default `zigbee2mqtt/garden_valve`
-- `SAFETY_TIMEOUT_MINUTES` — hardware fail-safe sent to the valve on connect (default: 30)
+Configuration is split into two files (ADR 0030):
+
+- **`config/garden.conf`** (versioned, deployed with each release): all non-secret settings — coordinates, thresholds, timeouts, MQTT topics, camera settings.
+- **`.env`** (gitignored, never overwritten by OTA): secrets only — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS`, `GITHUB_PAT`, deploy credentials.
+
+Copy `.env.template` to `.env` and fill in the secret values. All other defaults come from `config/garden.conf`.
 
 ## Testing
 

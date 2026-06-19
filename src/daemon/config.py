@@ -2,31 +2,49 @@ import os
 import logging
 from pathlib import Path
 
-# Logger initialisieren
 logger = logging.getLogger("garden_config")
 
-def _load_env_file():
-    """Lädt Variablen aus einer .env-Datei im Projekt-Root, falls diese existiert."""
-    root_dir = Path(__file__).resolve().parent.parent.parent
-    env_path = root_dir / ".env"
-    
-    if env_path.exists():
-        try:
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith("#"):
-                        continue
-                    if "=" in line:
-                        key, val = line.split("=", 1)
-                        # Setze nur, wenn noch nicht in os.environ vorhanden
-                        os.environ.setdefault(key.strip(), val.strip())
-            logger.info("Konfiguration erfolgreich aus .env geladen.")
-        except Exception as e:
-            logger.error(f"Fehler beim Lesen der .env-Datei: {e}")
+_ROOT = Path(__file__).resolve().parent.parent.parent
+_GARDEN_CONF_PATH = _ROOT / "config" / "garden.conf"
+_ENV_PATH = _ROOT / ".env"
 
-# .env-Datei parsen
-_load_env_file()
+# Schlüssel, die beim Programmstart in der Shell-Umgebung vorhanden waren.
+# Diese werden durch keine Konfigurationsdatei überschrieben (Shell > .env > garden.conf).
+_SHELL_ENV_KEYS = frozenset(os.environ.keys())
+
+
+def _load_file(path: Path, override: bool) -> None:
+    """
+    Lädt KEY=VALUE-Paare aus einer Konfigurationsdatei in os.environ.
+    override=False → setdefault (vorhandene Einträge bleiben unberührt)
+    override=True  → direktes Assignment, respektiert aber Shell-Env-Schlüssel
+    """
+    if not path.exists():
+        logger.warning(f"Konfigurationsdatei nicht gefunden: {path}. Nutze Fallback-Werte.")
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, val = line.split("=", 1)
+                    key, val = key.strip(), val.strip()
+                    if override:
+                        if key not in _SHELL_ENV_KEYS:
+                            os.environ[key] = val
+                    else:
+                        os.environ.setdefault(key, val)
+        logger.info(f"Konfiguration geladen aus: {path}")
+    except Exception as e:
+        logger.error(f"Fehler beim Lesen von {path}: {e}")
+
+
+# Lade-Reihenfolge: garden.conf (Defaults) → .env (überschreibt, außer Shell-Env)
+# Priorität: Shell-Env > .env > garden.conf
+_load_file(_GARDEN_CONF_PATH, override=False)
+_load_file(_ENV_PATH, override=True)
 
 # Konfigurationswerte auslesen und Standardwerte festlegen
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")

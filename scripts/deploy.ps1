@@ -1,4 +1,7 @@
 # PowerShell-Skript zur automatischen Übertragung des Gartenbewässerungs-Services auf den Pi
+param(
+    [switch]$CopyEnv  # Überträgt .env auf den Pi (nur beim Erstsetup nötig)
+)
 Clear-Host
 
 Write-Host "==========================================================" -ForegroundColor Green
@@ -73,8 +76,7 @@ Write-Host "Ggf. werden Sie gleich nach dem SSH-Passwort des Pi gefragt." -Foreg
 Write-Host ""
 
 # Ausführung der Übertragung der notwendigen Ordner und Dateien (ohne .git, garden.db, etc. zur Vermeidung von Konflikten)
-$EnvSource = if (Test-Path ".env.prod") { ".env.prod" } else { ".env" }
-$TransferItems = @("src", "scripts", "tools")
+$TransferItems = @("src", "scripts", "config", "tools")
 if (Test-Path "zigbee2mqtt.tar.gz") {
     $TransferItems += "zigbee2mqtt.tar.gz"
 }
@@ -85,10 +87,13 @@ foreach ($Item in $TransferItems) {
     }
 }
 
-# .env.prod als .env übertragen (enthält Produktions-Secrets)
-if (Test-Path $EnvSource) {
-    scp $EnvSource "${PiUser}@${PiHost}:/home/${PiUser}/garden/.env"
-    Write-Host "Konfigurationsdatei '$EnvSource' als '.env' übertragen." -ForegroundColor Cyan
+if ($CopyEnv) {
+    if (Test-Path ".env") {
+        Write-Host "  -> .env (Erstsetup)" -ForegroundColor Yellow
+        scp ".env" "${PiUser}@${PiHost}:/home/${PiUser}/garden/.env"
+    } else {
+        Write-Warning ".env nicht gefunden — übersprungen."
+    }
 }
 
 
