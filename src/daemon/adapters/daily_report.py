@@ -72,6 +72,29 @@ def _is_report_green(valves: list, services_ok: bool) -> bool:
     return True
 
 
+def _format_watering_morning(
+    success_count: int,
+    failed_count: int,
+    total_volume: float,
+    skip_count: int = 0,
+    rain_last: float = 0.0,
+) -> str:
+    """Bewässerungs-Zusammenfassung für den Morgen-Bericht (eine Zeile)."""
+    if skip_count > 0 and success_count == 0 and failed_count == 0:
+        return f"🌧 Guss übersprungen · {rain_last} mm gefallen"
+    if success_count == 0 and failed_count == 0:
+        return "💧 Gestern nicht bewässert"
+    if success_count == 1:
+        line = f"💧 Gestern 1× bewässert · {total_volume:.0f} L"
+    else:
+        line = f"💧 Gestern {success_count}× bewässert · {total_volume:.0f} L gesamt"
+    if failed_count == 1:
+        line += " · 1 Fehler"
+    elif failed_count > 1:
+        line += f" · {failed_count} Fehler"
+    return line
+
+
 _RAIN_DEVIATION_THRESHOLD_MM = 2.0  # DWD-Schwellenwert für signifikante Abweichung
 
 

@@ -326,6 +326,40 @@ class TestKameraWarnungen(unittest.TestCase):
         self.assertEqual(result, [])
 
 
+class TestFormatWateringMorning(unittest.TestCase):
+
+    def test_no_activity_returns_nicht_bewaessert(self):
+        result = dr._format_watering_morning(0, 0, 0.0, skip_count=0)
+        self.assertIn("nicht bewässert", result)
+        self.assertTrue(result.startswith("💧"))
+
+    def test_one_cycle_shows_volume(self):
+        result = dr._format_watering_morning(1, 0, 45.0, skip_count=0)
+        self.assertIn("1×", result)
+        self.assertIn("45", result)
+        self.assertTrue(result.startswith("💧"))
+
+    def test_multiple_cycles_shows_gesamt(self):
+        result = dr._format_watering_morning(3, 0, 90.0, skip_count=0)
+        self.assertIn("3×", result)
+        self.assertIn("gesamt", result)
+
+    def test_skip_with_no_success_shows_uebersprungen(self):
+        result = dr._format_watering_morning(0, 0, 0.0, skip_count=1, rain_last=2.5)
+        self.assertIn("übersprungen", result)
+        self.assertIn("2.5", result)
+        self.assertTrue(result.startswith("🌧"))
+
+    def test_failed_cycle_noted(self):
+        result = dr._format_watering_morning(0, 2, 0.0, skip_count=0)
+        self.assertIn("Fehler", result)
+        self.assertNotIn("LQI", result)
+
+    def test_no_double_asterisk(self):
+        result = dr._format_watering_morning(1, 0, 30.0, skip_count=0)
+        self.assertNotIn("**", result)
+
+
 class TestIsReportGreen(unittest.TestCase):
 
     def _valve(self, battery=100, abnormal_state="normal", valve_id=1):
