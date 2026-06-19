@@ -788,30 +788,45 @@ def handle_status(chat_id: int):
             f"   *(Stand: {time_str})*"
         )
 
+    _SOURCE_LABELS = {"schedule": "Zeitplan", "manual": "Manuell"}
     history = database.get_recent_history(3)
     history_lines = []
     for h in history:
         time_obj = datetime.fromisoformat(h['timestamp'])
         time_str = time_obj.strftime("%d.%m. %H:%M")
         status_char = "✅" if h['status'] == "completed" else "🌧" if h['status'] == "skipped" else "❌"
-        history_lines.append(f"{status_char} {time_str} ({h['duration_minutes']} Min, {h['source']})")
+        volume = h.get("watered_volume") or 0.0
+        source_label = _SOURCE_LABELS.get(h.get("source", ""), h.get("source", ""))
+        vol_str = f" · {volume:.0f} L" if volume > 0 else ""
+        history_lines.append(f"{status_char} {time_str} · {h['duration_minutes']} Min{vol_str} · {source_label}")
     history_text = "\n".join(history_lines) if history_lines else "Keine Einträge vorhanden"
 
-    version_line = f"\n\n_v{_read_local_version()}_"
+    all_schedules = database.get_schedules()
+    active_schedules = [s for s in all_schedules if s.get("is_active")]
+    nxt = _get_next_schedule(active_schedules, now)
+    next_sched_text = ""
+    if nxt:
+        nxt_dt = nxt["_next_dt"]
+        day_label = "heute" if nxt_dt.date() == now.date() else "morgen"
+        next_sched_text = (
+            f"\n⏰ *Nächster Guss:* {day_label} {nxt_dt.strftime('%H:%M')} Uhr"
+            f" · {nxt['name']} · {nxt['duration_minutes']} Min\n"
+        )
 
+    services_block = f"🔌 Dienste: {services_status}\n" if level != "green" else ""
     cameras_block = f"\n📷 *Kameras*\n{cameras_text}\n" if cameras_text else ""
 
     msg = (
         f"🌱 *Dein Garten auf einen Blick*\n"
         f"{day_str}\n\n"
         f"{headline}\n\n"
-        f"🔌 Dienste: {services_status}\n"
+        f"{services_block}"
         f"{active_text}"
         f"\n📡 *Ventile*\n{valves_text}\n"
+        f"{next_sched_text}"
         f"{cameras_block}"
         f"\n🌡 *Wetter*\n{weather_text}\n\n"
         f"📜 *Zuletzt*\n{history_text}"
-        f"{version_line}"
     )
 
     telegram_client.send_message(chat_id, msg, get_main_keyboard())
