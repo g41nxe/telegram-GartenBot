@@ -329,5 +329,49 @@ class TestDailyForecastSnapshot(unittest.TestCase):
     def test_get_daily_forecast_snapshot_returns_none_initially(self):
         self.assertIsNone(db.get_daily_forecast_snapshot())
 
+class TestGetWateringSkipCountLast24h(unittest.TestCase):
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._patcher.start()
+        db.init_db()
+
+    def tearDown(self):
+        self._patcher.stop()
+        import gc
+        gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def _insert_history(self, status: str, minutes_ago: int = 60):
+        from datetime import timedelta
+        ts = (datetime.now() - timedelta(minutes=minutes_ago)).isoformat()
+        conn = db.get_connection()
+        conn.execute(
+            "INSERT INTO watering_history (timestamp, duration_minutes, source, status) VALUES (?, ?, ?, ?)",
+            (ts, 0, "schedule", status)
+        )
+        conn.commit()
+        conn.close()
+
+    def test_no_entries_returns_zero(self):
+        self.assertEqual(db.get_watering_skip_count_last_24h(), 0)
+
+    def test_one_skip_returns_one(self):
+        self._insert_history("skipped")
+        self.assertEqual(db.get_watering_skip_count_last_24h(), 1)
+
+    def test_completed_not_counted(self):
+        self._insert_history("completed")
+        self.assertEqual(db.get_watering_skip_count_last_24h(), 0)
+
+    def test_old_skip_beyond_24h_not_counted(self):
+        self._insert_history("skipped", minutes_ago=25 * 60)
+        self.assertEqual(db.get_watering_skip_count_last_24h(), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

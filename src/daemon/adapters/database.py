@@ -467,6 +467,25 @@ def get_watering_stats_last_24h() -> tuple[int, int, float]:
     finally:
         conn.close()
 
+def get_watering_skip_count_last_24h() -> int:
+    """Gibt die Anzahl übersprungener Bewässerungszyklen in den letzten 24h zurück."""
+    conn = get_connection()
+    try:
+        from datetime import timedelta
+        time_limit = (datetime.now() - timedelta(hours=24)).isoformat()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM watering_history WHERE status = 'skipped' AND timestamp >= ?",
+            (time_limit,)
+        )
+        return cursor.fetchone()[0] or 0
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Übersprungen-Statistik: {e}")
+        return 0
+    finally:
+        conn.close()
+
+
 def log_device_status(device_name: str, battery: int, linkquality: int):
     """Loggt den aktuellen Batteriestand und die Signalqualität für statistische Auswertungen."""
     conn = get_connection()
