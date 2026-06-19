@@ -117,10 +117,10 @@ Violations of these rules should be refactored before proceeding.
 
 Configuration is split into two files (ADR 0030):
 
-- **`config/garden.conf`** (versioned, deployed with each release): all non-secret settings — coordinates, thresholds, timeouts, MQTT topics, camera settings.
-- **`.env`** (gitignored, never overwritten by OTA): secrets only — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS`, `GITHUB_PAT`, deploy credentials.
+- **`config/garden.conf`** (versioned, deployed with each release): generic non-secret settings — thresholds, timeouts, MQTT topics, camera settings. No personal data.
+- **`.env`** (gitignored, never overwritten by OTA): secrets and location-specific values — `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_IDS`, `LATITUDE`/`LONGITUDE`, `GITHUB_PAT`, deploy credentials.
 
-Copy `.env.template` to `.env` and fill in the secret values. All other defaults come from `config/garden.conf`.
+Copy `.env.template` to `.env` and fill in secrets and coordinates. All other defaults come from `config/garden.conf`.
 
 ## Testing
 

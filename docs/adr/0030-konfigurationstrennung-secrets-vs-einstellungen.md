@@ -15,10 +15,11 @@ nicht nachvollziehbar im Git-Verlauf.
 Zwei Konfigurationsdateien mit klarer Trennlinie:
 
 - **`config/garden.conf`** (versioniert, wird bei Deploy und OTA-Update
-  überschrieben): alle Parameter ohne Geheimniswert — Koordinaten, Schwellwerte,
-  Timeouts, MQTT-Topics, Kamera-Einstellungen.
-- **`.env`** (gitignored, nie überschrieben): ausschließlich Secrets —
-  Telegram-Token, User-IDs, GitHub-PAT, Deploy-Zugangsdaten.
+  überschrieben): alle generischen, nicht-persönlichen Parameter — Schwellwerte,
+  Timeouts, MQTT-Topics, Kamera-Einstellungen. Keine Standortdaten.
+- **`.env`** (gitignored, nie überschrieben): Secrets und standortspezifische
+  Werte — Telegram-Token, User-IDs, GitHub-PAT, Deploy-Zugangsdaten sowie
+  `LATITUDE`/`LONGITUDE` (persönliche Standortdaten).
 
 **Lade-Reihenfolge in `config.py`:** Shell-Env > `.env` > `garden.conf`
 
@@ -34,9 +35,9 @@ Umsetzung: `garden.conf` wird mit `setdefault` geladen (Shell-Env gewinnt);
   Steuerzentrale (Feature 0011).
 - `config/garden.conf` dient als kanonische, lebendige Referenz aller
   Non-Secret-Parameter mit Standardwerten und Kommentaren.
-- Ein neuer Entwickler braucht nur `.env` mit Secrets anlegen; alle anderen
-  Werte kommen aus `garden.conf`.
-- `.env.template` wird auf reine Secret-Vorlage reduziert.
+- Ein neuer Entwickler trägt in `.env` seine Secrets und Koordinaten ein; alle
+  anderen Werte kommen automatisch aus `garden.conf`.
+- `.env.template` enthält Secrets + Koordinaten als Pflichtfelder.
 - `deploy.ps1` überträgt `config/` zusammen mit `src/`; `.env` nur via
   `-CopyEnv`-Flag (Erstsetup).
 - Neue Non-Secret-Konfigurationsvariablen werden direkt in `garden.conf`
