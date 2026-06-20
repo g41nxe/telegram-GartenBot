@@ -195,6 +195,22 @@ def init_db():
             logger.info("Migriere Datenbank: Füge battery Spalte zu cameras hinzu...")
             cursor.execute("ALTER TABLE cameras ADD COLUMN battery INTEGER")
 
+        # --- Regensensor-Schema (Feature 0016) ---
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS rain_measurements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                rainlevel_mm REAL NOT NULL,
+                raintotal_mm REAL NOT NULL,
+                temperature_c REAL NOT NULL,
+                battery_pct INTEGER NOT NULL
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rain_measurements_timestamp
+            ON rain_measurements (timestamp)
+        """)
+
         # Daten-Migrationen: Standard-Ventil anlegen und Altdaten verknüpfen
         cursor.execute("SELECT COUNT(*) FROM valves")
         if cursor.fetchone()[0] == 0:
@@ -769,6 +785,91 @@ def update_camera_settings(mac_address: str, sleep_seconds: int, resolution: str
         return False
     finally:
         conn.close()
+
+# --- Operationen für Regensensor-Messungen ---
+
+def log_rain_measurement(rainlevel_mm: float, raintotal_mm: float, temperature_c: float, battery_pct: int):
+    """Speichert eine Regenmessung in rain_measurements."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO rain_measurements (timestamp, rainlevel_mm, raintotal_mm, temperature_c, battery_pct) VALUES (?, ?, ?, ?, ?)",
+            (datetime.now().isoformat(), rainlevel_mm, raintotal_mm, temperature_c, battery_pct)
+        )
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Fehler beim Speichern der Regenmessung: {e}")
+    finally:
+        conn.close()
+
+
+def get_last_rain_measurement() -> dict | None:
+    """Gibt die jüngste Regenmessung zurück oder None."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM rain_measurements ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der letzten Regenmessung: {e}")
+        return None
+    finally:
+        conn.close()
+
+
+def get_rain_sum_last_24h() -> float:
+    """Gibt die Niederschlagssumme der letzten 24 Stunden zurück."""
+    conn = get_connection()
+    try:
+        from datetime import timedelta
+        time_limit = (datetime.now() - timedelta(hours=24)).isoformat()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT SUM(rainlevel_mm) FROM rain_measurements WHERE timestamp >= ?",
+            (time_limit,)
+        )
+        result = cursor.fetchone()[0]
+        return round(result, 2) if result is not None else 0.0
+    except Exception as e:
+        logger.error(f"Fehler beim Berechnen der 24h-Regensumme: {e}")
+        return 0.0
+    finally:
+        conn.close()
+
+
+def get_rain_stats_last_24h() -> dict:
+    """Gibt Regensensor-Statistiken der letzten 24h zurück (für Tagesbericht)."""
+    conn = get_connection()
+    try:
+        from datetime import timedelta
+        time_limit = (datetime.now() - timedelta(hours=24)).isoformat()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT
+                SUM(rainlevel_mm)      AS rain_sum,
+                MAX(rainlevel_mm)      AS rain_max,
+                AVG(temperature_c)     AS temp_avg,
+                MAX(temperature_c)     AS temp_max
+            FROM rain_measurements
+            WHERE timestamp >= ?
+        """, (time_limit,))
+        row = cursor.fetchone()
+        if not row or row["rain_sum"] is None:
+            return {}
+        return {
+            "rain_sum": round(row["rain_sum"], 2),
+            "rain_max": round(row["rain_max"], 2),
+            "temp_avg": round(row["temp_avg"], 1),
+            "temp_max": round(row["temp_max"], 1),
+        }
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Regensensor-Statistik: {e}")
+        return {}
+    finally:
+        conn.close()
+
 
 def delete_camera(mac_address: str) -> bool:
     """Löscht eine registrierte Kamera aus der Datenbank."""

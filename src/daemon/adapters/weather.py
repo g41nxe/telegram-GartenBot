@@ -126,14 +126,29 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         start_past_idx = max(0, current_idx - 24)
         forecast_rain_last = round(sum(p for p in precip[start_past_idx:current_idx] if p is not None), 2)
         
-        measured = _fetch_measured_rain_last(lat, lon)
-        if measured is not None:
-            rain_last_24h = measured
-            rain_last_source = "measured"
+        # Primäre Quelle: Regensensor (frisch genug)
+        sensor_last = database.get_last_rain_measurement()
+        sensor_is_fresh = False
+        if sensor_last:
+            try:
+                sensor_age_h = (datetime.now() - datetime.fromisoformat(sensor_last["timestamp"])).total_seconds() / 3600
+                sensor_is_fresh = sensor_age_h < config.RAIN_SENSOR_OFFLINE_HOURS
+            except Exception:
+                pass
+
+        if sensor_is_fresh:
+            rain_last_24h = database.get_rain_sum_last_24h()
+            rain_last_source = "sensor"
+            logger.info(f"Regenmenge aus lokalem Sensor: {rain_last_24h} mm (letzte 24h).")
         else:
-            rain_last_24h = forecast_rain_last
-            rain_last_source = "forecast"
-            logger.warning("Gemessener Regen nicht verfügbar — nutze Forecast-Wert (degradiert).")
+            measured = _fetch_measured_rain_last(lat, lon)
+            if measured is not None:
+                rain_last_24h = measured
+                rain_last_source = "measured"
+            else:
+                rain_last_24h = forecast_rain_last
+                rain_last_source = "forecast"
+                logger.warning("Gemessener Regen nicht verfügbar — nutze Forecast-Wert (degradiert).")
         
         # Summiere die nächsten 24 Stunden ab der aktuellen Stunde
         end_forecast_idx = min(len(precip), current_idx + 24)

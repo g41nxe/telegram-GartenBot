@@ -176,23 +176,30 @@ def _format_weather_section(
 ) -> str:
     parts = [f"{weather_desc}, heute {temp_min}–{temp_max} °C."]
 
-    if rain_last_source != "measured":
+    if rain_last_source == "sensor":
+        source_label = "(lokal gemessen)"
+    elif rain_last_source == "measured":
+        source_label = "(ERA5-Reanalyse)"
+    else:
+        source_label = ""
+
+    if rain_last_source not in ("measured", "sensor"):
         parts.append("Gemessene Regendaten zurzeit nicht verfügbar.")
     else:
         if yesterday_rain_next is not None:
             deviation = rain_last - yesterday_rain_next
             if deviation > _RAIN_DEVIATION_THRESHOLD_MM:
                 parts.append(
-                    f"Mehr Regen als erwartet: {rain_last} mm gefallen (Vorhersage gestern: {yesterday_rain_next} mm)."
+                    f"Mehr Regen als erwartet: {rain_last} mm gefallen {source_label} (Vorhersage gestern: {yesterday_rain_next} mm)."
                 )
             elif deviation < -_RAIN_DEVIATION_THRESHOLD_MM:
                 parts.append(
-                    f"Weniger Regen als erwartet: {rain_last} mm gefallen (Vorhersage gestern: {yesterday_rain_next} mm)."
+                    f"Weniger Regen als erwartet: {rain_last} mm gefallen {source_label} (Vorhersage gestern: {yesterday_rain_next} mm)."
                 )
             elif rain_last > 0:
-                parts.append(f"{rain_last} mm Regen gefallen.")
+                parts.append(f"{rain_last} mm Regen gefallen {source_label}.".strip())
         elif rain_last > 0:
-            parts.append(f"{rain_last} mm Regen gefallen.")
+            parts.append(f"{rain_last} mm Regen gefallen {source_label}.".strip())
 
     if rain_next > 10.0:
         parts.append(f"Heute starker Regen erwartet ({rain_next} mm, {rain_prob}%).")
@@ -204,6 +211,41 @@ def _format_weather_section(
         parts.append(f"Heute trocken ({rain_prob}% Regenwahrscheinlichkeit).")
 
     return " ".join(parts)
+
+
+def _format_rain_sensor_line(rain_stats: dict, last_measurement: dict | None) -> str | None:
+    """Regensensor-Zeile für den Tagesbericht. Gibt None zurück wenn kein Sensor bekannt."""
+    if not last_measurement:
+        return None
+    if not rain_stats:
+        offline_h = 0.0
+        try:
+            from datetime import datetime
+            offline_h = (datetime.now() - datetime.fromisoformat(last_measurement["timestamp"])).total_seconds() / 3600
+        except Exception:
+            pass
+        return f"🌧 Regen — ⚠️ Sensor offline (seit {offline_h:.0f} h), Fallback auf ERA5"
+    rain_sum = rain_stats.get("rain_sum", 0.0)
+    temp_avg = rain_stats.get("temp_avg", 0.0)
+    temp_max = rain_stats.get("temp_max", 0.0)
+    battery = last_measurement.get("battery_pct", 100)
+    bat_label = _get_battery_description_simple(battery)
+    return (
+        f"🌧 Regen — {rain_sum} mm gefallen · "
+        f"Ø {temp_avg} °C, max {temp_max} °C · 🔋 {bat_label}"
+    )
+
+
+def _get_battery_description_simple(battery_pct) -> str:
+    try:
+        b = int(battery_pct)
+    except (TypeError, ValueError):
+        return "unbekannt"
+    if b > 60:
+        return "voll"
+    if b > 20:
+        return "mittel"
+    return "schwach"
 
 
 def _format_valve_line(
@@ -268,6 +310,10 @@ def generate_daily_report(today_str: str) -> str:
     # 4. Ventile
     valves = database.get_all_valves()
 
+    # 4b. Regensensor
+    rain_sensor_last = database.get_last_rain_measurement()
+    rain_sensor_stats = database.get_rain_stats_last_24h() if rain_sensor_last else {}
+
     # 5. Datum (Wochentag-Kurzform)
     _days_de = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
     try:
@@ -280,9 +326,15 @@ def generate_daily_report(today_str: str) -> str:
     watering_line = _format_watering_morning(success_count, failed_count, total_volume, skip_count, rain_last)
     weather_line, rain_extra = _format_weather_morning(temp_min, temp_max, weather_desc, rain_next, rain_prob)
 
+    # 6b. Regensensor-Zeile
+    rain_sensor_line = _format_rain_sensor_line(rain_sensor_stats, rain_sensor_last)
+
     # 7. Grün-Prüfung → Pfad wählen
     if _is_report_green(valves, services_ok):
-        return _format_morning_report_short(date_display, watering_line, weather_line, rain_extra)
+        report = _format_morning_report_short(date_display, watering_line, weather_line, rain_extra)
+        if rain_sensor_line:
+            report += f"\n{rain_sensor_line}"
+        return report
 
     # Problem-Pfad: Issues nach Schwere aufsammeln
     threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
@@ -308,7 +360,10 @@ def generate_daily_report(today_str: str) -> str:
         if has_watchdog:
             issues.append(f"⚠️ {wish_name}: kein Signal (Watchdog aktiv)")
 
-    return _format_morning_report_problem(date_display, issues, watering_line, weather_line, rain_extra)
+    report = _format_morning_report_problem(date_display, issues, watering_line, weather_line, rain_extra)
+    if rain_sensor_line:
+        report += f"\n{rain_sensor_line}"
+    return report
 
 
 def send_daily_report(today_str: str):

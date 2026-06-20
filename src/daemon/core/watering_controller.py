@@ -4,38 +4,29 @@ from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Optional, Tuple
 from .event_bus import Event, EventBus
 from .valve_events import ValveStatusReported
+from .sensor_events import RainSensorMeasured
+from .watering_events import (
+    WateringCycleStarted,
+    WateringCycleCompleted,
+    WateringCycleFailed,
+    WateringCycleTerminated,
+    WateringCycleStopped,
+    WateringCycleInterrupted,
+)
 from .. import config
 
 logger = logging.getLogger("garden_watering_controller")
 
-# --- Domänen-Ereignisse (Domain Events) ---
-
-class WateringCycleStarted(Event):
-    def __init__(self, duration: int, target_volume: int, source: str):
-        self.duration = duration
-        self.target_volume = target_volume
-        self.source = source
-
-class WateringCycleCompleted(Event):
-    def __init__(self, duration_run: int, volume_run: float, source: str, details: str):
-        self.duration_run = duration_run
-        self.volume_run = volume_run
-        self.source = source
-        self.details = details
-
-class WateringCycleFailed(Event):
-    def __init__(self, duration_run: int, volume_run: float, source: str, details: str):
-        self.duration_run = duration_run
-        self.volume_run = volume_run
-        self.source = source
-        self.details = details
-
-class WateringCycleStopped(Event):
-    def __init__(self, duration_run: int, volume_run: float, source: str, details: str):
-        self.duration_run = duration_run
-        self.volume_run = volume_run
-        self.source = source
-        self.details = details
+# Re-export for backward compatibility
+__all__ = [
+    "WateringCycleStarted",
+    "WateringCycleCompleted",
+    "WateringCycleFailed",
+    "WateringCycleTerminated",
+    "WateringCycleStopped",
+    "WateringCycleInterrupted",
+    "WateringController",
+]
 
 # --- Deep Core Controller ---
 
@@ -52,6 +43,7 @@ class WateringController:
         self._last_flow_update_time: Dict[str, Optional[datetime]] = {}
 
         self.event_bus.subscribe(ValveStatusReported, self._on_valve_status_reported)
+        self.event_bus.subscribe(RainSensorMeasured, self._on_rain_sensor_measured)
 
     def get_active_volume(self, mqtt_name: str = None) -> float:
         """Gibt die aktuell geflossene Wassermenge zurück. Ohne mqtt_name: erstes aktives Ventil."""
@@ -146,6 +138,31 @@ class WateringController:
                 stopped.append(name)
 
         return True, f"Bewässerung gestoppt ({', '.join(stopped)})."
+
+    def interrupt_watering(self, reason: str, rain_mm: float = 0.0) -> None:
+        """Unterbricht alle aktiven Zyklen systemseitig (z.B. durch Regen)."""
+        with self._lock:
+            targets = list(self._active_cycles.keys())
+            if not targets:
+                return
+            for name in targets:
+                cycle = self._active_cycles.pop(name)
+                cycle["timer"].cancel()
+                valve_topic = cycle.get("valve_topic", f"zigbee2mqtt/{name}")
+                self.publish_fn(f"{valve_topic}/set", '{"state": "OFF"}')
+                duration_run = max(1, int((datetime.now() - cycle["start_time"]).total_seconds() / 60))
+                vol_run = round(cycle.get("current_volume", 0.0), 2)
+                source = cycle["source"]
+                self._last_flow_update_time.pop(name, None)
+                details = f"{reason} · {rain_mm} mm erkannt" if rain_mm > 0 else reason
+                self.event_bus.publish(WateringCycleInterrupted(
+                    duration_run, vol_run, source, details, mqtt_name=name, rain_mm=rain_mm
+                ))
+                logger.info(f"Guss-Steuerung: '{name}' unterbrochen ({reason}).")
+
+    def _on_rain_sensor_measured(self, event: RainSensorMeasured):
+        if event.is_raining:
+            self.interrupt_watering("Regen erkannt", event.rainlevel_mm)
 
     def _integrate_flow(self, flow_rate: float, elapsed_seconds: float, mqtt_name: str = "garden_valve"):
         """Integriert den Durchfluss für ein bestimmtes Ventil."""
