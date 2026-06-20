@@ -8,9 +8,9 @@
 
 ## Open issues
 
-!`bd ready --json`
+!`jq -sc '[.[] | select(.status == "open" and .dependency_count == 0)]' .beads/issues.jsonl`
 
-The list above has already been filtered to issues ready for work and is the sole source of truth for what work exists. Do not run your own unfiltered query to find more issues — if the list is empty, there is nothing to do.
+The list above has already been filtered to issues ready for work (open, no unresolved dependencies) and is the sole source of truth for what work exists. Do not run your own unfiltered query to find more issues — if the list is empty, there is nothing to do.
 
 ## Recent RALPH commits (last 10)
 
@@ -43,7 +43,7 @@ Pick the highest-priority open issue that is not blocked by another open issue.
    - List key decisions made
    - List files changed
    - Note any blockers for the next iteration
-6. **Close** — close the issue with `bd close <ID> --reason="<concise summary of what was implemented and why>"`. Write a meaningful reason, not a placeholder.
+6. **Close** — Beads is read-only in this sandbox (no live database). Instead, add a line to the commit message: `Closes: <ID> — <concise summary>`. The host will sync this after review.
 
 ## Rules
 
