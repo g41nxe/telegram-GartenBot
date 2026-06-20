@@ -76,7 +76,7 @@ function refreshBeadsArtifacts(commitMsg: string) {
 
 // Maximum number of implement→review cycles to run before stopping.
 // Each cycle works on one issue. Raise this to process more issues per run.
-const MAX_ITERATIONS = 10;
+const MAX_ITERATIONS = 1;
 
 // Models per phase. Kept separate so the reviewer can run on a stronger model
 // than the implementer if desired.
