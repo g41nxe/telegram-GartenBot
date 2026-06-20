@@ -23,6 +23,7 @@
 
 import * as sandcastle from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
+import { execSync } from "child_process";
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -44,6 +45,15 @@ const copyToWorktree: string[] = [];
 // ---------------------------------------------------------------------------
 // Main loop
 // ---------------------------------------------------------------------------
+
+// Export current Beads state to JSONL so the container has fresh issue data.
+try {
+  execSync("bd export > .beads/issues.jsonl", { shell: "cmd.exe /c", stdio: "inherit" });
+  execSync('git add .beads/issues.jsonl && git diff --cached --quiet || git commit -m "chore: Beads JSONL vor Sandcastle-Lauf aktualisieren"', { shell: "cmd.exe /c", stdio: "inherit" });
+  console.log("Beads JSONL exportiert und committed.");
+} catch (e) {
+  console.warn("JSONL-Export fehlgeschlagen — Container verwendet letzten committed Stand.", e);
+}
 
 for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   console.log(`\n=== Iteration ${iteration}/${MAX_ITERATIONS} ===\n`);
