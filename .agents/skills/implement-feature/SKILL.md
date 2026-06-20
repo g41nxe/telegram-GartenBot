@@ -57,7 +57,7 @@ Mark `threading.Timer` and `threading.Thread` instances as `daemon = True` (see 
 
 Work through plan steps one at a time. After each step:
 
-- Run the full test suite: `python -m unittest discover -v tests`
+- Run the full test suite: `python -m pytest tests`
 - Report result (pass count, failures) before moving to the next step
 - If a step reveals an ADR conflict (the code diverges from a recorded decision), flag it with the ADR number and ask the user how to proceed
 

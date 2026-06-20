@@ -39,12 +39,12 @@ This is a Python daemon for a smart garden irrigation system running on a **Rasp
 
 ### Run all tests (no hardware required)
 ```bash
-python -m unittest discover -v tests
+python -m pytest tests
 ```
 
 ### Run a single test
 ```bash
-python -m unittest tests.test_irrigation.TestGardenIrrigation.test_01_config_defaults
+python -m pytest tests/test_irrigation.py::TestGardenIrrigation::test_01_config_defaults
 ```
 
 ### Run with coverage (Linux/Pi)

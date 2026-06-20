@@ -13,7 +13,7 @@
 ## Testing
 
 - Tests liegen in `tests/`; Dateiname beginnt mit `test_`.
-- Ausführung: `python -m unittest discover -s tests`
+- Ausführung: `python -m pytest tests` (pytest führt sowohl `unittest.TestCase`- als auch pytest-Stil-Tests aus).
 - Jede neue Domain-Logik-Funktion benötigt mindestens einen Test.
 - Externe Abhängigkeiten (MQTT, Datenbank, Wetter-API) werden mit `unittest.mock` gemockt.
 - `mqtt_client.HAS_PAHO = False` muss in Tests gesetzt sein.

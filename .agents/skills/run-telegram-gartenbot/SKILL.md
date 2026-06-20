@@ -33,12 +33,12 @@ Exercises 20 checks covering: `database` CRUD, simulated MQTT valve open/close, 
 PYTHONIOENCODING=utf-8 python .claude/skills/run-telegram-gartenbot/smoke.py --tests
 ```
 
-Runs smoke checks first, then the full `unittest` suite (385 tests across `tests/`).
+Runs smoke checks first, then the full `pytest` suite across `tests/`.
 
 ### Test suite only
 
 ```bash
-PYTHONIOENCODING=utf-8 python -m unittest discover -s tests -v
+PYTHONIOENCODING=utf-8 python -m pytest tests
 ```
 
 ### Direct module invocation

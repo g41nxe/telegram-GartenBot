@@ -593,7 +593,7 @@ git commit -m "feat: /giesscheck Handler, Hauptmenü-Umbau, Wizard-Abbruchlisten
 - [ ] **Step 2: Vollständigen Test-Run ausführen**
 
 ```
-python -m unittest discover tests
+python -m pytest tests
 ```
 
 Erwartetes Ergebnis: Alle Tests `OK`, keine Regressions.

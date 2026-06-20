@@ -191,6 +191,7 @@ Sie können das gesamte System lokal (z. B. unter Windows) testen, ohne dass ein
 
 **Ausführen der Testsuite:**
 ```bash
-python -m unittest discover tests
+pip install -r requirements-dev.txt   # einmalig: pytest installieren
+python -m pytest tests
 ```
 *(Die Tests decken Datenbank-Schema und CRUD, Multi-Ventil-Kopplung, Zeitsteuerung (sequentiell/parallel), Wetter-Skips, Simulator-Status und die First-to-Hit-Abschaltung ab — vollständig offline, ohne MQTT-Broker oder Telegram-Verbindung).*

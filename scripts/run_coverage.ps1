@@ -1,8 +1,8 @@
 # run_coverage.ps1
-# Führt die Unit-Tests mit coverage aus und generiert einen Report.
+# Führt die Tests mit pytest unter coverage aus und generiert einen Report.
 
 Write-Host "Running tests with coverage..." -ForegroundColor Cyan
-python -m coverage run --source=src/daemon -m unittest discover -v tests
+python -m coverage run --source=src/daemon -m pytest tests
 
 Write-Host ""
 Write-Host "Coverage Report:" -ForegroundColor Cyan

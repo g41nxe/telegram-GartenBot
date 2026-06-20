@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # run_coverage.sh
-# Führt die Unit-Tests mit coverage aus und generiert einen Report.
+# Führt die Tests mit pytest unter coverage aus und generiert einen Report.
 
 echo "Running tests with coverage..."
-python3 -m coverage run --source=src/daemon -m unittest discover -v tests
+python3 -m coverage run --source=src/daemon -m pytest tests
 
 echo ""
 echo "Coverage Report:"

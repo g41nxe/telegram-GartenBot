@@ -89,9 +89,14 @@ const IMPLEMENTER_MODEL = "claude-sonnet-4-6";
 const REVIEWER_MODEL = "claude-sonnet-4-6";
 
 // Hooks run inside the sandbox before the agent starts each iteration.
-// pip install ensures the sandbox always has fresh dependencies.
+// pip install ensures the sandbox always has runtime + test dependencies
+// (requirements-dev.txt brings pytest, which is the test runner).
 const hooks = {
-  sandbox: { onSandboxReady: [{ command: "pip install -r requirements.txt --quiet" }] },
+  sandbox: {
+    onSandboxReady: [
+      { command: "pip install -r requirements.txt -r requirements-dev.txt --quiet" },
+    ],
+  },
 };
 
 // Python projects have no node_modules to copy.

@@ -6,7 +6,7 @@ Usage:
     python .claude/skills/run-telegram-gartenbot/smoke.py [--tests]
 
 Options:
-    --tests   Also run the full unittest suite after the smoke checks.
+    --tests   Also run the full pytest suite after the smoke checks.
 """
 
 import sys, os
@@ -107,14 +107,14 @@ def run_smoke():
 
 def run_tests():
     import subprocess
-    print("\n=== Running unittest suite ===\n")
+    print("\n=== Running pytest suite ===\n")
     result = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
+        [sys.executable, "-m", "pytest", "tests"],
         cwd=_repo_root,
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     if result.returncode != 0:
-        print("FAIL  unittest suite")
+        print("FAIL  pytest suite")
         sys.exit(1)
     print("\n=== All tests passed ===")
 

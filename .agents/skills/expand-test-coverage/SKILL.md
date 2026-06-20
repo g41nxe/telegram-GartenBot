@@ -14,7 +14,7 @@ This skill automates the process of identifying untested code paths and writing 
    - Execute the coverage script: `scripts/run_coverage.sh` (or `scripts\run_coverage.ps1` on Windows).
    - Alternatively, manually run:
      ```bash
-     python -m coverage run --source=src/daemon -m unittest discover tests
+     python -m coverage run --source=src/daemon -m pytest tests
      python -m coverage report -m
      ```
 
