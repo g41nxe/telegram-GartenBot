@@ -5,7 +5,7 @@
 Reine Präsentations-Migration: Wortlaut, Formatierung und Aufbau aller Telegram-Nachrichten werden auf ADR 0029 gebracht.
 **Keine Logik-, Event- oder Callback-Daten-Änderungen.**
 
-Verbindliche Grundlage: `docs/reference/telegram-design-system.html` (SOLL).
+Verbindliche Grundlage: `docs/design/telegram-design-system.html` (SOLL).
 
 ---
 
@@ -17,7 +17,7 @@ Verbindliche Grundlage: `docs/reference/telegram-design-system.html` (SOLL).
 | `src/daemon/adapters/daily_report.py` | Tagesbericht-Texte |
 | `tests/ui/test_telegram_ui.py` | Neue Tests |
 | `tests/adapters/test_daily_report.py` | Neue Tests |
-| `docs/reference/telegram-nachrichten.html` | IST-Referenz aktualisieren |
+| `docs/design/telegram-nachrichten.html` | IST-Referenz aktualisieren |
 
 ---
 
@@ -280,7 +280,7 @@ def test_daily_report_headline_format(self):
 
 ## Schritt 8 — IST-Referenz aktualisieren
 
-`docs/reference/telegram-nachrichten.html` vollständig auf das neue Format bringen.
+`docs/design/telegram-nachrichten.html` vollständig auf das neue Format bringen.
 Jede Sprechblase zeigt die neuen Texte, Quellfunktion annotiert.
 
 ---

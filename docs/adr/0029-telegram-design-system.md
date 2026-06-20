@@ -37,5 +37,5 @@ Verbot der Vermenschlichung: keine Formulierungen wie „satt getrunken" / „du
 - Einheitliche, vorhersehbar lesbare Nachrichten; behebt zugleich den latenten `**`-Rendering-Bug.
 - Selbst-eskalierende `/status`-Anzeige: ruhig im Normalfall, fokussiert im Problemfall.
 - Migration ist ein einmaliger Kraftakt über viele Format-Strings — als eigenes Feature gebündelt und testbar gehalten.
-- Pflege: Das Design-System ist über `.claude/rules/telegram_messages.md` verbindlich; Prinzipien und Zielbild liegen in `docs/reference/telegram-design-system.html`, der Ist-Stand in `docs/reference/telegram-nachrichten.html`.
+- Pflege: Das Design-System ist über `.claude/rules/telegram_messages.md` verbindlich; Prinzipien und Zielbild liegen in `docs/design/telegram-design-system.html`, der Ist-Stand in `docs/design/telegram-nachrichten.html`.
 - Neuer Domänenbegriff **Garten-Ampel** in `CONTEXT.md`.

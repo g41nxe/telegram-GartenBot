@@ -34,6 +34,6 @@ Der Akkustand der Kamera wird im `/status` angezeigt, beeinflusst die Garten-Amp
 ### `src/daemon/adapters/daily_report.py`
 - Kamera-Batteriewarnungen analog zu Ventil-Batteriewarnungen erzeugen
 
-### `docs/reference/telegram-nachrichten.html`
+### `docs/design/telegram-nachrichten.html`
 - `/status`-Kamera-Zeile aktualisieren (Akkustand-Darstellung)
 - Tagesbericht-Sektion: Kamera-Batteriewarnung ergänzen

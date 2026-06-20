@@ -475,7 +475,7 @@ Neue Nachrichten eintragen:
 - [ ] **Schritt 4: Commit**
 
 ```bash
-git add src/daemon/main.py docs/reference/telegram-nachrichten.html
+git add src/daemon/main.py docs/design/telegram-nachrichten.html
 git commit -m "feat: /einstellungen in Befehlsmenü, Nachrichten-Referenz aktualisiert (0022)"
 ```
 

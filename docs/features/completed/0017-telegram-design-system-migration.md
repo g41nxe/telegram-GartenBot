@@ -6,7 +6,7 @@ Die Nachrichten des Telegram-Bots sind organisch gewachsen und uneinheitlich: ge
 
 ## Lösung (Solution)
 
-Alle bestehenden benutzersichtbaren Nachrichten in `telegram_ui.py`, `daily_report.py`, `valve_pairing.py` und `camera_pairing.py` werden in einem zusammenhängenden, testbaren Schritt auf das in ADR 0029 festgelegte Design-System umgestellt. Das Zielbild ist in `docs/reference/telegram-design-system.html` (SOLL) dokumentiert, der vollständige Ist-Stand in `docs/reference/telegram-nachrichten.html` (IST). Die Migration verändert ausschließlich Wortlaut, Formatierung und Aufbau der Nachrichten — keine Steuerungslogik, keine Event-Verträge, keine Tastatur-Callbacks (mit Ausnahme der zwei umbenannten Hauptmenü-Buttons).
+Alle bestehenden benutzersichtbaren Nachrichten in `telegram_ui.py`, `daily_report.py`, `valve_pairing.py` und `camera_pairing.py` werden in einem zusammenhängenden, testbaren Schritt auf das in ADR 0029 festgelegte Design-System umgestellt. Das Zielbild ist in `docs/design/telegram-design-system.html` (SOLL) dokumentiert, der vollständige Ist-Stand in `docs/design/telegram-nachrichten.html` (IST). Die Migration verändert ausschließlich Wortlaut, Formatierung und Aufbau der Nachrichten — keine Steuerungslogik, keine Event-Verträge, keine Tastatur-Callbacks (mit Ausnahme der zwei umbenannten Hauptmenü-Buttons).
 
 ## User Stories
 
@@ -51,6 +51,6 @@ Alle bestehenden benutzersichtbaren Nachrichten in `telegram_ui.py`, `daily_repo
 
 ## Weitere Anmerkungen (Further Notes)
 
-- Grundlage: ADR 0029. Referenzdokumente: `docs/reference/telegram-design-system.html` (SOLL), `docs/reference/telegram-nachrichten.html` (IST).
+- Grundlage: ADR 0029. Referenzdokumente: `docs/design/telegram-design-system.html` (SOLL), `docs/design/telegram-nachrichten.html` (IST).
 - Der neue Domänenbegriff **Garten-Ampel** ist in `CONTEXT.md` definiert.
 - Da viele Format-Strings betroffen sind, empfiehlt sich eine Migration in Etappen pro Modul/Nachrichtengruppe, jeweils mit grünen Tests, um die Änderung überschaubar und überprüfbar zu halten.

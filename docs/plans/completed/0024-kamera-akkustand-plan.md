@@ -379,13 +379,13 @@ git commit -m "feat: Kamera-Batteriewarnung im Tagesbericht"
 ### Task 5: Referenz-Dokument aktualisieren
 
 **Files:**
-- Modify: `docs/reference/telegram-nachrichten.html`
+- Modify: `docs/design/telegram-nachrichten.html`
 - Modify: `docs/features/0024-kamera-akkustand.md` → nach `docs/features/completed/`
 - Modify: `docs/plans/0024-kamera-akkustand-plan.md` → nach `docs/plans/completed/`
 
 - [ ] **Step 1: `/status`-Kamera-Zeile aktualisieren**
 
-In `docs/reference/telegram-nachrichten.html` die Kamera-Statuszeile um Akkustand ergänzen.
+In `docs/design/telegram-nachrichten.html` die Kamera-Statuszeile um Akkustand ergänzen.
 
 Vorher:
 ```

@@ -106,7 +106,7 @@ Keine Änderung: `/report` und `/statusbericht` bleiben als Aliase erhalten. Aut
 
 - `adapters/daily_report.py`: Grün-Prüf-Logik + zwei separate Format-Pfade (Kurzform / Problemfall)
 - `ui/telegram_ui.py` (`handle_status`): Nächste-Bewässerung-Sektion, Bereinigungen
-- `docs/reference/telegram-nachrichten.html`: Alle neuen und geänderten Nachrichten synchron aktualisieren (Pflicht gemäß Design-System-Regel)
+- `docs/design/telegram-nachrichten.html`: Alle neuen und geänderten Nachrichten synchron aktualisieren (Pflicht gemäß Design-System-Regel)
 
 ## Test-Entscheidungen (Testing Decisions)
 

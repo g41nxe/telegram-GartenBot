@@ -51,12 +51,12 @@ Der Bewässerungs-Daemon abonniert das MQTT-Topic des Regensensors. Bei Eingang 
 - **Benachrichtigungs-Zustand (Flankensteuerung):** Der Sendezustand für die Regen-Benachrichtigung wird persistent in den System-Metadaten abgelegt (gleiches Muster wie der Watchdog). Eine Benachrichtigung wird nur beim Übergang trocken→Regen gesendet, eine Entwarnung beim Übergang Regen→trocken.
 - **Inaktivitäts-Watchdog:** Der bestehende Watchdog wird um den Regensensor erweitert. Das Inaktivitäts-Fenster orientiert sich am Heartbeat-Intervall des Sensors (alle 6 Stunden bei Trockenheit) plus Puffer. Sofortige Entwarnung beim nächsten Eingang einer Regenmessung, analog zu Ventil und Garten-Kamera.
 - **Konfiguration:** Drei neue Umgebungsvariablen — Topic, Schwellenwert für „es regnet" und Offline-Fenster für den ERA5-Fallback — jeweils mit sinnvollen Standardwerten und Dokumentation in der `.env`-Vorlage.
-- **Telegram-Oberfläche:** Erweiterung von `/status` und Tagesbericht sowie die Guss-Unterbrechungs- und Regen-Benachrichtigungen (Details unten). Alle Texte folgen verbindlich dem Design-System (ADR 0029 / `docs/reference/telegram-design-system.html`) und sind nach der Umsetzung in IST- und SOLL-Referenz nachzuziehen (siehe `.claude/rules/telegram_messages.md`).
+- **Telegram-Oberfläche:** Erweiterung von `/status` und Tagesbericht sowie die Guss-Unterbrechungs- und Regen-Benachrichtigungen (Details unten). Alle Texte folgen verbindlich dem Design-System (ADR 0029 / `docs/design/telegram-design-system.html`) und sind nach der Umsetzung in IST- und SOLL-Referenz nachzuziehen (siehe `.claude/rules/telegram_messages.md`).
 - **Architektur-Abweichung:** ADR 0028 löst ADR 0003 ab (Verzicht auf physische Sensoren). Begründung und Konsequenzen sind dort dokumentiert.
 
 ### Konkrete Telegram-Formate
 
-Die folgenden Formate folgen dem Design-System (ADR 0029 / `docs/reference/telegram-design-system.html`): Anrede „du", Header `*Emoji Titel*` ohne Doppelpunkt, Einheiten mit Leerzeichen (`1.4 mm`, `2.1 l`), Zeiten mit „Uhr", Garten-Ampel/Progressive Disclosure, qualitative Batterie (`voll`/`mittel`/`schwach`). Beispieldaten sind eingesetzt; Titel werden fett dargestellt.
+Die folgenden Formate folgen dem Design-System (ADR 0029 / `docs/design/telegram-design-system.html`): Anrede „du", Header `*Emoji Titel*` ohne Doppelpunkt, Einheiten mit Leerzeichen (`1.4 mm`, `2.1 l`), Zeiten mit „Uhr", Garten-Ampel/Progressive Disclosure, qualitative Batterie (`voll`/`mittel`/`schwach`). Beispieldaten sind eingesetzt; Titel werden fett dargestellt.
 
 **`/status` — Regensensor-Zeile** in `handle_status()`, im kompakten gebündelten Stil der übrigen Geräte. „Aktuell" = `rainlevel_mm` der letzten Regenmessung, „Gesamt" = `raintotal_mm`. Batterie qualitativ über `_get_battery_description()`. Entfällt vollständig, wenn kein Regensensor registriert ist.
 
