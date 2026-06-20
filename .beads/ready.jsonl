@@ -17,14 +17,14 @@
   {
     "id": "telegram-GartenBot-6y0",
     "title": "Zeitraffer-GIF-Generierung",
-    "description": "Kamera-Bilder werden im Bild-Puffer gesammelt und nach konfigurierbarem Zyklus (Tage) via ffmpeg zu einem Zeitraffer-GIF zusammengefasst. GIF wird im Tagesbericht verschickt und archiviert, Rohbilder danach gelöscht. /timelapse-Befehl für sofortige Vorschau ohne Löschen. Setzt ffmpeg auf der Steuerzentrale voraus. Referenz: docs/features/zeitraffer-gif.md, Plan: docs/plans/zeitraffer-gif-generierung.md",
+    "description": "Kamera-Bilder werden im Bild-Puffer gesammelt und nach konfigurierbarem Zyklus (Tage) via ffmpeg zu einem Zeitraffer-GIF zusammengefasst. GIF wird im Tagesbericht verschickt und archiviert, Rohbilder danach gelöscht. /timelapse-Befehl für sofortige Vorschau ohne Löschen. Setzt ffmpeg auf der Steuerzentrale voraus. Referenz: docs/features/0026-zeitraffer-gif-generierung.md, Plan: docs/plans/0026-zeitraffer-gif-generierung-plan.md",
     "status": "open",
     "priority": 3,
     "issue_type": "feature",
     "owner": "g41nxe@gmail.com",
     "created_at": "2026-06-20T11:30:50Z",
     "created_by": "Dan Hachenberger",
-    "updated_at": "2026-06-20T13:34:42Z",
+    "updated_at": "2026-06-20T21:42:48Z",
     "dependencies": [
       {
         "issue_id": "telegram-GartenBot-6y0",
