@@ -1,3 +1,22 @@
+## v1.4.0 — 2026-06-21
+
+### Neu
+- Morgen-Bericht: Tagesbericht als kompaktes Briefing (Kurzform/Problemfall)
+- /status geschärft: nächste Bewässerung, Volumen in Historie, weniger Rauschen
+- In-Chat-Einstellungen: Konfiguration direkt im Telegram-Chat ändern
+- Zeitplan-Bearbeitung: bestehende Zeitpläne ändern statt neu anlegen
+- Kamera-Akkustand wird in /status angezeigt
+- Telegram-Responsivität & bessere Auffindbarkeit der Befehle
+- Secrets (Token, Koordinaten) getrennt in .env (ADR 0030)
+
+### Fixes
+- Bugs in 4 Modulen behoben (Code-Review 0022/0024)
+
+### Intern
+- Dev-Infrastruktur: Beads-Tracker, Sandcastle-Pipeline, pytest-Runner
+
+---
+
 ## v1.3.0 — 2026-06-19
 
 - Telegram Design-System: Garten-Ampel (🟢/🟡/🔴) im /status-Befehl
