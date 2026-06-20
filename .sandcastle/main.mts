@@ -78,6 +78,11 @@ function refreshBeadsArtifacts(commitMsg: string) {
 // Each cycle works on one issue. Raise this to process more issues per run.
 const MAX_ITERATIONS = 10;
 
+// Models per phase. Kept separate so the reviewer can run on a stronger model
+// than the implementer if desired.
+const IMPLEMENTER_MODEL = "claude-sonnet-4-6";
+const REVIEWER_MODEL = "claude-sonnet-4-6";
+
 // Hooks run inside the sandbox before the agent starts each iteration.
 // pip install ensures the sandbox always has fresh dependencies.
 const hooks = {
@@ -119,7 +124,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     // -----------------------------------------------------------------------
     // Phase 1: Implement
     //
-    // A sonnet agent picks the next open issue, writes the
+    // The implementer agent picks the next ready issue, writes the
     // implementation (using RGR: Red → Green → Repeat → Refactor), and
     // commits the result.
     //
@@ -132,7 +137,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     const implement = await sandbox.run({
       name: "implementer",
       maxIterations: 1,
-      agent: sandcastle.claudeCode("claude-sonnet-4-6"),
+      agent: sandcastle.claudeCode(IMPLEMENTER_MODEL),
       promptFile: "./.sandcastle/implement-prompt.md",
     });
 
@@ -149,14 +154,14 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
     // -----------------------------------------------------------------------
     // Phase 2: Review
     //
-    // A second sonnet agent reviews the diff of the branch produced by
+    // The reviewer agent reviews the diff of the branch produced by
     // Phase 1. It uses the {{BRANCH}} prompt argument to inspect the right
     // branch, and either approves or makes corrections directly on the branch.
     // -----------------------------------------------------------------------
     await sandbox.run({
       name: "reviewer",
       maxIterations: 1,
-      agent: sandcastle.claudeCode("claude-sonnet-4-6"),
+      agent: sandcastle.claudeCode(REVIEWER_MODEL),
       promptFile: "./.sandcastle/review-prompt.md",
       promptArgs: {
         BRANCH: branch,
