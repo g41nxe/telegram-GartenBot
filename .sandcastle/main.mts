@@ -34,13 +34,18 @@ import { execSync } from "child_process";
 // Host shell helpers
 // ---------------------------------------------------------------------------
 
+// execSync uses the platform default shell (cmd.exe on Windows), which handles
+// the `>`, `&&`, and `||` operators used below. Passing a custom `shell` string
+// like "cmd.exe /c" makes Node try to spawn an executable named "cmd.exe /c"
+// (ENOENT) — so we deliberately do NOT set `shell`.
+
 /** Run a host command, streaming its output to the console. */
 const sh = (cmd: string) =>
-  execSync(cmd, { shell: "cmd.exe /c", stdio: "inherit" });
+  execSync(cmd, { stdio: "inherit" });
 
 /** Run a host command and capture its stdout as a string. */
 const shOut = (cmd: string) =>
-  execSync(cmd, { shell: "cmd.exe /c", encoding: "utf8" }).toString();
+  execSync(cmd, { encoding: "utf8" }).toString();
 
 /**
  * Extract the Beads issue IDs the agent claimed to finish, by scanning the
