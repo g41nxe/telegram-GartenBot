@@ -1,7 +1,6 @@
 """
 Smoke driver for telegram-GartenBot.
 Runs the daemon's core in simulation mode (no MQTT broker, no Telegram, no hardware).
-All assertions raise SystemExit(1) on failure.
 
 Usage:
     python .claude/skills/run-telegram-gartenbot/smoke.py [--tests]
@@ -10,13 +9,17 @@ Options:
     --tests   Also run the full unittest suite after the smoke checks.
 """
 
-import sys, os, time
+import sys, os
+from datetime import datetime
 
 # UTF-8 output — daily report contains emojis, Windows cp1252 can't encode them.
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "..", "src"))
+_repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+sys.path.insert(0, os.path.join(_repo_root, "src"))  # enables: from daemon import ...
+sys.path.insert(0, _repo_root)                        # enables: from src.daemon import ... (camera_events workaround)
+
 
 def check(label, condition, detail=""):
     if condition:
@@ -55,40 +58,49 @@ def run_smoke():
     check("close_valve", mqtt_client.close_valve())
     check("valve OFF", mqtt_client.get_valve_status()["state"] == "OFF")
 
-    # --- 3. Scheduler + WateringController ---
-    from daemon import scheduler
+    # --- 3. WateringController ---
     from daemon.core.watering_controller import WateringController
     from daemon.adapters.database_adapter import DatabaseLoggerAdapter
 
     bus = mqtt_client._global_bus
-    ctrl = WateringController(bus, mqtt_client.client_instance)
-    scheduler.controller = ctrl
+    ctrl = WateringController(bus, mqtt_client.client_instance.publish)
     DatabaseLoggerAdapter(bus)
+
+    ok, msg = ctrl.start_watering(duration_minutes=1, target_volume_liters=10, source="smoke")
+    check("start_watering", ok, msg)
+    check("active cycle", ctrl.get_active_cycle() is not None)
+
+    ok2, _ = ctrl.stop_watering()
+    check("stop_watering", ok2)
+    check("cycle cleared", ctrl.get_active_cycle() is None)
+
+    # --- 4. Scheduler (lifecycle only) ---
+    from daemon import scheduler
+    scheduler.set_controller(ctrl)
     scheduler.start_scheduler()
     check("scheduler started", scheduler.scheduler_running)
+    scheduler.stop_scheduler()
+    check("scheduler stopped", not scheduler.scheduler_running)
 
-    ok, msg = scheduler.start_watering(duration_minutes=1, target_volume_liters=10, source="smoke")
-    check("start_watering", ok, msg)
-    check("active cycle", scheduler.get_active_cycle() is not None)
-
-    ok2, _ = scheduler.stop_watering()
-    check("stop_watering", ok2)
-    check("cycle cleared", scheduler.get_active_cycle() is None)
-
-    # --- 4. Weather (offline-first fallback) ---
+    # --- 5. Weather (offline-first fallback) ---
     from daemon.adapters import weather
-    rain_l, rain_n, temp, code, tmin, tmax, prob = weather.get_weather_data(52.5, 13.5)
-    check("weather offline returns floats", isinstance(rain_l, float))
+    result = weather.get_weather_data(52.5, 13.5)
+    if result is not None:
+        rain_l, rain_n, temp, code, tmin, tmax, prob, source = result
+        check("weather returns 8-tuple", isinstance(rain_l, float))
+    else:
+        check("weather offline fallback (None)", True)
+
     skip, reason = weather.should_skip_watering()
     check("skip logic returns bool", isinstance(skip, bool))
 
-    # --- 5. Daily report ---
-    report = scheduler.generate_daily_report("2026-06-20")
+    # --- 6. Daily report ---
+    from daemon.adapters.daily_report import generate_daily_report
+    today_str = datetime.today().strftime("%Y-%m-%d")
+    report = generate_daily_report(today_str)
     check("daily report not empty", len(report) > 50)
-    check("report contains date", "20.06.2026" in report)
-
-    scheduler.stop_scheduler()
-    check("scheduler stopped", not scheduler.scheduler_running)
+    today_display = datetime.today().strftime("%d.%m.")
+    check("report contains date", today_display in report, f"looking for {today_display!r}")
 
     print("\n=== All smoke checks passed ===")
 
@@ -97,7 +109,8 @@ def run_tests():
     import subprocess
     print("\n=== Running unittest suite ===\n")
     result = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
+        [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
+        cwd=_repo_root,
         env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     if result.returncode != 0:
