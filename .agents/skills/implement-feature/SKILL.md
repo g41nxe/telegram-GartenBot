@@ -19,6 +19,14 @@ Read in this order before writing a single line of code:
 4. `ARCHITECTURE.md` — internalize all six rules
 5. Skim `docs/adr/` — note any ADR relevant to the feature area
 
+Then **claim the Beads issue** for this feature so the work is visible as in-progress and not picked up twice. Find it by its `Referenz:` to the feature spec (`bd list --json` and match the path, or `bd ready`), then:
+
+```bash
+bd update <issue-id> --claim
+```
+
+If no Beads issue exists yet for this feature, create one first (see `to-feature`'s Beads step) so the lifecycle stays tracked.
+
 ## Step 2 — Architecture pre-check
 
 Before touching code, run the enforcement commands from `ARCHITECTURE.md`:
@@ -75,7 +83,7 @@ When all tests are green and coverage holds, **do not close out the feature sile
    - Check any edge cases called out in the feature spec
 4. Wait for the user's explicit sign-off ("passt", "fertig", "ok", or equivalent)
 
-## Step 7 — Move completed docs
+## Step 7 — Close out
 
 Only after the user has confirmed the feature is done:
 
@@ -84,7 +92,13 @@ Move-Item "docs/features/<feature-file>.md" "docs/features/completed/"
 Move-Item "docs/plans/<plan-file>.md"       "docs/plans/completed/"
 ```
 
-Report the two moves to the user.
+Then close the Beads issue claimed in Step 1, with a meaningful reason:
+
+```bash
+bd close <issue-id> --reason="<concise summary of what was implemented>"
+```
+
+Report the two moves and the closed issue ID to the user.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: to-feature
-description: Übersetzt den aktuellen Konversations-Kontext und das Codebase-Verständnis in ein strukturiertes Feature-Dokument und speichert dieses als lokale Markdown-Datei im Ordner docs/feature/.
+description: Übersetzt den aktuellen Konversations-Kontext und das Codebase-Verständnis in ein strukturiertes Feature-Dokument und speichert dieses als lokale Markdown-Datei im Ordner docs/features/.
 ---
 
 Dieser Skill nimmt den aktuellen Konversations-Kontext sowie das Verständnis der Codebase und erstellt daraus ein Feature-Dokument. Führe **kein** Interview mit dem Benutzer durch – synthetisiere einfach das, was du bereits weißt.
@@ -15,11 +15,23 @@ Dieser Skill nimmt den aktuellen Konversations-Kontext sowie das Verständnis de
    Stimme dich mit dem Benutzer ab, ob diese Nahtstellen seinen Erwartungen entsprechen.
 
 3. **Feature-Dokument lokal speichern**:
-   Schreibe das Feature-Dokument unter Verwendung des unten stehenden Templates und speichere es als lokale Markdown-Datei im Verzeichnis `docs/feature/` ab.
+   Schreibe das Feature-Dokument unter Verwendung des unten stehenden Templates und speichere es als lokale Markdown-Datei im Verzeichnis `docs/features/` ab.
    
    **Dateinamenskonvention**:
-   `docs/feature/00XX-feature-name.md` (wobei `00XX` eine fortlaufende Nummer ist, z. B. `docs/feature/0001-volume-based-watering.md`).
-   Stelle sicher, dass der Ordner `docs/feature/` existiert (erstelle ihn bei Bedarf).
+   `docs/features/00XX-feature-name.md` (wobei `00XX` eine fortlaufende Nummer ist, z. B. `docs/features/0001-volume-based-watering.md`). Wähle `00XX` als nächste freie Nummer über alle Docs in `docs/features/` und `docs/features/completed/` hinweg.
+   Der Ordner `docs/features/` existiert bereits.
+
+4. **Beads-Issue anlegen**:
+   Lege für das neue Feature ein Beads-Issue an, damit die Arbeit im durchsuchbaren Backlog auftaucht und von `implement-feature` (und Sandcastle) gefunden wird:
+
+   ```bash
+   bd create --title="<Feature Name>" --type=feature --priority=2 \
+     --description="<1–2 Sätze Kurzfassung>. Referenz: docs/features/00XX-feature-name.md"
+   ```
+
+   - Die `Referenz:`-Zeile MUSS den exakten Pfad des gerade geschriebenen Feature-Docs enthalten — `implement-feature` und der Sandcastle-Reviewer lesen sie, um die Spec zu finden.
+   - Nenne dem Benutzer die erzeugte Issue-ID.
+   - Bestehen Abhängigkeiten zu anderen offenen Issues, ergänze sie mit `bd dep add <neues-issue> <blocker>`.
 
 <feature-template>
 
