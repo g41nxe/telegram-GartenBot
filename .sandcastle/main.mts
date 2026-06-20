@@ -168,9 +168,10 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
       maxIterations: 1,
       agent: sandcastle.claudeCode(REVIEWER_MODEL),
       promptFile: "./.sandcastle/review-prompt.md",
+      // TARGET_BRANCH and SOURCE_BRANCH are built-in prompt args injected by
+      // Sandcastle (TARGET_BRANCH = host branch). Only BRANCH is custom here.
       promptArgs: {
         BRANCH: branch,
-        TARGET_BRANCH: "master",
       },
     });
 
