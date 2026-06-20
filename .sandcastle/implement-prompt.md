@@ -33,9 +33,9 @@ Pick the highest-priority open issue that is not blocked by another open issue.
 
 ## Workflow
 
-1. **Explore** — read the issue carefully. Pull in the parent PRD if referenced. Read the relevant source files and tests before writing any code.
-2. **Plan** — decide what to change and why. Keep the change as small as possible.
-3. **Execute** — use RGR (Red → Green → Repeat → Refactor): write a failing test first, then write the implementation to pass it.
+1. **Explore** — read the issue carefully. Pull in the feature spec referenced in the description (e.g. `docs/features/0020-*.md`). Read the relevant source files and tests before writing any code.
+2. **Plan** — check `docs/plans/` for an existing plan file matching this issue. If one exists, read it and follow it. If none exists, create one at `docs/plans/<feature-slug>-plan.md` covering: files to change, architecture decisions, test seams, and step-by-step implementation order. Commit the plan before writing any production code.
+3. **Execute** — use RGR (Red → Green → Repeat → Refactor): write a failing test first, then write the minimal production code to make it pass.
 4. **Verify** — run `python -m unittest discover -s tests` before committing. Fix any failures before proceeding.
 5. **Commit** — make a single git commit. The message MUST:
    - Start with `RALPH:` prefix
