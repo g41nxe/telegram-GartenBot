@@ -1,14 +1,19 @@
 // Sequential Reviewer — implement-then-review loop
 //
-// This template drives a two-phase workflow per issue:
-//   Phase 1 (Implement): A sonnet agent picks an open issue, works on it
-//                        on a dedicated branch, commits the changes, and signals
-//                        completion.
-//   Phase 2 (Review):    A second sonnet agent reviews the branch diff and either
-//                        approves it or makes corrections directly on the branch.
+// This template drives a three-phase workflow per issue:
+//   Phase 1 (Implement):  An agent picks an open issue, works on it on a
+//                         dedicated branch, commits the changes, and signals
+//                         completion.
+//   Phase 2 (Review):     A second agent reviews the branch diff and either
+//                         approves it or makes corrections directly on the branch.
+//   Phase 3 (Integrate):  The host merges the reviewed branch back into master
+//                         (local only, no push), closes the finished Beads
+//                         issue(s), and refreshes issues.jsonl so the next
+//                         iteration picks the next issue.
 //
-// Both phases share a single sandbox created via createSandbox(), so the
-// implementer and reviewer work on the same explicit branch.
+// Phases 1 and 2 share a single sandbox created via createSandbox(), so the
+// implementer and reviewer work on the same explicit branch. Phase 3 runs on
+// the host after the sandbox is closed.
 //
 // The outer loop repeats up to MAX_ITERATIONS times, processing one issue per
 // iteration and stopping early once the backlog is exhausted (an implement
@@ -24,6 +29,31 @@
 import * as sandcastle from "@ai-hero/sandcastle";
 import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 import { execSync } from "child_process";
+
+// ---------------------------------------------------------------------------
+// Host shell helpers
+// ---------------------------------------------------------------------------
+
+/** Run a host command, streaming its output to the console. */
+const sh = (cmd: string) =>
+  execSync(cmd, { shell: "cmd.exe /c", stdio: "inherit" });
+
+/** Run a host command and capture its stdout as a string. */
+const shOut = (cmd: string) =>
+  execSync(cmd, { shell: "cmd.exe /c", encoding: "utf8" }).toString();
+
+/**
+ * Extract the Beads issue IDs the agent claimed to finish, by scanning the
+ * `Closes: <ID>` lines in the commits that exist on `branch` but not yet on
+ * master. Beads is read-only inside the sandbox, so this commit convention is
+ * the only channel the agent has to report which issue it completed.
+ */
+function extractClosedIssues(branch: string): string[] {
+  const body = shOut(`git log master..${branch} --format=%B`);
+  const ids = new Set<string>();
+  for (const m of body.matchAll(/Closes:\s*([A-Za-z0-9_-]+)/gi)) ids.add(m[1]);
+  return [...ids];
+}
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -122,6 +152,40 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   } finally {
     await sandbox.close();
   }
+
+  // -------------------------------------------------------------------------
+  // Phase 3: Integrate (A1 — auto-merge + close)
+  //
+  // The sandbox is closed but the branch ref persists in the host repo.
+  // Merge it back into master (LOCAL only — no push), then close the
+  // finished Beads issue(s) and refresh issues.jsonl so the next iteration
+  // branches from an updated master and picks the *next* issue rather than
+  // redoing this one.
+  // -------------------------------------------------------------------------
+  const closed = extractClosedIssues(branch);
+
+  try {
+    sh(`git merge --no-ff ${branch} -m "Merge ${branch} (Sandcastle-Iteration ${iteration})"`);
+  } catch {
+    sh("git merge --abort");
+    console.error(`Merge von ${branch} fehlgeschlagen (Konflikt). Branch bleibt erhalten, Schleife stoppt.`);
+    break;
+  }
+
+  if (closed.length === 0) {
+    console.warn(
+      "Kein 'Closes: <ID>' im Branch gefunden — Issue-Status bleibt unverändert. " +
+        "Stoppe, um Wiederholung desselben Issues zu vermeiden.",
+    );
+    break;
+  }
+
+  for (const id of closed) {
+    sh(`bd close ${id} --reason="Von Sandcastle implementiert und reviewt (${branch})"`);
+  }
+  sh("bd export > .beads/issues.jsonl");
+  sh('git add .beads/issues.jsonl && git diff --cached --quiet || git commit -m "chore: Beads-Status nach Sandcastle-Iteration aktualisieren"');
+  console.log(`Integriert und geschlossen: ${closed.join(", ")}`);
 }
 
 console.log("\nAll done.");
