@@ -1,0 +1,7 @@
+{
+  "name": "telegram-gartenbot",
+  "version": "1.0.0",
+  "scripts": {
+    "sandcastle": "npx tsx .sandcastle/main.mts"
+  }
+}

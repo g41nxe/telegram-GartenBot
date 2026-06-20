@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "telegram_GartenBot",
+  "project_id": "02ad21fc-66ae-416a-a10e-ce2645c8bdad"
+}
