@@ -6,6 +6,8 @@
 
 @CONTEXT.md
 
+@.sandcastle/CODING_STANDARDS.md
+
 ## Open issues
 
 !`jq -sc '[.[] | select(.status == "open" and .dependency_count == 0)]' .beads/issues.jsonl`
