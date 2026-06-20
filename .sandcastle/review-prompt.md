@@ -29,8 +29,9 @@ Review the code changes on branch `{{BRANCH}}` and improve code clarity, consist
 
 4. **Check correctness**:
    - Does the implementation match the intent? Are edge cases handled?
-   - Are new/changed behaviours covered by tests?
-   - Are there unsafe casts, `any` types, or unchecked assumptions?
+   - Are new/changed behaviours covered by tests? Are external dependencies (MQTT, database, weather API) mocked, and is `mqtt_client.HAS_PAHO = False` set?
+   - Do all new public functions/methods carry type hints? Are there bare or overly broad `except:` clauses, or unchecked `dict`/`list` accesses that should use `.get()` or guards?
+   - Are `threading.Timer`/`threading.Thread` instances marked `daemon = True` (Testing Rule §2)? Any `print()` left in production code instead of `logging`?
    - Does the change introduce injection vulnerabilities, credential leaks, or other security issues?
 
 5. **Maintain balance**: Avoid over-simplification that could:
