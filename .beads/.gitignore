@@ -10,6 +10,9 @@ sync-state.json
 last-touched
 .exclusive-lock
 
+# Interaction telemetry (rewritten on every bd command — machine-local churn)
+interactions.jsonl
+
 # Daemon runtime (lock, log, pid)
 daemon.*
 
