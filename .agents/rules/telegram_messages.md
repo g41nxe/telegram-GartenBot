@@ -1,9 +1,9 @@
 # Telegram-Nachrichten: Design-System &amp; Referenz
 
-Zwei Dokumente in `docs/reference/` steuern die Telegram-Nachrichten:
+Zwei Dokumente in `docs/design/` steuern die Telegram-Nachrichten:
 
-- [`telegram-design-system.html`](../../docs/reference/telegram-design-system.html) — **SOLL / verbindliche Regeln**: Anrede, Ton-Register, Markdown-Konvention, Einheiten-/Datumsformate, Emoji-Semantik, Garten-Ampel, Progressive Disclosure. Grundlage ist ADR 0029.
-- [`telegram-nachrichten.html`](../../docs/reference/telegram-nachrichten.html) — **IST-Stand**: originalgetreue Referenz aller heute versendeten Nachrichten.
+- [`telegram-design-system.html`](../../docs/design/telegram-design-system.html) — **SOLL / verbindliche Regeln**: Anrede, Ton-Register, Markdown-Konvention, Einheiten-/Datumsformate, Emoji-Semantik, Garten-Ampel, Progressive Disclosure. Grundlage ist ADR 0029.
+- [`telegram-nachrichten.html`](../../docs/design/telegram-nachrichten.html) — **IST-Stand**: originalgetreue Referenz aller heute versendeten Nachrichten.
 
 ## Regel: Design-System einhalten
 

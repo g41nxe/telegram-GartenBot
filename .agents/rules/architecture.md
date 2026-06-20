@@ -24,9 +24,12 @@ grep -r "from ..adapters" src/daemon/core/
 grep -rn "from \. import\|from \.\." src/daemon/adapters/ | grep -v "__init__"
 # Review any cross-adapter imports manually
 
-# Rule 4: subscribe without unsubscribe
-grep -n "event_bus.subscribe\|_global_bus.subscribe" src/daemon/adapters/ src/daemon/ui/
-# Every result must have a corresponding unsubscribe in the same scope
+# Rule 4 + 5: subscribe discipline
+grep -n "_global_bus.subscribe\|event_bus.subscribe" src/daemon/adapters/ src/daemon/ui/
+# Results must fall into exactly one of two categories:
+#   a) Inside initialize() / subscribe_event_handlers() — daemon-lifetime listeners (OK, no unsubscribe needed)
+#   b) Inside a limited-scope function with a matching unsubscribe() in a finally block (OK)
+# Any subscribe() directly at module level (outside a function) is a violation of Rule 5.
 ```
 
 ## Injection pattern for core I/O
