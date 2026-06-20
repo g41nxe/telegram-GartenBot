@@ -1,0 +1,97 @@
+[
+  {
+    "id": "telegram-GartenBot-uwz",
+    "title": "Regensensor-Integration (Aqua Scope RANWIE01)",
+    "description": "MQTT-Anbindung des lokalen Regensensors. Lokale Messung als primäre Quelle für Überspringlogik (ERA5 als Fallback). Sofort-Unterbrechung laufender Güsse bei Regenerkennung. Flankengesteuerte Push-Benachrichtigungen (Regen ein/aus). Statuszeile in /status und Tagesbericht. Inaktivitäts-Watchdog für Sensor-Ausfall. Referenz: docs/features/0016-regensensor-integration.md",
+    "status": "open",
+    "priority": 2,
+    "issue_type": "feature",
+    "owner": "g41nxe@gmail.com",
+    "created_at": "2026-06-20T11:30:02Z",
+    "created_by": "Dan Hachenberger",
+    "updated_at": "2026-06-20T11:30:02Z",
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "telegram-GartenBot-6y0",
+    "title": "Zeitraffer-GIF-Generierung",
+    "description": "Kamera-Bilder werden im Bild-Puffer gesammelt und nach konfigurierbarem Zyklus (Tage) via ffmpeg zu einem Zeitraffer-GIF zusammengefasst. GIF wird im Tagesbericht verschickt und archiviert, Rohbilder danach gelöscht. /timelapse-Befehl für sofortige Vorschau ohne Löschen. Setzt ffmpeg auf der Steuerzentrale voraus. Referenz: docs/features/zeitraffer-gif.md, Plan: docs/plans/zeitraffer-gif-generierung.md",
+    "status": "open",
+    "priority": 3,
+    "issue_type": "feature",
+    "owner": "g41nxe@gmail.com",
+    "created_at": "2026-06-20T11:30:50Z",
+    "created_by": "Dan Hachenberger",
+    "updated_at": "2026-06-20T13:34:42Z",
+    "dependencies": [
+      {
+        "issue_id": "telegram-GartenBot-6y0",
+        "depends_on_id": "telegram-GartenBot-y5l",
+        "type": "blocks",
+        "created_at": "2026-06-20T13:30:56Z",
+        "created_by": "Dan Hachenberger",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 1,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "telegram-GartenBot-731",
+    "title": "Bild-Historie einer Garten-Kamera löschen",
+    "description": "Neuer Slash-Befehl zum kompletten Leeren der Bild-Historie einer Kamera. Bei mehreren Kameras zuerst Auswahl, dann Rückfrage mit Bildanzahl, dann Löschen inklusive aktuellem Bild. Erfolgs- und Abbruchmeldung. Bewusst kein Menü-Button. Referenz: docs/features/0023-kamera-bild-historie-loeschen.md",
+    "status": "open",
+    "priority": 3,
+    "issue_type": "feature",
+    "owner": "g41nxe@gmail.com",
+    "created_at": "2026-06-20T11:30:48Z",
+    "created_by": "Dan Hachenberger",
+    "updated_at": "2026-06-20T13:34:42Z",
+    "dependencies": [
+      {
+        "issue_id": "telegram-GartenBot-731",
+        "depends_on_id": "telegram-GartenBot-y5l",
+        "type": "blocks",
+        "created_at": "2026-06-20T13:30:55Z",
+        "created_by": "Dan Hachenberger",
+        "metadata": "{}"
+      }
+    ],
+    "dependency_count": 1,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "telegram-GartenBot-ll0",
+    "title": "Kontextsensible Gieß-Hinweise",
+    "description": "Vor manuellem Guss prüft der Bot die Gießcheck-Logik (Regen-Fenster / Empfehlung). Spricht der Kontext dagegen, erscheint ein sachlicher Hinweis mit mm-Begründung und Rückfrage ('Trotzdem gießen' / Abbrechen). Im unkritischen Fall kein Zwischenschritt. Referenz: docs/features/0020-kontextsensible-giess-hinweise.md",
+    "status": "open",
+    "priority": 3,
+    "issue_type": "feature",
+    "owner": "g41nxe@gmail.com",
+    "created_at": "2026-06-20T11:30:30Z",
+    "created_by": "Dan Hachenberger",
+    "updated_at": "2026-06-20T21:00:58Z",
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  },
+  {
+    "id": "telegram-GartenBot-mtb",
+    "title": "Aktionsfähige Benachrichtigungen",
+    "description": "Push-Benachrichtigungen erhalten kontextbezogene Inline-Buttons: Stopp aus 'Bewässerung gestartet', Status-Check aus Watchdog-Alarm, Stummschalten wiederkehrender Warnungen, 'Trotzdem gießen' bei Regen-Skip. Kein doppeltes Auslösen, Quittierung nach Aktion. Basiert auf vorhandener Inline-Keyboard-Infrastruktur. Referenz: docs/features/0018-aktionsfaehige-benachrichtigungen.md",
+    "status": "open",
+    "priority": 3,
+    "issue_type": "feature",
+    "owner": "g41nxe@gmail.com",
+    "created_at": "2026-06-20T11:30:28Z",
+    "created_by": "Dan Hachenberger",
+    "updated_at": "2026-06-20T11:30:28Z",
+    "dependency_count": 0,
+    "dependent_count": 0,
+    "comment_count": 0
+  }
+]

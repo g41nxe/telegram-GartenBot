@@ -10,9 +10,9 @@
 
 ## Open issues
 
-!`jq -sc '[.[] | select(.status == "open" and .dependency_count == 0)]' .beads/issues.jsonl`
+!`jq -c . .beads/ready.jsonl`
 
-The list above has already been filtered to issues ready for work (open, no unresolved dependencies) and is the sole source of truth for what work exists. Do not run your own unfiltered query to find more issues — if the list is empty, there is nothing to do.
+The list above is the pre-computed ready queue (`bd ready` on the host: open issues whose blockers are all resolved) and is the sole source of truth for what work exists. Do not filter `issues.jsonl` yourself — a dependency on an already-closed issue would still show a non-zero `dependency_count` there and mislead you. If the list above is empty, there is nothing to do.
 
 ## Recent RALPH commits (last 10)
 

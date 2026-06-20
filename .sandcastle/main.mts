@@ -55,6 +55,21 @@ function extractClosedIssues(branch: string): string[] {
   return [...ids];
 }
 
+/**
+ * Refresh the git-tracked Beads artifacts the container reads, then commit them.
+ *
+ * - issues.jsonl: full state, kept as an audit record.
+ * - ready.jsonl:  the actionable work queue. We use `bd ready` (not a jq filter
+ *                 over issues.jsonl) because only Beads knows that a dependency
+ *                 on a *closed* issue no longer blocks — the exported
+ *                 `dependency_count` still counts closed deps.
+ */
+function refreshBeadsArtifacts(commitMsg: string) {
+  sh("bd export > .beads/issues.jsonl");
+  sh("bd ready --json > .beads/ready.jsonl");
+  sh(`git add .beads/issues.jsonl .beads/ready.jsonl && git diff --cached --quiet || git commit -m "${commitMsg}"`);
+}
+
 // ---------------------------------------------------------------------------
 // Configuration
 // ---------------------------------------------------------------------------
@@ -76,13 +91,13 @@ const copyToWorktree: string[] = [];
 // Main loop
 // ---------------------------------------------------------------------------
 
-// Export current Beads state to JSONL so the container has fresh issue data.
+// Export current Beads state so the container has a fresh, correctly-filtered
+// work queue (ready.jsonl) plus a full record (issues.jsonl).
 try {
-  execSync("bd export > .beads/issues.jsonl", { shell: "cmd.exe /c", stdio: "inherit" });
-  execSync('git add .beads/issues.jsonl && git diff --cached --quiet || git commit -m "chore: Beads JSONL vor Sandcastle-Lauf aktualisieren"', { shell: "cmd.exe /c", stdio: "inherit" });
-  console.log("Beads JSONL exportiert und committed.");
+  refreshBeadsArtifacts("chore: Beads-Artefakte vor Sandcastle-Lauf aktualisieren");
+  console.log("Beads-Artefakte exportiert und committed.");
 } catch (e) {
-  console.warn("JSONL-Export fehlgeschlagen — Container verwendet letzten committed Stand.", e);
+  console.warn("Beads-Export fehlgeschlagen — Container verwendet letzten committed Stand.", e);
 }
 
 for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
@@ -184,8 +199,7 @@ for (let iteration = 1; iteration <= MAX_ITERATIONS; iteration++) {
   for (const id of closed) {
     sh(`bd close ${id} --reason="Von Sandcastle implementiert und reviewt (${branch})"`);
   }
-  sh("bd export > .beads/issues.jsonl");
-  sh('git add .beads/issues.jsonl && git diff --cached --quiet || git commit -m "chore: Beads-Status nach Sandcastle-Iteration aktualisieren"');
+  refreshBeadsArtifacts("chore: Beads-Status nach Sandcastle-Iteration aktualisieren");
   console.log(`Integriert und geschlossen: ${closed.join(", ")}`);
 }
 
