@@ -60,7 +60,7 @@
 
 <header class="doc">
   <h1>Referenz: Telegram-Nachrichten des GartenBots</h1>
-  <div class="meta">Stand: 2026-06-20 · Originalgetreu nach aktueller Implementation (kein Entwurf). Features 0017, 0025 integriert.</div>
+  <div class="meta">Stand: 2026-06-21 · Originalgetreu nach aktueller Implementation (kein Entwurf). Features 0016, 0017, 0025 integriert.</div>
   <div class="meta">Quellen: <code>src/daemon/ui/telegram_ui.py</code> · <code>src/daemon/adapters/daily_report.py</code></div>
   <div class="legend">
     Beispieldaten sind in die echten Textvorlagen eingesetzt. Telegram stellt <b>**Text**</b>/<b>*Text*</b> fett dar,
@@ -526,6 +526,31 @@ Fehler beim Ansteuern des Ventils über MQTT.</div>
       <li>Wetter-Emoji: ☀️ (trocken) · 🌦 (0.5–2 mm) · 🌧 (≥ 2 mm)</li>
       <li>Kein LQI-Zahlenwert, keine Meldungsanzahl im Bericht (ab Feature 0025)</li>
     </ul>
+  </div>
+
+  <div class="phone">
+    <div class="src">_on_rain_sensor_measured · RainSensorMeasured (Flankensteuerung: trocken → Regen)</div>
+    <div class="bubble">🌧 <b>Regen erkannt</b> — 1.4 mm</div>
+    <div class="note">Nur bei Zustandswechsel (trocken → nass). Wiederholte Messungen bei laufendem Regen lösen keine weitere Benachrichtigung aus.</div>
+
+    <div class="src">_on_rain_sensor_measured · RainSensorMeasured (Flankensteuerung: Regen → trocken)</div>
+    <div class="bubble">🌤 <b>Regen vorbei</b></div>
+    <div class="note">Nur bei Zustandswechsel (nass → trocken).</div>
+
+    <div class="src">_on_watering_interrupted · WateringCycleInterrupted</div>
+    <div class="bubble">🌧 <b>Regen übernimmt — Guss gestoppt</b>
+Terrasse · 4 Min · 2.1 l geflossen · 0.6 mm erkannt</div>
+    <ul class="variants">
+      <li>Regen-Suffix <code>· X mm erkannt</code> nur wenn <code>rain_mm &gt; 0</code></li>
+      <li>Ventilname aus DB (<code>wish_name</code>); Fallback: <code>Ventil</code></li>
+    </ul>
+
+    <div class="src">_on_rain_sensor_inactivity_alert · RainSensorInactivityAlertTriggered</div>
+    <div class="bubble">⚠️ <b>Regensensor nicht erreichbar</b> — seit 20.0 h keine Messung (Limit: 18 h).</div>
+    <div class="note">Watchdog: Sensor sendet seit mehr als <code>RAIN_SENSOR_OFFLINE_HOURS</code> nichts.</div>
+
+    <div class="src">_on_rain_sensor_inactivity_resolved · RainSensorInactivityAlertResolved</div>
+    <div class="bubble">🟢 <b>Regensensor wieder aktiv</b> — Messung empfangen.</div>
   </div>
 
 </div>
