@@ -1,0 +1,16 @@
+# Normalize line endings to LF in the repo *and* the working tree.
+#
+# Why: the Sandcastle sandbox runs on Linux (LF) while this host is Windows
+# (core.autocrlf=true → CRLF). Without this file, every file an agent touches
+# is recorded as a full-file rewrite (CRLF↔LF), bloating each merge with
+# thousands of lines of pure line-ending noise. eol=lf makes the sandbox and
+# host agree. The deploy target (Raspberry Pi) is Linux, so LF is also correct
+# at runtime. .gitattributes overrides core.autocrlf per path.
+* text=auto eol=lf
+
+# Binary assets — never touch their bytes.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.ico  binary
+*.gif  binary
