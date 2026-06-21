@@ -71,10 +71,12 @@ _Avoid_: Sensor-Signal, Telemetrie-Paket
 **Gieß-Empfehlung**:
 Die vom Bewässerungs-Daemon berechnete Einschätzung, ob eine manuelle oder geplante Bewässerung heute sinnvoll ist. Basiert auf dem Regen-Fenster (letzte + nächste 24h), der Tagestemperatur und der Hitzestrecke. Wird auf Anfrage über den Telegram-Bot ausgegeben (`/giesscheck`).
 _Avoid_: Gieß-Ratschlag, Bewässerungs-Hinweis, Watering-Advice
+_Status_: 🚧 In Umsetzung — geplant in Feature 0009 (`docs/features/0009-giesscheck-bewasserungsempfehlung.md`, ADR 0021). Im Code noch nicht aktiv; aktuell existiert nur die Teil-Funktion `evaluate_rain_window` (Regen-Fenster).
 
 **Hitzestrecke**:
 Die Anzahl aufeinanderfolgender abgeschlossener Vortage, an denen die maximale Tagestemperatur einen konfigurierten Schwellenwert (Standard: 25°C) erreicht oder überschritten hat. Eine Lücke (fehlende Wetterdaten, z.B. Steuerzentrale offline) bricht die Hitzestrecke ab.
 _Avoid_: Hitzeperiode, Hitzewelle, Hot-Streak
+_Status_: 🚧 In Umsetzung — geplant in Feature 0009 (`docs/features/0009-giesscheck-bewasserungsempfehlung.md`, ADR 0022). Im Code noch nicht implementiert.
 
 **Regen-Fenster**:
 Die Summe des gefallenen Niederschlags der letzten 24 Stunden (aus gemessenen Archiv-/Reanalyse-Daten des Wetter-Dienstes) und der vorhergesagten Niederschlagsmenge der nächsten 24 Stunden (aus dem Forecast-Modell). Entspricht dem bestehenden Schwellenwert `RAIN_THRESHOLD_MM` und wird sowohl für die Gieß-Empfehlung als auch für die automatische Überspringlogik des Schedulers verwendet.
@@ -119,14 +121,17 @@ _Avoid_: GIF-Intervall, Zusammenfassungs-Tage.
 **Regensensor**:
 Der batteriebetriebene, WLAN-basierte Niederschlagsmesser (Aqua Scope RANWIE01), der Regenmengen und Temperatur lokal im Garten erfasst und per MQTT an die Steuerzentrale sendet. Er ist die primäre Quelle für gemessene Niederschlagsmengen; die ERA5-Reanalyse des Wetter-Dienstes dient als automatischer Fallback bei Ausfall.
 _Avoid_: Wetterstation, Regenmesser, Sensor-Modul.
+_Status_: 🚧 In Umsetzung — geplant in Feature 0016 (`docs/features/0016-regensensor-integration.md`, ADR 0028). Im Code noch nicht implementiert; gefallener Regen stammt aktuell aus ERA5/Forecast.
 
 **Regenmessung**:
 Das vom Regensensor per MQTT gesendete Datenpaket mit der Niederschlagsmenge des letzten Intervalls (mm), der kumulierten Gesamtmenge, der Temperatur (°C) und dem Batteriestand (%). Wird bei Regen sofort, sonst alle 6 Stunden gesendet.
 _Avoid_: Sensor-Signal, Telemetrie-Paket, Messwert.
+_Status_: 🚧 In Umsetzung — geplant in Feature 0016 (`docs/features/0016-regensensor-integration.md`). Im Code noch nicht implementiert.
 
 **Guss-Unterbrechung**:
 Der systemseitige vorzeitige Abbruch eines laufenden Kombinierten Gusses durch einen externen Auslöser (z. B. Regen). Im Unterschied zum manuellen Stopp durch den Benutzer wird eine Guss-Unterbrechung im Ereignis-Kanal als eigenständiges Ereignis (`WateringCycleInterrupted`) veröffentlicht.
 _Avoid_: Auto-Stop, Notfall-Abbruch, Rain-Stop.
+_Status_: 🚧 In Umsetzung — geplant in Feature 0016 (`docs/features/0016-regensensor-integration.md`). Im Code noch nicht implementiert (`WateringCycleInterrupted` existiert noch nicht).
 
 **Garten-Ampel**:
 Das dreistufige Gesundheitsmodell, das den Gesamtzustand des Systems in der `/status`-Anzeige als Farb-Status zusammenfasst: 🟢 grün (alles aktiv und unauffällig), 🟡 gelb (nicht-kritisch: niedrige Batterie oder kritisches Signal, Gerät meldet aber noch), 🔴 rot (kritisch: Dienst offline, aktiver Inaktivitäts-Watchdog-Alarm oder Ventil-Anomalie). Die Headline zeigt stets die schlimmste aktive Stufe; technische Details werden nur für nicht-grüne Geräte eingeblendet. Definiert in ADR 0029.
