@@ -1,20 +1,5 @@
 [
   {
-    "id": "telegram-GartenBot-5fr",
-    "title": "Gießcheck — Bewässerungs-Empfehlung",
-    "description": "Graduierte Gieß-Steuerung statt binärem Regen-Skip (Modell A). Ein stufenloser Faktor 0-100 % skaliert geplante Güsse in Zeit UND Volumen; der binäre Skip ist nur noch der Sonderfall Faktor 0. Forecast wird nach Wahrscheinlichkeit diskontiert (erwarteter Niederschlag); Temperatur und Hitzestrecke bilden die Bedarfsseite. Drei-Stufen-Verdict mit Wasser-Emojis (kein Gießen / reduzierter Guss / voller Guss), ADR-0029-konform.\n\n/giesscheck plus Hauptmenue-Button teilen dieselbe pure Funktion evaluate_watering(); should_skip_watering() bleibt als binaerer Wrapper (Feature 0020). Neues Ereignis WateringScaled (nur Benachrichtigung, keine zusaetzliche Historie-Zeile). Nur geplante Güsse werden automatisch skaliert; manuelle bleiben bei Feature 0020.\n\nChart nutzt dieselbe Logik und ein 48h-Fenster (+/-24h); Vergangenheit aus ERA5-Archiv, quellen-abstrahiert fuer den Regensensor (Feature 0016). Caching auf Rohdaten umgestellt, Fenster wird zur Aufrufzeit re-zentriert (ADR 0020 ergaenzt). RAIN_THRESHOLD_MM auf 3.0 vereinheitlicht.\n\nRefs: docs/features/0009-giesscheck-bewasserungsempfehlung.md, docs/adr/0031-graduierte-giess-steuerung.md. Plan docs/plans/0009-giesscheck-bewasserungsempfehlung-plan.md muss auf den neuen Umfang aktualisiert werden.\n",
-    "status": "open",
-    "priority": 2,
-    "issue_type": "feature",
-    "owner": "g41nxe@gmail.com",
-    "created_at": "2026-06-20T11:29:57Z",
-    "created_by": "Dan Hachenberger",
-    "updated_at": "2026-06-21T10:48:24Z",
-    "dependency_count": 0,
-    "dependent_count": 0,
-    "comment_count": 0
-  },
-  {
     "id": "telegram-GartenBot-6y0",
     "title": "Zeitraffer-GIF-Generierung",
     "description": "Kamera-Bilder werden im Bild-Puffer gesammelt und nach konfigurierbarem Zyklus (Tage) via ffmpeg zu einem Zeitraffer-GIF zusammengefasst. GIF wird im Tagesbericht verschickt und archiviert, Rohbilder danach gelöscht. /timelapse-Befehl für sofortige Vorschau ohne Löschen. Setzt ffmpeg auf der Steuerzentrale voraus. Referenz: docs/features/0026-zeitraffer-gif-generierung.md, Plan: docs/plans/0026-zeitraffer-gif-generierung-plan.md",
