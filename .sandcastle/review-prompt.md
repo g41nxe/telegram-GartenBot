@@ -6,7 +6,7 @@ Review the code changes on branch `{{BRANCH}}` and improve code clarity, consist
 
 ## Branch diff
 
-!`git diff {{TARGET_BRANCH}}...{{BRANCH}}`
+!`git diff --ignore-space-at-eol {{TARGET_BRANCH}}...{{BRANCH}}`
 
 ## Commits on this branch
 
