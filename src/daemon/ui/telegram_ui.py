@@ -30,6 +30,7 @@ from ..core.scheduler_events import (
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
 from ..core.camera_events import CameraInactivityAlertTriggered, CameraInactivityAlertResolved
 from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
+
 logger = logging.getLogger("garden_telegram_ui")
 
 # Module-level controller reference — set once at daemon startup by main.py
@@ -2105,7 +2106,7 @@ def _on_rain_sensor_measured(event: RainSensorMeasured):
 def _on_watering_interrupted(event: WateringCycleInterrupted):
     valve = database.get_valve_by_mqtt_name(event.mqtt_name) if event.mqtt_name else None
     valve_name = valve["wish_name"] if valve else "Ventil"
-    rain_mm = getattr(event, "rain_mm", 0.0)
+    rain_mm = event.rain_mm
     rain_str = f" · {rain_mm} mm erkannt" if rain_mm > 0 else ""
     msg = (
         f"🌧 *Regen übernimmt — Guss gestoppt*\n"

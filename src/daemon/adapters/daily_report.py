@@ -197,9 +197,9 @@ def _format_weather_section(
                     f"Weniger Regen als erwartet: {rain_last} mm gefallen {source_label} (Vorhersage gestern: {yesterday_rain_next} mm)."
                 )
             elif rain_last > 0:
-                parts.append(f"{rain_last} mm Regen gefallen {source_label}.".strip())
+                parts.append(f"{rain_last} mm Regen gefallen {source_label}.")
         elif rain_last > 0:
-            parts.append(f"{rain_last} mm Regen gefallen {source_label}.".strip())
+            parts.append(f"{rain_last} mm Regen gefallen {source_label}.")
 
     if rain_next > 10.0:
         parts.append(f"Heute starker Regen erwartet ({rain_next} mm, {rain_prob}%).")
@@ -220,7 +220,6 @@ def _format_rain_sensor_line(rain_stats: dict, last_measurement: dict | None) ->
     if not rain_stats:
         offline_h = 0.0
         try:
-            from datetime import datetime
             offline_h = (datetime.now() - datetime.fromisoformat(last_measurement["timestamp"])).total_seconds() / 3600
         except Exception:
             pass
