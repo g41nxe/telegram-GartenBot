@@ -12,6 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from daemon import config
 from daemon.adapters import database, weather, mqtt_client
+from daemon.core.watering_advice import WateringDecision
+
+_FULL_WATERING = WateringDecision(factor=1.0, verdict="🚿 Voller Guss", reasons=["OK"], skip=False)
 
 class TestGardenIrrigation(unittest.TestCase):
     
@@ -38,7 +41,7 @@ class TestGardenIrrigation(unittest.TestCase):
         
     def test_01_config_defaults(self):
         """Überprüft, ob Standard-Konfigurationswerte korrekt geladen werden."""
-        self.assertEqual(config.RAIN_THRESHOLD_MM, 2.0)
+        self.assertEqual(config.RAIN_THRESHOLD_MM, 3.0)
         self.assertEqual(config.SAFETY_TIMEOUT_MINUTES, 30)
         self.assertEqual(config.MQTT_BROKER_PORT, 1883)
         
@@ -128,23 +131,24 @@ class TestGardenIrrigation(unittest.TestCase):
 
     @patch("urllib.request.urlopen")
     def test_06_weather_api_parsing_and_skip(self, mock_urlopen):
-        """Simuliert eine erfolgreiche Open-Meteo API-Antwort und testet die Skip-Logik."""
+        """Simuliert eine erfolgreiche Open-Meteo API-Antwort und testet die Skip-Logik.
+
+        Verwendet einen kühlen Tag (temp_max=15°C), sodass die Schwelle nicht durch
+        Hitzefaktor angehoben wird. rain_last=1.5mm + rain_next_eff≈1.875mm > 3.0mm → skip.
+        """
         # Mocking der stündlichen Niederschläge (48 Stunden: 24h Vergangenheit + 24h Zukunft)
-        # Wir setzen die Niederschläge so, dass die Summe 4.0 mm beträgt (> RAIN_THRESHOLD_MM = 3.0)
         precipitation = [0.0] * 48
-        precipitation[10] = 1.5  # In der Vergangenheit
-        precipitation[30] = 2.5  # In der Zukunft (Summe = 4.0 mm)
-        
+        precipitation[10] = 1.5  # In der Vergangenheit (rain_last)
+        precipitation[30] = 2.5  # In der Zukunft (prob-gewichtet: 2.5*75%=1.875mm → R_eff≈3.375)
+
         # Stündliche Regenwahrscheinlichkeit
         precip_probability = [10] * 48
-        precip_probability[30] = 75  # Maximalwert im Zukunftsfenster
-        
+        precip_probability[30] = 75
+
         # Erstelle eine Mock-Stundenliste
         from datetime import datetime
         now = datetime.now()
         times = []
-        # Die API liefert past_days=1 (gestern) und forecast_days=2 (heute + morgen)
-        # Die aktuelle Stunde sollte exakt gematcht werden.
         current_hour = now.replace(minute=0, second=0, microsecond=0)
         start_hour = current_hour - timedelta(hours=24)
         for i in range(48):
@@ -154,7 +158,7 @@ class TestGardenIrrigation(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.read.return_value = json.dumps({
             "current": {
-                "temperature_2m": 22.5,
+                "temperature_2m": 12.5,
                 "weather_code": 3
             },
             "hourly": {
@@ -168,27 +172,27 @@ class TestGardenIrrigation(unittest.TestCase):
                     now.strftime("%Y-%m-%d"),
                     (now + timedelta(days=1)).strftime("%Y-%m-%d")
                 ],
-                "temperature_2m_max": [20.0, 26.5, 25.0],
-                "temperature_2m_min": [10.0, 15.5, 14.0]
+                "temperature_2m_max": [20.0, 15.0, 14.0],
+                "temperature_2m_min": [10.0, 8.0, 7.0]
             }
         }).encode("utf-8")
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
         # Führe Abfrage aus
         rain_last, rain_next, temp, code, temp_min, temp_max, rain_prob, rain_last_source = weather.get_weather_data(52.5, 13.5)
-        
+
         self.assertEqual(rain_last, 1.5)
         self.assertEqual(rain_next, 2.5)
-        self.assertEqual(temp, 22.5)
+        self.assertEqual(temp, 12.5)
         self.assertEqual(code, 3)
-        self.assertEqual(temp_min, 15.5)
-        self.assertEqual(temp_max, 26.5)
+        self.assertEqual(temp_min, 8.0)
+        self.assertEqual(temp_max, 15.0)
         self.assertEqual(rain_prob, 75)
 
-        # Skip-Logik testen
+        # Skip-Logik: kühler Tag, R_eff ≈ 3.375 mm > Schwelle 3.0 mm → skip=True
         should_skip, details = weather.should_skip_watering()
         self.assertTrue(should_skip)
-        self.assertIn("Regenschwelle überschritten", details)
+        self.assertIn("mm", details)
 
     @patch("daemon.adapters.weather.database.get_last_weather", return_value=None)
     @patch("urllib.request.urlopen")
@@ -465,19 +469,20 @@ class TestGardenIrrigation(unittest.TestCase):
         """Testet die Wetter-Skip und Start-Logik in _trigger_scheduled_watering."""
         from daemon import scheduler
         from daemon.core.scheduler_events import WateringSkipped, ScheduleFailed
-        
+        from daemon.core.watering_advice import WateringDecision
+
+        skip_decision = WateringDecision(factor=0.0, verdict="🌧 Kein Gießen nötig", reasons=["Too wet"], skip=True)
+
         # Mock weather skip
-        with patch("daemon.adapters.weather.should_skip_watering", return_value=(True, "Too wet")):
+        with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=skip_decision):
             mock_handler = MagicMock()
             mqtt_client._global_bus.subscribe(WateringSkipped, mock_handler)
             scheduler._trigger_scheduled_watering({"name": "Test1", "duration_minutes": 10})
             mock_handler.assert_called_once()
             self.assertIn("Too wet", mock_handler.call_args[0][0].details)
-            
-        # Mock weather skip exception — Ventil-Start schlägt fehl → ScheduleFailed
-        # Patch direkt auf controller.start_watering, da _trigger_scheduled_watering die
-        # Fassaden-Funktion nicht mehr aufruft.
-        with patch("daemon.adapters.weather.should_skip_watering", side_effect=Exception("API down")), \
+
+        # Mock weather exception — Ventil-Start schlägt fehl → ScheduleFailed
+        with patch("daemon.adapters.weather.evaluate_watering_factor", side_effect=Exception("API down")), \
              patch.object(scheduler._controller, "start_watering", return_value=(False, "Failed start")):
             mock_fail = MagicMock()
             mqtt_client._global_bus.subscribe(ScheduleFailed, mock_fail)
@@ -485,6 +490,74 @@ class TestGardenIrrigation(unittest.TestCase):
             mock_fail.assert_called_once()
             self.assertIn("Failed start", mock_fail.call_args[0][0].details)
             
+    def test_15b_scheduler_graduated_scaling(self):
+        """Graduierte Gieß-Steuerung: Faktor 50% halbiert Dauer und Volumen, publiziert WateringScaled."""
+        from daemon import scheduler
+        from daemon.core.scheduler_events import WateringScaled
+        from daemon.core.watering_advice import WateringDecision
+
+        scaled_decision = WateringDecision(
+            factor=0.5, verdict="💧 Reduzierter Guss (50 %)", reasons=["1.5 mm Regen."], skip=False
+        )
+
+        call_args = []
+        original_start = scheduler._controller.start_watering
+
+        def mock_start(duration, volume, source, mqtt_name="garden_valve", valve_topic=None):
+            call_args.append((duration, volume))
+            return True, "OK"
+
+        scheduler._controller.start_watering = mock_start
+        try:
+            scaled_events = []
+            mqtt_client._global_bus.subscribe(WateringScaled, lambda e: scaled_events.append(e))
+
+            with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=scaled_decision):
+                scheduler._trigger_scheduled_watering({
+                    "name": "Skala-Test", "duration_minutes": 10, "target_volume_liters": 20,
+                    "execution_mode": "sequential",
+                })
+
+            self.assertEqual(len(scaled_events), 1, "WateringScaled muss einmal publiziert werden")
+            self.assertAlmostEqual(scaled_events[0].factor, 0.5)
+            self.assertEqual(scaled_events[0].duration_scaled, 5)
+            self.assertEqual(scaled_events[0].volume_scaled, 10)
+
+            self.assertEqual(len(call_args), 1, "Ventil-Start muss einmal aufgerufen werden")
+            self.assertEqual(call_args[0][0], 5, "Skalierte Dauer: 10 * 0.5 = 5")
+            self.assertEqual(call_args[0][1], 10, "Skaliertes Volumen: 20 * 0.5 = 10")
+        finally:
+            scheduler._controller.start_watering = original_start
+
+    def test_15c_scheduler_full_factor_no_scaling(self):
+        """Faktor=1.0 → Zeitplan läuft unverändert, kein WateringScaled-Event."""
+        from daemon import scheduler
+        from daemon.core.scheduler_events import WateringScaled
+
+        call_args = []
+        original_start = scheduler._controller.start_watering
+
+        def mock_start(duration, volume, source, mqtt_name="garden_valve", valve_topic=None):
+            call_args.append((duration, volume))
+            return True, "OK"
+
+        scheduler._controller.start_watering = mock_start
+        try:
+            scaled_events = []
+            mqtt_client._global_bus.subscribe(WateringScaled, lambda e: scaled_events.append(e))
+
+            with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=_FULL_WATERING):
+                scheduler._trigger_scheduled_watering({
+                    "name": "Voll-Test", "duration_minutes": 10, "target_volume_liters": 20,
+                    "execution_mode": "sequential",
+                })
+
+            self.assertEqual(len(scaled_events), 0, "Kein WateringScaled bei Faktor=1.0")
+            self.assertEqual(call_args[0][0], 10, "Dauer unverändert")
+            self.assertEqual(call_args[0][1], 20, "Volumen unverändert")
+        finally:
+            scheduler._controller.start_watering = original_start
+
     def test_16_scheduler_loop_and_daily_report(self):
         """Testet den main _scheduler_loop auf weather updates und daily reports."""
         from daemon import scheduler
@@ -552,7 +625,7 @@ class TestGardenIrrigation(unittest.TestCase):
             sched = {"id": sched_id, "name": "SeqTest", "duration_minutes": 5,
                      "target_volume_liters": 0, "execution_mode": "sequential"}
 
-            with patch("daemon.adapters.weather.should_skip_watering", return_value=(False, "OK")):
+            with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=_FULL_WATERING):
                 scheduler._trigger_scheduled_watering(sched)
 
             # Nur das erste Ventil (garden_valve, id=1) soll sofort starten
@@ -593,7 +666,7 @@ class TestGardenIrrigation(unittest.TestCase):
             sched = {"id": sched_id, "name": "ParTest", "duration_minutes": 5,
                      "target_volume_liters": 0, "execution_mode": "parallel"}
 
-            with patch("daemon.adapters.weather.should_skip_watering", return_value=(False, "OK")):
+            with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=_FULL_WATERING):
                 scheduler._trigger_scheduled_watering(sched)
 
             # Beide Ventile müssen sofort gestartet sein
@@ -655,7 +728,7 @@ class TestGardenIrrigation(unittest.TestCase):
             sched = {"id": sched_id, "name": "FallbackTest", "duration_minutes": 5,
                      "target_volume_liters": 0, "execution_mode": "sequential"}
 
-            with patch("daemon.adapters.weather.should_skip_watering", return_value=(False, "OK")):
+            with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=_FULL_WATERING):
                 scheduler._trigger_scheduled_watering(sched)
 
             self.assertEqual(len(call_args), 1, "Genau ein Aufruf erwartet")

@@ -74,9 +74,25 @@ except ValueError:
     LONGITUDE = 0.0
 
 try:
-    RAIN_THRESHOLD_MM = float(os.getenv("RAIN_THRESHOLD_MM", "2.0"))
+    RAIN_THRESHOLD_MM = float(os.getenv("RAIN_THRESHOLD_MM", "3.0"))
 except ValueError:
-    RAIN_THRESHOLD_MM = 2.0
+    RAIN_THRESHOLD_MM = 3.0
+
+# --- Gießcheck-Empfehlung (graduierte Gieß-Steuerung, ADR 0031) ---
+try:
+    GIESSCHECK_HOT_TEMP_C = float(os.getenv("GIESSCHECK_HOT_TEMP_C", "25.0"))
+except ValueError:
+    GIESSCHECK_HOT_TEMP_C = 25.0
+
+try:
+    GIESSCHECK_HEAT_SENSITIVITY = float(os.getenv("GIESSCHECK_HEAT_SENSITIVITY", "0.5"))
+except ValueError:
+    GIESSCHECK_HEAT_SENSITIVITY = 0.5
+
+try:
+    GIESSCHECK_HOT_DAYS_COUNT = int(os.getenv("GIESSCHECK_HOT_DAYS_COUNT", "3"))
+except ValueError:
+    GIESSCHECK_HOT_DAYS_COUNT = 3
 
 try:
     SAFETY_TIMEOUT_MINUTES = int(os.getenv("SAFETY_TIMEOUT_MINUTES", "30"))

@@ -7,7 +7,7 @@ from .. import config
 from . import database
 from .mqtt_client import _global_bus
 from ..core.scheduler_events import WeatherDataFetched
-from ..core.watering_advice import evaluate_rain_window
+from ..core.watering_advice import evaluate_rain_window, evaluate_watering, WateringDecision
 
 WEATHER_FORECAST_WINDOW_SECONDS = 86400  # Open-Meteo liefert genau 24h voraus
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
@@ -208,28 +208,65 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
 
     return None
 
-def _evaluate_skip(rain_last: float, rain_next: float) -> tuple[bool, str]:
-    _threshold = config.get_setting("RAIN_THRESHOLD_MM", 2.0)
-    result = evaluate_rain_window(rain_last, rain_next, _threshold)
-    if result.skip:
-        details = (
-            f"Regenschwelle überschritten: Gesamt {result.total_mm}mm "
-            f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {_threshold}mm)"
-        )
-        logger.info(f"Bewässerung überspringen: {details}")
-        return True, details
-    details = (
-        f"Regen liegt unter Grenzwert: Gesamt {result.total_mm}mm "
-        f"(Gefallen: {rain_last}mm, Erwartet: {rain_next}mm, Grenzwert: {_threshold}mm)"
-    )
-    logger.info(f"Bewässerung freigegeben: {details}")
-    return False, details
 
+def _compute_rain_next_eff(hourly_forecast_json: str) -> float:
+    """Erwarteter Niederschlag der nächsten 24h: stundenweise mit Wahrscheinlichkeit gewichtet.
 
-def should_skip_watering() -> tuple[bool, str]:
+    Σ precip[h] * prob[h] / 100 für alle zukünftigen Stunden bis +24h.
+    Bei fehlenden Daten → 0 (fail-safe Richtung Gießen).
     """
-    Cache-first: liest Wetterdaten aus dem DB-Cache, ruft die Live-API nur bei
-    veraltetem oder fehlendem Cache ab. Fallback-Kette siehe ADR 0020.
+    if not hourly_forecast_json:
+        return 0.0
+    try:
+        data = json.loads(hourly_forecast_json)
+        times = data.get("times", [])
+        precip = data.get("precip_mm", [])
+        probs = data.get("precip_prob", [])
+        if not times or not precip:
+            return 0.0
+        now_str = datetime.now().strftime("%Y-%m-%dT%H:00")
+        total = 0.0
+        future_count = 0
+        for i, t in enumerate(times):
+            if t >= now_str:
+                if i < len(precip) and i < len(probs):
+                    p = precip[i] if precip[i] is not None else 0.0
+                    prob = probs[i] if probs[i] is not None else 0.0
+                    total += p * prob / 100.0
+                    future_count += 1
+                if future_count >= 24:
+                    break
+        return round(total, 2)
+    except Exception:
+        return 0.0
+
+
+def _watering_decision_from_cache(cached: dict) -> WateringDecision:
+    """Berechnet eine WateringDecision aus einem gecachten Wettereintrag."""
+    rain_last = cached.get("rain_last_24h_mm", 0.0)
+    rain_last_source = cached.get("rain_last_source", "measured")
+    hourly_json = cached.get("hourly_forecast_json") or ""
+    rain_next_eff = _compute_rain_next_eff(hourly_json)
+    temp_max_today = cached.get("temp_max", 0.0) or 0.0
+    past_daily_temps = database.get_daily_max_temps(config.GIESSCHECK_HOT_DAYS_COUNT + 1)
+    threshold = config.get_setting("RAIN_THRESHOLD_MM", config.RAIN_THRESHOLD_MM)
+    return evaluate_watering(
+        rain_last_mm=rain_last,
+        rain_next_eff_mm=rain_next_eff,
+        temp_max_today=temp_max_today,
+        past_daily_temps=past_daily_temps,
+        rain_last_source=rain_last_source,
+        threshold_mm=float(threshold),
+        hot_temp_c=config.GIESSCHECK_HOT_TEMP_C,
+        heat_sensitivity=config.GIESSCHECK_HEAT_SENSITIVITY,
+        hot_days_cap=config.GIESSCHECK_HOT_DAYS_COUNT,
+    )
+
+
+def evaluate_watering_factor() -> WateringDecision:
+    """Cache-first graduierte Gieß-Entscheidung. Fallback-Kette wie ADR 0020.
+
+    Gibt einen WateringDecision mit Faktor 0–1.0 zurück. Kein Daten → factor=1.0 (sicher gießen).
     """
     max_age = timedelta(seconds=4 * config.WEATHER_REFRESH_INTERVAL_SECONDS)
     forecast_window = timedelta(seconds=WEATHER_FORECAST_WINDOW_SECONDS)
@@ -246,26 +283,43 @@ def should_skip_watering() -> tuple[bool, str]:
 
     # 1. Frischer Cache
     if cached and cache_age is not None and cache_age < max_age:
-        logger.info(f"Wetter-Skip-Check nutzt DB-Cache (Alter: {cache_age}).")
-        return _evaluate_skip(cached["rain_last_24h_mm"], cached["rain_next_24h_mm"])
+        logger.info(f"Gieß-Faktor aus DB-Cache (Alter: {cache_age}).")
+        return _watering_decision_from_cache(cached)
 
     # 2. Cache veraltet oder fehlend — Live-API versuchen
-    live_data = None
     try:
-        live_data = get_weather_data(config.LATITUDE, config.LONGITUDE)
+        get_weather_data(config.LATITUDE, config.LONGITUDE)
     except Exception as e:
         logger.error(f"Live-Wetterabfrage fehlgeschlagen: {e}")
-
-    if live_data is not None:
-        return _evaluate_skip(live_data[0], live_data[1])
+    else:
+        refreshed = database.get_last_weather()
+        if refreshed:
+            return _watering_decision_from_cache(refreshed)
 
     # 3. Live fehlgeschlagen — stale Cache nutzen falls Vorhersagefenster noch gültig
     if cached and cache_age is not None and cache_age < forecast_window:
-        logger.warning(
-            f"Live-Wetterabfrage nicht erreichbar. Nutze veralteten Cache (Alter: {cache_age})."
-        )
-        return _evaluate_skip(cached["rain_last_24h_mm"], cached["rain_next_24h_mm"])
+        logger.warning(f"Live nicht erreichbar. Nutze veralteten Cache (Alter: {cache_age}).")
+        return _watering_decision_from_cache(cached)
 
-    # 4. Kein verwertbarer Cache und kein Live-Zugriff
-    logger.error("Keine Wetterdaten verfügbar (kein Cache, kein Netz). Bewässerung wird durchgeführt.")
-    return False, "Keine Wetterdaten verfügbar — Bewässerung zur Sicherheit durchgeführt."
+    # 4. Kein verwertbarer Cache — fail-safe: voller Guss
+    logger.error("Keine Wetterdaten — Bewässerung zur Sicherheit durchgeführt.")
+    return WateringDecision(
+        factor=1.0,
+        verdict="🚿 Voller Guss",
+        reasons=["Keine Wetterdaten verfügbar — Bewässerung zur Sicherheit."],
+        skip=False,
+    )
+
+
+def should_skip_watering() -> tuple[bool, str]:
+    """Binärer Wrapper um evaluate_watering_factor() für Abwärtskompatibilität (Feature 0020).
+
+    Gibt (skip, details) zurück. Logik identisch mit dem graduierten Faktor; skip = (factor == 0).
+    """
+    decision = evaluate_watering_factor()
+    details = " | ".join(decision.reasons)
+    if decision.skip:
+        logger.info(f"Bewässerung überspringen: {details}")
+        return True, details
+    logger.info(f"Bewässerung freigegeben ({decision.verdict}): {details}")
+    return False, details

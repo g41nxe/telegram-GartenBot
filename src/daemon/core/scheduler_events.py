@@ -28,3 +28,22 @@ class ScheduleFailed(Event):
     def __init__(self, schedule_name: str, details: str):
         self.schedule_name = schedule_name
         self.details = details
+
+class WateringScaled(Event):
+    def __init__(
+        self,
+        schedule_name: str,
+        factor: float,
+        duration_original: int,
+        duration_scaled: int,
+        volume_original: int,
+        volume_scaled: int,
+        reasons: list,
+    ):
+        self.schedule_name = schedule_name
+        self.factor = factor
+        self.duration_original = duration_original
+        self.duration_scaled = duration_scaled
+        self.volume_original = volume_original
+        self.volume_scaled = volume_scaled
+        self.reasons = reasons

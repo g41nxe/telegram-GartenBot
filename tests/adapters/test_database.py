@@ -2,7 +2,7 @@ import sys
 import sqlite3
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -371,6 +371,91 @@ class TestGetWateringSkipCountLast24h(unittest.TestCase):
     def test_old_skip_beyond_24h_not_counted(self):
         self._insert_history("skipped", minutes_ago=25 * 60)
         self.assertEqual(db.get_watering_skip_count_last_24h(), 0)
+
+
+class TestGetDailyMaxTemps(unittest.TestCase):
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._patcher.start()
+        db.init_db()
+
+    def tearDown(self):
+        self._patcher.stop()
+        import gc
+        gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def _days_ago(self, n: int) -> str:
+        return (datetime.now() - timedelta(days=n)).strftime("%Y-%m-%d")
+
+    def _insert_weather(self, date_str: str, temp_max: float):
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO weather_history (timestamp, rain_last_24h_mm, rain_next_24h_mm, "
+            "current_temp, weather_code, temp_min, temp_max, rain_probability) "
+            "VALUES (?, 0, 0, 20, 0, 15, ?, 0)",
+            (f"{date_str}T12:00:00", temp_max),
+        )
+        conn.commit()
+        conn.close()
+
+    def test_returns_past_days_newest_first(self):
+        self._insert_weather(self._days_ago(3), 28.0)
+        self._insert_weather(self._days_ago(2), 30.0)
+        self._insert_weather(self._days_ago(1), 26.0)
+        result = db.get_daily_max_temps(5)
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[0][0], self._days_ago(1))
+        self.assertAlmostEqual(result[0][1], 26.0)
+        self.assertEqual(result[1][0], self._days_ago(2))
+        self.assertAlmostEqual(result[1][1], 30.0)
+
+    def test_excludes_today(self):
+        today = datetime.now().strftime("%Y-%m-%d")
+        self._insert_weather(today, 35.0)
+        result = db.get_daily_max_temps(5)
+        self.assertEqual(result, [])
+
+    def test_returns_max_per_day_when_multiple_entries(self):
+        self._insert_weather(self._days_ago(1), 25.0)
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO weather_history (timestamp, rain_last_24h_mm, rain_next_24h_mm, "
+            "current_temp, weather_code, temp_min, temp_max, rain_probability) "
+            "VALUES (?, 0, 0, 20, 0, 15, ?, 0)",
+            (f"{self._days_ago(1)}T18:00:00", 31.0),
+        )
+        conn.commit()
+        conn.close()
+        result = db.get_daily_max_temps(5)
+        self.assertEqual(len(result), 1)
+        self.assertAlmostEqual(result[0][1], 31.0)
+
+    def test_empty_when_no_data(self):
+        result = db.get_daily_max_temps(5)
+        self.assertEqual(result, [])
+
+    def test_respects_days_limit(self):
+        for i in range(1, 8):
+            self._insert_weather(self._days_ago(i), float(20 + i))
+        result = db.get_daily_max_temps(3)
+        self.assertEqual(len(result), 3)
+
+    def test_result_is_list_of_tuples(self):
+        self._insert_weather(self._days_ago(1), 22.5)
+        result = db.get_daily_max_temps(5)
+        self.assertEqual(len(result), 1)
+        date_str, temp_max = result[0]
+        self.assertIsInstance(date_str, str)
+        self.assertIsInstance(temp_max, float)
+        self.assertAlmostEqual(temp_max, 22.5)
 
 
 if __name__ == "__main__":
