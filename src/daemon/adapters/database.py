@@ -383,6 +383,34 @@ def get_last_weather():
     finally:
         conn.close()
 
+def get_daily_max_temps(days: int = 5) -> list[tuple[str, float]]:
+    """Gibt (date_str, max_temp) pro abgeschlossenem Vortag zurück, neueste zuerst.
+
+    Heutiger Tag wird ausgeschlossen. Tage ohne Einträge werden übersprungen.
+    Wird für die Hitzestrecken-Berechnung in der Gießcheck-Empfehlung verwendet.
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT date(timestamp) AS day, MAX(temp_max) AS max_temp
+            FROM weather_history
+            WHERE date(timestamp) < date('now')
+              AND temp_max IS NOT NULL
+            GROUP BY day
+            ORDER BY day DESC
+            LIMIT ?
+            """,
+            (days,),
+        )
+        return [(row[0], float(row[1])) for row in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der täglichen Temperatur-Maxima: {e}")
+        return []
+    finally:
+        conn.close()
+
 # --- Operationen für System-Metadaten ---
 
 def get_metadata(key: str, default: str = None) -> str:

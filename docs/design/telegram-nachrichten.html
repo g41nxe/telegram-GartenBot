@@ -220,7 +220,30 @@ Wähle einen neuen Wert:</div>
     <div class="bubble">👋 <b>Willkommen bei der Gartenbewässerung-Steuerung!</b>
 
 Ich bin Ihr lokaler Assistent. Nutzen Sie die Buttons unten oder die Chat-Befehle <code>/status</code> und <code>/zeitplan</code>, um Ihr System zu steuern.</div>
-    <div class="kbd">📊 Status anzeigen &nbsp;|&nbsp; 📅 Zeitpläne<br>🟢 Bewässern starten &nbsp;|&nbsp; 🔴 Sofort Stopp<br>📸 Foto anzeigen &nbsp;|&nbsp; ⚙️ Setup</div>
+    <div class="kbd">📊 Status anzeigen &nbsp;|&nbsp; 💧 Gießcheck<br>🚿 Bewässern starten &nbsp;|&nbsp; 🛑 Sofort Stopp<br>📅 Zeitpläne &nbsp;|&nbsp; ⚙️ Setup<br>📸 Foto anzeigen</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">handle_giesscheck() · /giesscheck · „💧 Gießcheck" — Voller Guss</div>
+    <div class="bubble">*💧 Gießcheck*
+
+🚿 Voller Guss
+
+• Regen 48h-Fenster: 0.3 mm (gefallen 0.1 mm [ERA5-Reanalyse], erwartet 0.2 mm), Schwelle 3.0 mm.</div>
+    <div class="note">Reduziert-Variante (💧 Reduzierter Guss):</div>
+    <div class="bubble">*💧 Gießcheck*
+
+💧 Reduzierter Guss (55 %)
+
+• Regen 48h-Fenster: 2.8 mm (gefallen 1.8 mm [ERA5-Reanalyse], erwartet 1.0 mm), Schwelle 4.5 mm.
+• Heißer Tag heute (28 °C ≥ 25 °C).</div>
+    <div class="note">Kein Gießen-Variante (🌧):</div>
+    <div class="bubble">*💧 Gießcheck*
+
+🌧 Kein Gießen nötig
+
+• Regen 48h-Fenster: 5.4 mm (gefallen 3.2 mm [lokal gemessen], erwartet 2.2 mm), Schwelle 3.0 mm.</div>
+    <div class="note">Fehlerfall: <code>❌ Keine Wetterdaten verfügbar. Bitte später erneut versuchen.</code></div>
   </div>
 
   <div class="phone">
@@ -473,7 +496,12 @@ Sicherheits-Timer nach 25 Min ausgelöst.
   <div class="phone">
     <div class="src">_on_watering_skipped · WateringSkipped</div>
     <div class="bubble">🌧 <b>Heute übernimmt der Regen</b>
-Zeitplan 'Rasen morgens' übersprungen -- Regenschwelle überschritten: Gesamt 6.8 mm (Gefallen: 5.6 mm, Erwartet: 1.2 mm, Grenzwert: 2.0 mm)</div>
+Zeitplan 'Rasen morgens' übersprungen -- Regen 48h-Fenster: 6.8 mm (gefallen 5.6 mm [ERA5-Reanalyse], erwartet 1.2 mm), Schwelle 3.0 mm.</div>
+
+    <div class="src">_on_watering_scaled · WateringScaled</div>
+    <div class="bubble">💧 <b>Guss reduziert (55 %)</b>
+Zeitplan 'Rasen morgens': 5 min / 11 L (statt 10 min / 20 L).
+Regen 48h-Fenster: 2.8 mm (gefallen 1.8 mm [ERA5-Reanalyse], erwartet 1.0 mm), Schwelle 4.5 mm.</div>
 
     <div class="src">_on_schedule_failed · ScheduleFailed</div>
     <div class="bubble">⚠️ <b>Fehler bei Zeitplan 'Hochbeet abends'!</b>

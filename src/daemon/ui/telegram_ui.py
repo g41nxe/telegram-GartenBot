@@ -25,8 +25,10 @@ from ..core.watering_controller import (
 from ..core.scheduler_events import (
     DailyReportTriggered,
     WateringSkipped,
-    ScheduleFailed
+    ScheduleFailed,
+    WateringScaled,
 )
+from ..adapters import weather as _weather_adapter
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
 from ..core.camera_events import CameraInactivityAlertTriggered, CameraInactivityAlertResolved
 from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
@@ -170,9 +172,10 @@ def _state_del(d: dict, chat_id: int):
 def get_main_keyboard() -> dict:
     """Erstellt die permanente Haupttastatur unten im Chat."""
     rows = [
-        [{"text": "📊 Status anzeigen"}, {"text": "📅 Zeitpläne"}],
+        [{"text": "📊 Status anzeigen"}, {"text": "💧 Gießcheck"}],
         [{"text": "🚿 Bewässern starten"}, {"text": "🛑 Sofort Stopp"}],
-        [{"text": "📸 Foto anzeigen"}, {"text": "⚙️ Setup"}],
+        [{"text": "📅 Zeitpläne"}, {"text": "⚙️ Setup"}],
+        [{"text": "📸 Foto anzeigen"}],
     ]
     return {
         "keyboard": rows,
@@ -862,6 +865,25 @@ def handle_status(chat_id: int):
 
     telegram_client.send_message(chat_id, msg, get_main_keyboard())
 
+def handle_giesscheck(chat_id: int):
+    """Gieß-Empfehlung: graduierter Faktor aus Regen-Fenster, Temperatur und Hitzestrecke."""
+    try:
+        decision = _weather_adapter.evaluate_watering_factor()
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Gieß-Empfehlung: {e}")
+        telegram_client.send_message(
+            chat_id,
+            "❌ Keine Wetterdaten verfügbar. Bitte später erneut versuchen.",
+            get_main_keyboard(),
+        )
+        return
+    reason_text = "\n".join(f"• {r}" for r in decision.reasons)
+    telegram_client.send_message(
+        chat_id,
+        f"*💧 Gießcheck*\n\n{decision.verdict}\n\n{reason_text}",
+        get_main_keyboard(),
+    )
+
 def handle_schedules(chat_id: int):
     schedules = database.get_schedules()
     if not schedules:
@@ -1051,7 +1073,7 @@ def _process_message(msg_obj: dict):
     if state is not None:
         step = state.get("step")
 
-        if text.startswith("/") or text in ["📊 Status anzeigen", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
+        if text.startswith("/") or text in ["📊 Status anzeigen", "💧 Gießcheck", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             _state_del(wizard_states, chat_id)
         else:
             if step == "setup_wish_name":
@@ -1171,7 +1193,7 @@ def _process_message(msg_obj: dict):
     if man_state is not None:
         step = man_state.get("step")
 
-        if text.startswith("/") or text in ["📊 Status anzeigen", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
+        if text.startswith("/") or text in ["📊 Status anzeigen", "💧 Gießcheck", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             _state_del(manual_states, chat_id)
         else:
             if step == "man_custom_duration":
@@ -1217,6 +1239,8 @@ def _process_message(msg_obj: dict):
             "die Chat-Befehle `/status` und `/zeitplan`, um Ihr System zu steuern.",
             get_main_keyboard()
         )
+    elif text == "💧 Gießcheck" or text.startswith("/giesscheck"):
+        handle_giesscheck(chat_id)
     elif text == "📊 Status anzeigen" or text.startswith("/status"):
         handle_status(chat_id)
     elif text.startswith("/report") or text.startswith("/statusbericht"):
@@ -2068,6 +2092,16 @@ def _on_watering_skipped(event: WateringSkipped):
 def _on_schedule_failed(event: ScheduleFailed):
     telegram_client.broadcast_notification(f"⚠️ *Fehler bei Zeitplan '{event.schedule_name}'!*\n{event.details}")
 
+def _on_watering_scaled(event: WateringScaled):
+    pct = int(round(event.factor * 100))
+    has_volume = event.volume_original > 0
+    scaled = f"{event.duration_scaled} min" + (f" / {event.volume_scaled} L" if has_volume else "")
+    original = f"{event.duration_original} min" + (f" / {event.volume_original} L" if has_volume else "")
+    msg = f"💧 *Guss reduziert ({pct} %)*\nZeitplan '{event.schedule_name}': {scaled} (statt {original})."
+    if event.reasons:
+        msg += f"\n{event.reasons[0]}"
+    telegram_client.broadcast_notification(msg)
+
 def _on_inactivity_alert(event: InactivityAlertTriggered):
     msg = (
         f"⚠️ *Verbindung verloren:* Ventil \"{event.device_name}\" "
@@ -2137,6 +2171,7 @@ def subscribe_event_handlers():
     _global_bus.subscribe(WateringCycleStopped, _on_watering_stopped)
     _global_bus.subscribe(DailyReportTriggered, _on_daily_report)
     _global_bus.subscribe(WateringSkipped, _on_watering_skipped)
+    _global_bus.subscribe(WateringScaled, _on_watering_scaled)
     _global_bus.subscribe(ScheduleFailed, _on_schedule_failed)
     _global_bus.subscribe(InactivityAlertTriggered, _on_inactivity_alert)
     _global_bus.subscribe(InactivityAlertResolved, _on_inactivity_resolved)

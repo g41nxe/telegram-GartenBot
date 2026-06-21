@@ -6,7 +6,7 @@ from pathlib import Path
 from . import config
 from .adapters import database, weather, watchdog, mqtt_client
 from .adapters.mqtt_client import _global_bus
-from .core.scheduler_events import WateringSkipped, ScheduleFailed
+from .core.scheduler_events import WateringSkipped, ScheduleFailed, WateringScaled
 from .adapters.daily_report import send_daily_report
 
 logger = logging.getLogger("garden_scheduler")
@@ -31,20 +31,39 @@ def set_controller(ctrl) -> None:
 def _trigger_scheduled_watering(sched: dict):
     """Führt einen Zeitplan aus, inklusive Wetter-Check und Multi-Ventil-Unterstützung."""
     duration = sched.get("duration_minutes", 10)
+    volume = sched.get("target_volume_liters", 0) or 0
     name = sched.get("name", "Zeitplan")
     execution_mode = sched.get("execution_mode", "sequential")
 
     try:
-        skip, details = weather.should_skip_watering()
+        decision = weather.evaluate_watering_factor()
     except Exception as e:
-        logger.error(f"Fehler beim Wetter-Check für Zeitplan '{name}': {e}. Führe Bewässerung zur Sicherheit trotzdem durch.")
-        skip = False
-        details = f"Fehler bei Wetterabfrage: {e}"
+        logger.error(f"Fehler beim Wetter-Check für Zeitplan '{name}': {e}. Führe Bewässerung trotzdem durch.")
+        decision = None
 
-    if skip:
+    if decision is not None and decision.skip:
+        details = " | ".join(decision.reasons)
         database.log_watering(duration, "schedule", "skipped", f"Zeitplan '{name}': {details}")
         _global_bus.publish(WateringSkipped(name, details))
         return
+
+    # Graduated scaling: 0 < factor < 1 scales duration and volume
+    if decision is not None and 0.0 < decision.factor < 1.0:
+        duration_scaled = max(1, round(duration * decision.factor))
+        volume_scaled = round(volume * decision.factor)
+        _global_bus.publish(WateringScaled(
+            schedule_name=name,
+            factor=decision.factor,
+            duration_original=duration,
+            duration_scaled=duration_scaled,
+            volume_original=volume,
+            volume_scaled=volume_scaled,
+            reasons=list(decision.reasons),
+        ))
+        scaled_sched = dict(sched)
+        scaled_sched["duration_minutes"] = duration_scaled
+        scaled_sched["target_volume_liters"] = volume_scaled
+        sched = scaled_sched
 
     sched_id = sched.get("id")
     valves = []

@@ -1572,5 +1572,116 @@ class TestGetNextSchedule(unittest.TestCase):
         self.assertEqual(result["name"], "Früh")
 
 
+class TestGiesscheckHandler(unittest.TestCase):
+
+    def setUp(self):
+        wizard_states.clear()
+        manual_states.clear()
+
+    def tearDown(self):
+        wizard_states.clear()
+        manual_states.clear()
+
+    def _msg(self, text: str, chat_id: int = 1) -> dict:
+        return {"chat": {"id": chat_id}, "text": text}
+
+    @patch("daemon.ui.telegram_ui._weather_adapter.evaluate_watering_factor")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_button_sends_verdict_message(self, mock_client, mock_factor):
+        from daemon.core.watering_advice import WateringDecision
+        mock_factor.return_value = WateringDecision(
+            factor=1.0, verdict="🚿 Voller Guss", reasons=["Kein nennenswerter Regen."], skip=False
+        )
+        _process_message(self._msg("💧 Gießcheck"))
+        mock_client.send_message.assert_called_once()
+        text = mock_client.send_message.call_args[0][1]
+        self.assertIn("Gießcheck", text)
+        self.assertIn("🚿", text)
+
+    @patch("daemon.ui.telegram_ui._weather_adapter.evaluate_watering_factor")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_slash_command_triggers_same_handler(self, mock_client, mock_factor):
+        from daemon.core.watering_advice import WateringDecision
+        mock_factor.return_value = WateringDecision(
+            factor=0.0, verdict="🌧 Kein Gießen nötig", reasons=["4.0 mm im 48h-Fenster."], skip=True
+        )
+        _process_message(self._msg("/giesscheck"))
+        mock_client.send_message.assert_called_once()
+        text = mock_client.send_message.call_args[0][1]
+        self.assertIn("🌧", text)
+
+    @patch("daemon.ui.telegram_ui._weather_adapter.evaluate_watering_factor", side_effect=Exception("no data"))
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_exception_sends_error_message(self, mock_client, mock_factor):
+        _process_message(self._msg("💧 Gießcheck"))
+        mock_client.send_message.assert_called_once()
+        text = mock_client.send_message.call_args[0][1]
+        self.assertIn("Keine Wetterdaten", text)
+
+    @patch("daemon.ui.telegram_ui._weather_adapter.evaluate_watering_factor")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_button_aborts_active_wizard(self, mock_client, mock_factor):
+        from daemon.core.watering_advice import WateringDecision
+        mock_factor.return_value = WateringDecision(
+            factor=1.0, verdict="🚿 Voller Guss", reasons=[], skip=False
+        )
+        _state_set(wizard_states, 1, {"step": "setup_wish_name"})
+        _process_message(self._msg("💧 Gießcheck"))
+        self.assertIsNone(_state_get(wizard_states, 1))
+
+    @patch("daemon.ui.telegram_ui._weather_adapter.evaluate_watering_factor")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_reduced_watering_verdict_in_message(self, mock_client, mock_factor):
+        from daemon.core.watering_advice import WateringDecision
+        mock_factor.return_value = WateringDecision(
+            factor=0.5, verdict="💧 Reduzierter Guss (50 %)", reasons=["1.5 mm Regen."], skip=False
+        )
+        _process_message(self._msg("/giesscheck"))
+        text = mock_client.send_message.call_args[0][1]
+        self.assertIn("💧", text)
+        self.assertIn("50", text)
+
+
+class TestWateringScaledNotification(unittest.TestCase):
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_on_watering_scaled_sends_broadcast(self, mock_client):
+        from daemon.core.scheduler_events import WateringScaled
+        from daemon.ui.telegram_ui import _on_watering_scaled
+        event = WateringScaled(
+            schedule_name="Morgen",
+            factor=0.6,
+            duration_original=10,
+            duration_scaled=6,
+            volume_original=20,
+            volume_scaled=12,
+            reasons=["1.8 mm Regen erwartet."],
+        )
+        _on_watering_scaled(event)
+        mock_client.broadcast_notification.assert_called_once()
+        text = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("60 %", text)
+        self.assertIn("Morgen", text)
+        self.assertIn("6 min", text)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_on_watering_scaled_without_volume(self, mock_client):
+        from daemon.core.scheduler_events import WateringScaled
+        from daemon.ui.telegram_ui import _on_watering_scaled
+        event = WateringScaled(
+            schedule_name="Abend",
+            factor=0.7,
+            duration_original=15,
+            duration_scaled=11,
+            volume_original=0,
+            volume_scaled=0,
+            reasons=["Leichter Regen."],
+        )
+        _on_watering_scaled(event)
+        text = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("70 %", text)
+        self.assertNotIn(" L", text)
+
+
 if __name__ == "__main__":
     unittest.main()
