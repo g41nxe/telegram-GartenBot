@@ -1,19 +1,4 @@
-[
-  {
-    "id": "telegram-GartenBot-uwz",
-    "title": "Regensensor-Integration (Aqua Scope RANWIE01)",
-    "description": "MQTT-Anbindung des lokalen Regensensors. Lokale Messung als primäre Quelle für Überspringlogik (ERA5 als Fallback). Sofort-Unterbrechung laufender Güsse bei Regenerkennung. Flankengesteuerte Push-Benachrichtigungen (Regen ein/aus). Statuszeile in /status und Tagesbericht. Inaktivitäts-Watchdog für Sensor-Ausfall. Referenz: docs/features/0016-regensensor-integration.md",
-    "status": "open",
-    "priority": 2,
-    "issue_type": "feature",
-    "owner": "g41nxe@gmail.com",
-    "created_at": "2026-06-20T11:30:02Z",
-    "created_by": "Dan Hachenberger",
-    "updated_at": "2026-06-20T11:30:02Z",
-    "dependency_count": 0,
-    "dependent_count": 0,
-    "comment_count": 0
-  },
+﻿[
   {
     "id": "telegram-GartenBot-6y0",
     "title": "Zeitraffer-GIF-Generierung",
