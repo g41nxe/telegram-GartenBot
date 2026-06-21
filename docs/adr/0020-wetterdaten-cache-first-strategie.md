@@ -33,3 +33,9 @@ Die hier beschriebene Cache-first-Kette in `should_skip_watering()` ist der mitt
 
 - **Vorteile**: Skip-Entscheidung ist robust gegen Netzwerkausfälle; Live-API wird weniger häufig im kritischen Pfad belastet; bestehende Cache-Infrastruktur (DB + Hintergrund-Poll) wird sinnvoll genutzt.
 - **Nachteile**: Leicht erhöhte Komplexität in `should_skip_watering()`; bei instabilem WLAN kann eine bis zu 2h alte Vorhersage genutzt werden (inhaltlich für ein 24h-Niederschlagsfenster jedoch vertretbar).
+
+## Ergänzung (Feature 0009 / ADR 0031): Re-Zentrierung zur Aufrufzeit
+
+Mit der graduierten Gieß-Steuerung (ADR 0031) wird der oben genannte Nachteil **Fenster-Drift** behoben. Gecacht werden künftig **Rohdaten** (stündliche Reihe: Zeitstempel, Niederschlag, Wahrscheinlichkeit, Temperatur — Archiv für die Vergangenheit, Forecast für die Zukunft), **keine** fenster-abhängigen Skalare mehr. Die Entscheidungs- und Chart-Werte (`rain_last`, `rain_next_eff`, `temp_max_today`) werden **zur Aufrufzeit** aus dieser Reihe gegen `_find_current_index(now)` gebildet — das 24h-Fenster ist damit stets auf „jetzt" zentriert.
+
+Die Cache-first-Fallback-Kette bleibt unverändert; sie bestimmt weiterhin, *welcher* Datensatz gelesen wird. Nur die *Auswertung* wandert vom Abruf- zum Aufrufzeitpunkt. „Frische" betrifft danach nur noch das (höchstens stündlich aktualisierte) Forecast-Modell, nicht mehr die Fenster-Position. Da ohnehin `forecast_days=2` (48 h) geholt wird, sind genügend Vorwärts-Stunden vorhanden, um auch bei mehrstündigem Cache-Alter korrekt zu re-zentrieren.
