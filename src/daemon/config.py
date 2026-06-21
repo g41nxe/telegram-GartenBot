@@ -110,6 +110,17 @@ except ValueError:
 GITHUB_PAT = os.getenv("GITHUB_PAT", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")
 
+# --- Regensensor-Einstellungen ---
+RAIN_SENSOR_TOPIC = os.getenv("RAIN_SENSOR_TOPIC", "sensor/rain")
+try:
+    RAIN_SENSOR_THRESHOLD_MM = float(os.getenv("RAIN_SENSOR_THRESHOLD_MM", "0.1"))
+except ValueError:
+    RAIN_SENSOR_THRESHOLD_MM = 0.1
+try:
+    RAIN_SENSOR_OFFLINE_HOURS = float(os.getenv("RAIN_SENSOR_OFFLINE_HOURS", "18"))
+except ValueError:
+    RAIN_SENSOR_OFFLINE_HOURS = 18.0
+
 # --- Kamera-Einstellungen ---
 try:
     CAMERA_RECEIVER_PORT = int(os.getenv("CAMERA_RECEIVER_PORT", "8080"))

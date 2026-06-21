@@ -2,14 +2,16 @@ import logging
 from datetime import datetime
 from ..core.event_bus import EventBus
 from . import database
-from ..core.watering_controller import (
+from ..core.watering_events import (
     WateringCycleStarted,
     WateringCycleCompleted,
     WateringCycleFailed,
-    WateringCycleStopped
+    WateringCycleStopped,
+    WateringCycleInterrupted,
 )
 from .mqtt_client import ValveStatusReported
 from ..core.scheduler_events import WeatherDataFetched
+from ..core.sensor_events import RainSensorMeasured
 
 logger = logging.getLogger("garden_database_adapter")
 
@@ -23,8 +25,10 @@ class DatabaseLoggerAdapter:
         self.event_bus.subscribe(WateringCycleCompleted, self._on_cycle_completed)
         self.event_bus.subscribe(WateringCycleFailed, self._on_cycle_failed)
         self.event_bus.subscribe(WateringCycleStopped, self._on_cycle_stopped)
+        self.event_bus.subscribe(WateringCycleInterrupted, self._on_cycle_interrupted)
         self.event_bus.subscribe(ValveStatusReported, self._on_valve_status_reported)
         self.event_bus.subscribe(WeatherDataFetched, self._on_weather_data_fetched)
+        self.event_bus.subscribe(RainSensorMeasured, self._on_rain_sensor_measured)
 
     def _on_cycle_started(self, event: WateringCycleStarted):
         limit_info = f"Zeitlimit: {event.duration} Min"
@@ -43,10 +47,21 @@ class DatabaseLoggerAdapter:
     def _on_cycle_stopped(self, event: WateringCycleStopped):
         database.log_watering(event.duration_run, event.source, "stopped", event.details, watered_volume=event.volume_run)
 
+    def _on_cycle_interrupted(self, event: WateringCycleInterrupted):
+        database.log_watering(event.duration_run, event.source, "interrupted", event.details, watered_volume=event.volume_run)
+
     def _on_valve_status_reported(self, event: ValveStatusReported):
         now = datetime.now().isoformat()
         database.log_device_status(event.mqtt_name, event.battery, event.linkquality)
         database.update_valve_status(event.mqtt_name, event.battery, event.linkquality, now, event.valve_abnormal_state)
+
+    def _on_rain_sensor_measured(self, event: RainSensorMeasured):
+        database.log_rain_measurement(
+            event.rainlevel_mm,
+            event.raintotal_mm,
+            event.temperature_c,
+            event.battery_pct,
+        )
 
     def _on_weather_data_fetched(self, event: WeatherDataFetched):
         database.log_weather(

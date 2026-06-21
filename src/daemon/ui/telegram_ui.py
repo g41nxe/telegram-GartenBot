@@ -19,7 +19,8 @@ from ..core.watering_controller import (
     WateringCycleStarted,
     WateringCycleCompleted,
     WateringCycleFailed,
-    WateringCycleStopped
+    WateringCycleStopped,
+    WateringCycleInterrupted,
 )
 from ..core.scheduler_events import (
     DailyReportTriggered,
@@ -28,6 +29,8 @@ from ..core.scheduler_events import (
 )
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
 from ..core.camera_events import CameraInactivityAlertTriggered, CameraInactivityAlertResolved
+from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
+
 logger = logging.getLogger("garden_telegram_ui")
 
 # Module-level controller reference — set once at daemon startup by main.py
@@ -652,6 +655,30 @@ def _get_next_schedule(schedules: list, now: datetime) -> dict | None:
     return best
 
 
+def _format_rain_sensor_status() -> str | None:
+    """Gibt die Regensensor-Statuszeile für /status zurück, oder None wenn kein Sensor bekannt."""
+    last = database.get_last_rain_measurement()
+    if not last:
+        return None
+    try:
+        age_hours = (datetime.now() - datetime.fromisoformat(last["timestamp"])).total_seconds() / 3600
+    except Exception:
+        return None
+    offline_hours = config.RAIN_SENSOR_OFFLINE_HOURS
+    if age_hours >= offline_hours:
+        last_weather = database.get_last_weather()
+        source_label = "Sensor offline · Regen-24h via ERA5"
+        if last_weather and last_weather.get("rain_last_source") == "sensor":
+            source_label = "Sensor offline"
+        return f"🌧 *Regen*  ⚠️ {source_label} (seit {age_hours:.1f} h)"
+    battery_label = _get_battery_description(last.get("battery_pct", 100))
+    return (
+        f"🌧 *Regen*  {last['rainlevel_mm']} mm · "
+        f"Gesamt {last['raintotal_mm']} mm · "
+        f"🌡 {last['temperature_c']} °C · {battery_label}"
+    )
+
+
 def handle_status(chat_id: int):
     from ..adapters import mqtt_client
     from ..core.valve_events import ValveStatusReported
@@ -745,6 +772,9 @@ def handle_status(chat_id: int):
 
     cameras_text = "\n".join(camera_sections) if camera_sections else ""
 
+    rain_sensor_line = _format_rain_sensor_status()
+    rain_sensor_block = f"\n{rain_sensor_line}\n" if rain_sensor_line else ""
+
     last_weather = database.get_last_weather()
     weather_text = "   Keine Daten vorhanden"
     if last_weather:
@@ -825,6 +855,7 @@ def handle_status(chat_id: int):
         f"\n📡 *Ventile*\n{valves_text}\n"
         f"{next_sched_text}"
         f"{cameras_block}"
+        f"{rain_sensor_block}"
         f"\n🌡 *Wetter*\n{weather_text}\n\n"
         f"📜 *Zuletzt*\n{history_text}"
     )
@@ -2059,6 +2090,40 @@ def _on_camera_inactivity_resolved(event: CameraInactivityAlertResolved):
     msg = f"🟢 *Kamera-Verbindung wiederhergestellt:* Kamera \"{event.wish_name}\" sendet wieder Bilder."
     telegram_client.broadcast_notification(msg)
 
+_RAIN_FLAG_KEY = "rain_sensor_raining_flag"
+
+def _on_rain_sensor_measured(event: RainSensorMeasured):
+    prev_flag = database.get_metadata(_RAIN_FLAG_KEY, "0")
+    if event.is_raining and prev_flag != "1":
+        database.set_metadata(_RAIN_FLAG_KEY, "1")
+        telegram_client.broadcast_notification(
+            f"🌧 *Regen erkannt* — {event.rainlevel_mm} mm"
+        )
+    elif not event.is_raining and prev_flag == "1":
+        database.set_metadata(_RAIN_FLAG_KEY, "0")
+        telegram_client.broadcast_notification("🌤 *Regen vorbei*")
+
+def _on_watering_interrupted(event: WateringCycleInterrupted):
+    valve = database.get_valve_by_mqtt_name(event.mqtt_name) if event.mqtt_name else None
+    valve_name = valve["wish_name"] if valve else "Ventil"
+    rain_mm = event.rain_mm
+    rain_str = f" · {rain_mm} mm erkannt" if rain_mm > 0 else ""
+    msg = (
+        f"🌧 *Regen übernimmt — Guss gestoppt*\n"
+        f"{valve_name} · {event.duration_run} Min · {event.volume_run:.1f} l geflossen{rain_str}"
+    )
+    telegram_client.broadcast_notification(msg)
+
+def _on_rain_sensor_inactivity_alert(event: RainSensorInactivityAlertTriggered):
+    msg = (
+        f"⚠️ *Regensensor nicht erreichbar* — seit {event.hours_silent:.1f} h "
+        f"keine Messung (Limit: {event.timeout_hours:.0f} h)."
+    )
+    telegram_client.broadcast_notification(msg)
+
+def _on_rain_sensor_inactivity_resolved(event: RainSensorInactivityAlertResolved):
+    telegram_client.broadcast_notification("🟢 *Regensensor wieder aktiv* — Messung empfangen.")
+
 def subscribe_event_handlers():
     """Verdrahtet alle telegram_ui-Benachrichtigungs-Handler mit dem globalen Ereignis-Kanal.
 
@@ -2077,3 +2142,7 @@ def subscribe_event_handlers():
     _global_bus.subscribe(InactivityAlertResolved, _on_inactivity_resolved)
     _global_bus.subscribe(CameraInactivityAlertTriggered, _on_camera_inactivity_alert)
     _global_bus.subscribe(CameraInactivityAlertResolved, _on_camera_inactivity_resolved)
+    _global_bus.subscribe(RainSensorMeasured, _on_rain_sensor_measured)
+    _global_bus.subscribe(WateringCycleInterrupted, _on_watering_interrupted)
+    _global_bus.subscribe(RainSensorInactivityAlertTriggered, _on_rain_sensor_inactivity_alert)
+    _global_bus.subscribe(RainSensorInactivityAlertResolved, _on_rain_sensor_inactivity_resolved)

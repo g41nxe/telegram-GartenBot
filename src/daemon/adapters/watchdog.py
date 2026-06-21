@@ -7,6 +7,7 @@ from .mqtt_client import _global_bus
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
 from ..core.valve_events import ValveStatusReported
 from ..core.camera_events import CameraImageReceived, CameraInactivityAlertTriggered, CameraInactivityAlertResolved
+from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
 
 logger = logging.getLogger("garden_watchdog")
 
@@ -32,6 +33,15 @@ def _on_camera_image(event: CameraImageReceived):
         _global_bus.publish(CameraInactivityAlertResolved(mac, event.wish_name))
 
 
+def _on_rain_sensor_measurement(event: RainSensorMeasured):
+    """Sofortige Entwarnung sobald der Regensensor wieder eine Messung sendet."""
+    flag_key = "watchdog_alert_active_rain_sensor"
+    if database.get_metadata(flag_key) == "1":
+        database.set_metadata(flag_key, "0")
+        _global_bus.publish(RainSensorInactivityAlertResolved())
+        logger.info("Watchdog-Entwarnung: Regensensor wieder aktiv.")
+
+
 def initialize():
     """Registriert dauerhafte EventBus-Listener. Einmalig beim Daemon-Start aufrufen."""
     if not config.WATCHDOG_ENABLED:
@@ -39,6 +49,7 @@ def initialize():
         return
     _global_bus.subscribe(ValveStatusReported, _on_valve_status)
     _global_bus.subscribe(CameraImageReceived, _on_camera_image)
+    _global_bus.subscribe(RainSensorMeasured, _on_rain_sensor_measurement)
     logger.info("Inaktivitäts-Watchdog initialisiert.")
 
 
@@ -115,3 +126,25 @@ def run_watchdog_check():
                 database.set_metadata(flag_key, "0")
                 _global_bus.publish(CameraInactivityAlertResolved(mac, wish_name))
                 logger.info(f"Watchdog-Entwarnung (Check): Kamera '{wish_name}' wieder aktiv.")
+
+    # --- Regensensor ---
+    last_rain = database.get_last_rain_measurement()
+    if last_rain:
+        flag_key = "watchdog_alert_active_rain_sensor"
+        timeout_hours = config.RAIN_SENSOR_OFFLINE_HOURS
+        try:
+            last_rain_time = datetime.fromisoformat(last_rain["timestamp"])
+            hours_silent = (now - last_rain_time).total_seconds() / 3600
+            flag = database.get_metadata(flag_key)
+            if hours_silent > timeout_hours:
+                if flag != "1":
+                    database.set_metadata(flag_key, "1")
+                    _global_bus.publish(RainSensorInactivityAlertTriggered(hours_silent, timeout_hours))
+                    logger.warning(f"Watchdog-Alert: Regensensor seit {hours_silent:.1f}h still.")
+            else:
+                if flag == "1":
+                    database.set_metadata(flag_key, "0")
+                    _global_bus.publish(RainSensorInactivityAlertResolved())
+                    logger.info("Watchdog-Entwarnung (Check): Regensensor wieder aktiv.")
+        except Exception:
+            pass

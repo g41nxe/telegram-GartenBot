@@ -12,6 +12,7 @@ logger = logging.getLogger("garden_mqtt")
 # --- Events (defined in core, re-exported here for backward compatibility) ---
 
 from ..core.valve_events import ValveStatusReported, DeviceJoinedEvent  # noqa: F401
+from ..core.sensor_events import RainSensorMeasured  # noqa: F401
 
 # --- Globale abwärtskompatible Zustände ---
 
@@ -177,6 +178,7 @@ class PahoMqttAdapter(MqttClient):
             self.subscribe("zigbee2mqtt/bridge/event")
             self.subscribe("zigbee2mqtt/bridge/response/device/rename")
             self.subscribe("zigbee2mqtt/bridge/state")
+            self.subscribe(config.RAIN_SENSOR_TOPIC)
             self._configure_safety_timeout()
             self.publish(f"{config.MQTT_VALVE_TOPIC}/get", json.dumps({"state": ""}))
             logger.info("Zustandsabfrage an das Ventil gesendet.")
@@ -213,8 +215,29 @@ class PahoMqttAdapter(MqttClient):
                     if ieee:
                         logger.info(f"PahoMqttAdapter: Gerät beigetreten – {ieee}")
                         self.event_bus.publish(DeviceJoinedEvent(ieee))
+
+            elif msg.topic == config.RAIN_SENSOR_TOPIC:
+                self._handle_rain_sensor(data)
         except Exception as e:
             logger.error(f"PahoMqttAdapter: Fehler beim Weiterleiten an EventBus auf {msg.topic}: {e}")
+
+    def _handle_rain_sensor(self, data: dict):
+        try:
+            rainlevel_mm = round(float(data.get("rainlevel_mm", 0.0)), 2)
+            raintotal_mm = round(float(data.get("raintotal_mm", 0.0)), 2)
+            temp_raw = data.get("temperature", 0)
+            temperature_c = round(float(temp_raw) / 10.0, 1)
+            battery_pct = int(data.get("battery_level", 100))
+            is_raining = rainlevel_mm >= config.RAIN_SENSOR_THRESHOLD_MM
+            self.event_bus.publish(RainSensorMeasured(
+                rainlevel_mm, raintotal_mm, temperature_c, battery_pct, is_raining
+            ))
+            logger.debug(
+                f"Regensensor: {rainlevel_mm} mm · Gesamt {raintotal_mm} mm · "
+                f"{temperature_c} °C · Batterie {battery_pct}% · Regen={is_raining}"
+            )
+        except Exception as e:
+            logger.error(f"Fehler beim Parsen der Regensensor-Nachricht: {e}")
 
     def _configure_safety_timeout(self):
         set_topic = f"{config.MQTT_VALVE_TOPIC}/set"
