@@ -121,17 +121,14 @@ _Avoid_: GIF-Intervall, Zusammenfassungs-Tage.
 **Regensensor**:
 Der batteriebetriebene, WLAN-basierte Niederschlagsmesser (Aqua Scope RANWIE01), der Regenmengen und Temperatur lokal im Garten erfasst und per MQTT an die Steuerzentrale sendet. Er ist die primäre Quelle für gemessene Niederschlagsmengen; die ERA5-Reanalyse des Wetter-Dienstes dient als automatischer Fallback bei Ausfall.
 _Avoid_: Wetterstation, Regenmesser, Sensor-Modul.
-_Status_: 🚧 In Umsetzung — geplant in Feature 0016 (`docs/features/0016-regensensor-integration.md`, ADR 0028). Im Code noch nicht implementiert; gefallener Regen stammt aktuell aus ERA5/Forecast.
 
 **Regenmessung**:
 Das vom Regensensor per MQTT gesendete Datenpaket mit der Niederschlagsmenge des letzten Intervalls (mm), der kumulierten Gesamtmenge, der Temperatur (°C) und dem Batteriestand (%). Wird bei Regen sofort, sonst alle 6 Stunden gesendet.
 _Avoid_: Sensor-Signal, Telemetrie-Paket, Messwert.
-_Status_: 🚧 In Umsetzung — geplant in Feature 0016 (`docs/features/0016-regensensor-integration.md`). Im Code noch nicht implementiert.
 
 **Guss-Unterbrechung**:
 Der systemseitige vorzeitige Abbruch eines laufenden Kombinierten Gusses durch einen externen Auslöser (z. B. Regen). Im Unterschied zum manuellen Stopp durch den Benutzer wird eine Guss-Unterbrechung im Ereignis-Kanal als eigenständiges Ereignis (`WateringCycleInterrupted`) veröffentlicht.
 _Avoid_: Auto-Stop, Notfall-Abbruch, Rain-Stop.
-_Status_: 🚧 In Umsetzung — geplant in Feature 0016 (`docs/features/0016-regensensor-integration.md`). Im Code noch nicht implementiert (`WateringCycleInterrupted` existiert noch nicht).
 
 **Garten-Ampel**:
 Das dreistufige Gesundheitsmodell, das den Gesamtzustand des Systems in der `/status`-Anzeige als Farb-Status zusammenfasst: 🟢 grün (alles aktiv und unauffällig), 🟡 gelb (nicht-kritisch: niedrige Batterie oder kritisches Signal, Gerät meldet aber noch), 🔴 rot (kritisch: Dienst offline, aktiver Inaktivitäts-Watchdog-Alarm oder Ventil-Anomalie). Die Headline zeigt stets die schlimmste aktive Stufe; technische Details werden nur für nicht-grüne Geräte eingeblendet. Definiert in ADR 0029.
