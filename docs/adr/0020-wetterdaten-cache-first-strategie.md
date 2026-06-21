@@ -23,6 +23,12 @@ Die gesamte Cache-Logik sitzt in `should_skip_watering()` (`weather.py`). Der Sc
 
 Bei Nutzung des stale Cache wird nur ein Log-Eintrag geschrieben — keine aktive Benutzerbenachrichtigung.
 
+## Datenfluss
+
+Die hier beschriebene Cache-first-Kette in `should_skip_watering()` ist der mittlere Knoten im folgenden Gesamt-Datenfluss vom API-Abruf bis zur Skip-Entscheidung. Kanonische Beschreibung und Herkunft der Werte: ADR 0024.
+
+![Datenfluss der Bewässerungs-Skip-Entscheidung: should_skip_watering() liest cache-first aus weather_history und fällt auf Live- bzw. Stale-Cache zurück](../assets/wetter-skip-datenfluss.svg)
+
 ## Konsequenzen
 
 - **Vorteile**: Skip-Entscheidung ist robust gegen Netzwerkausfälle; Live-API wird weniger häufig im kritischen Pfad belastet; bestehende Cache-Infrastruktur (DB + Hintergrund-Poll) wird sinnvoll genutzt.

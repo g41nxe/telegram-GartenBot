@@ -23,6 +23,17 @@ Zur Nachvollziehbarkeit wird die Herkunft (`"measured"` oder `"forecast"`) als `
 
 Die Zuordnung der aktuellen Stunde erfolgt nun über eine robuste lexikografische Suche des jüngsten Zeitstempels `<= jetzt` (`_find_current_index`), die unabhängig von Minuten-Offsets funktioniert.
 
+## Datenfluss
+
+Das folgende Diagramm zeigt die Herkunft beider Werte bis zur Skip-Entscheidung. Farben kennzeichnen die Herkunft: blau = externe API-Quelle, orange = Entscheidungslogik, grau = interne Verarbeitung/Cache. Es spannt bewusst über die benachbarten Records — Cache-first (ADR 0020) und die pure `evaluate_rain_window` (ADR 0021).
+
+![Datenfluss der Bewässerungs-Skip-Entscheidung: rain_last aus ERA5-Archiv (gemessen) mit Forecast-Fallback, rain_next aus der Forecast-API, Summenvergleich gegen RAIN_THRESHOLD_MM](../assets/wetter-skip-datenfluss.svg)
+
+Zu beachten:
+- `rain_next_24h_mm` hat **eine** Quelle (Forecast-API, Summe der nächsten 24 h); `rain_last_24h_mm` hat **zwei** mit Priorität (ERA5-Archiv „measured", sonst Forecast-Vergangenheit „forecast"). Die Herkunft steht in `rain_last_source`.
+- `should_skip_watering()` liest cache-first aus `weather_history`; bei veraltetem/fehlendem Cache ruft es `get_weather_data()` live auf — das ist exakt der obere Diagrammteil (Quellen → Werte).
+- Die Schwelle `RAIN_THRESHOLD_MM` wird über `config.get_setting()` aufgelöst (DB-Override > `.env`/`garden.conf` > Code-Default 2.0).
+
 ## Konsequenzen
 
 - Erhöhte Zuverlässigkeit und "Ehrlichkeit" der Regendaten: Wenn messbasierte Daten verfügbar sind, wird die Gießentscheidung basierend auf echten Werten getroffen.

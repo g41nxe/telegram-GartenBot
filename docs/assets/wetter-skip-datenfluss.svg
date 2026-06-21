@@ -1,0 +1,143 @@
+<svg width="100%" viewBox="0 0 680 672" role="img" xmlns="http://www.w3.org/2000/svg">
+<title>Datenfluss der Bewässerungs-Skip-Entscheidung</title>
+<desc>rain_last stammt primär aus der Open-Meteo Archiv-API (ERA5, gemessen) mit Fallback auf die Forecast-API; rain_next immer aus der Forecast-API. Beide werden im weather_history-Cache gespeichert, von should_skip_watering cache-first gelesen und in evaluate_rain_window summiert und gegen RAIN_THRESHOLD_MM geprüft.</desc>
+<style>
+  text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .ts { font-size: 12px; }
+  .th { font-size: 14px; font-weight: 500; }
+  rect { stroke-width: 1; }
+  .lbl, .legend { fill: #5F5E5A; font-size: 12px; }
+  .arr { stroke: #5F5E5A; stroke-width: 1.5; fill: none; }
+
+  .cat-blue  rect { fill:#E6F1FB; stroke:#185FA5; }
+  .cat-blue  .th  { fill:#0C447C; } .cat-blue  .ts { fill:#185FA5; }
+  .cat-amber rect { fill:#FAEEDA; stroke:#854F0B; }
+  .cat-amber .th  { fill:#633806; } .cat-amber .ts { fill:#854F0B; }
+  .cat-gray  rect { fill:#F1EFE8; stroke:#5F5E5A; }
+  .cat-gray  .th  { fill:#444441; } .cat-gray  .ts { fill:#5F5E5A; }
+  .cat-red   rect { fill:#FCEBEB; stroke:#A32D2D; }
+  .cat-red   .th  { fill:#791F1F; } .cat-red   .ts { fill:#A32D2D; }
+  .cat-green rect { fill:#EAF3DE; stroke:#3B6D11; }
+  .cat-green .th  { fill:#27500A; } .cat-green .ts { fill:#3B6D11; }
+
+  @media (prefers-color-scheme: dark) {
+    .lbl, .legend { fill:#B4B2A9; }
+    .arr { stroke:#B4B2A9; }
+    .cat-blue  rect { fill:#0C447C; stroke:#85B7EB; }
+    .cat-blue  .th  { fill:#B5D4F4; } .cat-blue  .ts { fill:#85B7EB; }
+    .cat-amber rect { fill:#633806; stroke:#EF9F27; }
+    .cat-amber .th  { fill:#FAC775; } .cat-amber .ts { fill:#EF9F27; }
+    .cat-gray  rect { fill:#444441; stroke:#B4B2A9; }
+    .cat-gray  .th  { fill:#D3D1C7; } .cat-gray  .ts { fill:#B4B2A9; }
+    .cat-red   rect { fill:#791F1F; stroke:#F09595; }
+    .cat-red   .th  { fill:#F7C1C1; } .cat-red   .ts { fill:#F09595; }
+    .cat-green rect { fill:#27500A; stroke:#97C459; }
+    .cat-green .th  { fill:#C0DD97; } .cat-green .ts { fill:#97C459; }
+  }
+</style>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<!-- Legende -->
+<rect x="120" y="22" width="12" height="12" rx="2" fill="#378ADD"/>
+<text class="legend" x="138" y="32">externe API-Quelle</text>
+<rect x="300" y="22" width="12" height="12" rx="2" fill="#EF9F27"/>
+<text class="legend" x="318" y="32">Entscheidungslogik</text>
+<rect x="470" y="22" width="12" height="12" rx="2" fill="#888780"/>
+<text class="legend" x="488" y="32">Verarbeitung / Cache</text>
+
+<!-- Zeile 1: externe Quellen -->
+<g class="cat-blue">
+<rect x="55" y="58" width="255" height="52" rx="6"/>
+<text class="th" x="183" y="82" text-anchor="middle">Open-Meteo Archiv-API</text>
+<text class="ts" x="183" y="99" text-anchor="middle">ERA5-Reanalyse · gemessen</text>
+</g>
+<g class="cat-blue">
+<rect x="370" y="58" width="255" height="52" rx="6"/>
+<text class="th" x="497" y="82" text-anchor="middle">Open-Meteo Forecast-API</text>
+<text class="ts" x="497" y="99" text-anchor="middle">Vorhersage · /v1/forecast</text>
+</g>
+
+<!-- Zeile 2: rain_last-Quellenwahl (amber) + rain_next-Summe (gray) -->
+<g class="cat-amber">
+<rect x="70" y="146" width="235" height="62" rx="6"/>
+<text class="th" x="187" y="168" text-anchor="middle">rain_last: Quelle wählen</text>
+<text class="ts" x="187" y="185" text-anchor="middle">JA → measured (ERA5)</text>
+<text class="ts" x="187" y="200" text-anchor="middle">NEIN → Forecast-Vergangenheit</text>
+</g>
+<g class="cat-gray">
+<rect x="370" y="146" width="235" height="62" rx="6"/>
+<text class="th" x="487" y="172" text-anchor="middle">Summe nächste 24 h</text>
+<text class="ts" x="487" y="190" text-anchor="middle">Forecast-Stundenwerte ab jetzt</text>
+</g>
+
+<!-- Zeile 3: die zwei Werte -->
+<g class="cat-gray">
+<rect x="90" y="238" width="190" height="44" rx="6"/>
+<text class="th" x="185" y="259" text-anchor="middle">rain_last_24h_mm</text>
+<text class="ts" x="185" y="274" text-anchor="middle">+ rain_last_source</text>
+</g>
+<g class="cat-gray">
+<rect x="392" y="238" width="190" height="44" rx="6"/>
+<text class="th" x="487" y="259" text-anchor="middle">rain_next_24h_mm</text>
+<text class="ts" x="487" y="274" text-anchor="middle">immer Forecast</text>
+</g>
+
+<!-- Zeile 4: DB-Cache -->
+<g class="cat-gray">
+<rect x="200" y="316" width="280" height="50" rx="6"/>
+<text class="th" x="340" y="338" text-anchor="middle">weather_history (Cache)</text>
+<text class="ts" x="340" y="355" text-anchor="middle">beide Werte + Chart-JSON</text>
+</g>
+
+<!-- Zeile 5: should_skip -->
+<g class="cat-gray">
+<rect x="170" y="400" width="340" height="58" rx="6"/>
+<text class="th" x="340" y="425" text-anchor="middle">should_skip_watering()</text>
+<text class="ts" x="340" y="443" text-anchor="middle">cache-first: Cache → Live → Stale</text>
+</g>
+
+<!-- Zeile 6: evaluate_rain_window (Entscheidung) -->
+<g class="cat-amber">
+<rect x="160" y="494" width="360" height="64" rx="6"/>
+<text class="th" x="340" y="517" text-anchor="middle">evaluate_rain_window()</text>
+<text class="ts" x="340" y="535" text-anchor="middle">total = rain_last + rain_next</text>
+<text class="ts" x="340" y="551" text-anchor="middle">skip = total ≥ Schwelle (RAIN_THRESHOLD_MM)</text>
+</g>
+
+<!-- Zeile 7: Ergebnisse -->
+<g class="cat-red">
+<rect x="140" y="592" width="190" height="54" rx="6"/>
+<text class="th" x="235" y="615" text-anchor="middle">Guss übersprungen</text>
+<text class="ts" x="235" y="632" text-anchor="middle">WateringSkipped · Ventil zu</text>
+</g>
+<g class="cat-green">
+<rect x="370" y="592" width="190" height="54" rx="6"/>
+<text class="th" x="465" y="615" text-anchor="middle">Guss ausgeführt</text>
+<text class="ts" x="465" y="632" text-anchor="middle">Ventil öffnet</text>
+</g>
+
+<!-- Pfeile -->
+<line class="arr" x1="183" y1="110" x2="187" y2="146" marker-end="url(#arrow)"/>
+<line class="arr" x1="497" y1="110" x2="487" y2="146" marker-end="url(#arrow)"/>
+<path class="arr" stroke-dasharray="5 3" d="M398 110 C360 138 338 158 307 173" marker-end="url(#arrow)"/>
+<text class="lbl" x="352" y="130" text-anchor="middle">Fallback</text>
+
+<line class="arr" x1="187" y1="208" x2="186" y2="238" marker-end="url(#arrow)"/>
+<line class="arr" x1="487" y1="208" x2="487" y2="238" marker-end="url(#arrow)"/>
+
+<path class="arr" d="M185 282 C185 300 245 316 300 320" marker-end="url(#arrow)"/>
+<path class="arr" d="M487 282 C487 300 435 316 380 320" marker-end="url(#arrow)"/>
+<text class="lbl" x="340" y="305" text-anchor="middle">via WeatherDataFetched</text>
+
+<line class="arr" x1="340" y1="366" x2="340" y2="400" marker-end="url(#arrow)"/>
+<line class="arr" x1="340" y1="458" x2="340" y2="494" marker-end="url(#arrow)"/>
+
+<path class="arr" d="M315 558 C295 575 260 582 235 592" marker-end="url(#arrow)"/>
+<path class="arr" d="M365 558 C385 575 435 582 465 592" marker-end="url(#arrow)"/>
+<text class="lbl" x="232" y="582" text-anchor="middle">skip = true</text>
+<text class="lbl" x="470" y="582" text-anchor="middle">skip = false</text>
+</svg>
