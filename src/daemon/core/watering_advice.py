@@ -24,7 +24,7 @@ def evaluate_rain_window(
 class WateringDecision(NamedTuple):
     factor: float
     verdict: str
-    reasons: list
+    reasons: list[str]
     skip: bool
 
 

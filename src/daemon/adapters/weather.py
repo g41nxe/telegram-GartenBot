@@ -288,10 +288,11 @@ def evaluate_watering_factor() -> WateringDecision:
 
     # 2. Cache veraltet oder fehlend — Live-API versuchen
     try:
-        get_weather_data(config.LATITUDE, config.LONGITUDE)
+        live_ok = get_weather_data(config.LATITUDE, config.LONGITUDE) is not None
     except Exception as e:
         logger.error(f"Live-Wetterabfrage fehlgeschlagen: {e}")
-    else:
+        live_ok = False
+    if live_ok:
         refreshed = database.get_last_weather()
         if refreshed:
             return _watering_decision_from_cache(refreshed)

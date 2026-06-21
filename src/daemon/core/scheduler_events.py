@@ -38,7 +38,7 @@ class WateringScaled(Event):
         duration_scaled: int,
         volume_original: int,
         volume_scaled: int,
-        reasons: list,
+        reasons: list[str],
     ):
         self.schedule_name = schedule_name
         self.factor = factor

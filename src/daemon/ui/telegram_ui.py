@@ -28,7 +28,6 @@ from ..core.scheduler_events import (
     ScheduleFailed,
     WateringScaled,
 )
-from ..core import watering_advice
 from ..adapters import weather as _weather_adapter
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
 from ..core.camera_events import CameraInactivityAlertTriggered, CameraInactivityAlertResolved
@@ -2095,16 +2094,10 @@ def _on_schedule_failed(event: ScheduleFailed):
 
 def _on_watering_scaled(event: WateringScaled):
     pct = int(round(event.factor * 100))
-    msg = (
-        f"💧 *Guss reduziert ({pct} %)*\n"
-        f"Zeitplan '{event.schedule_name}': {event.duration_scaled} min"
-    )
-    if event.volume_original > 0:
-        msg += f" / {event.volume_scaled} L"
-    msg += f" (statt {event.duration_original} min"
-    if event.volume_original > 0:
-        msg += f" / {event.volume_original} L"
-    msg += ")."
+    has_volume = event.volume_original > 0
+    scaled = f"{event.duration_scaled} min" + (f" / {event.volume_scaled} L" if has_volume else "")
+    original = f"{event.duration_original} min" + (f" / {event.volume_original} L" if has_volume else "")
+    msg = f"💧 *Guss reduziert ({pct} %)*\nZeitplan '{event.schedule_name}': {scaled} (statt {original})."
     if event.reasons:
         msg += f"\n{event.reasons[0]}"
     telegram_client.broadcast_notification(msg)
