@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Wetterchart — Jetzt-Markierung Mockup</title>
+  <style>
+    body { font-family: sans-serif; background: #fff; padding: 2rem; }
+    h1 { font-size: 1.1rem; font-weight: 500; margin-bottom: 0.25rem; }
+    p.meta { font-size: 0.85rem; color: #666; margin-bottom: 2rem; }
+    .chart-wrap { position: relative; width: 700px; height: 390px; }
+    .legend { display: flex; gap: 16px; margin-bottom: 8px; font-size: 12px; color: #666; }
+    .legend span { display: flex; align-items: center; gap: 4px; }
+    .legend-dot { width: 12px; height: 3px; }
+    .legend-bar { width: 10px; height: 10px; border-radius: 2px; }
+  </style>
+</head>
+<body>
+
+<h1>Wetterchart — Erstellungszeit-Markierung</h1>
+<p class="meta">
+  Mockup für Feature: vertikale gestrichelte Linie + „Jetzt"-Achsen-Label in der Mitte des Charts.<br>
+  Datenfenster: ±24 h (passend zum Bewässerungshinweis-Fenster). Implementierung: <code>chart.py</code> + <code>weather.py</code>.
+</p>
+
+<div class="legend">
+  <span><span class="legend-dot" style="background: rgb(255,159,64);"></span> Temperatur (°C)</span>
+  <span><span class="legend-bar" style="background: rgba(54,162,235,0.75);"></span> Niederschlag (mm, Transparenz = Wahrscheinlichkeit; Vergangenheit = voll opak)</span>
+</div>
+
+<div class="chart-wrap">
+  <canvas id="wc" role="img" aria-label="Wetterverlauf ±24 Stunden. Temperatur (orange) und Niederschlag (blau). Vertikale gestrichelte Linie und Achsen-Label Jetzt markieren die Erstellungszeit in der Mitte des Charts.">Temperatur und Niederschlag ±24 Stunden um 14:00 Uhr.</canvas>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+<script>
+const nowIndex = 24;
+
+const base = new Date('2026-06-21T14:00:00');
+const rawTimes = Array.from({length: 48}, (_, i) => {
+  const d = new Date(base.getTime() + i * 3600000);
+  return d.toISOString().slice(0, 16);
+});
+
+const temps = [
+  23,22,22,21,19,17,16,15,14,13, // gestern 14-23h
+  13,13,12,12,12,12,13,15,17,19,21,23,24,24, // heute 00-13h
+  25, // Jetzt (heute 14h)
+  26,25,24,22,20,18,16,15,14, // heute 15-23h
+  13,13,12,12,12,12,13,15,17,19,21,22,23,24  // morgen 00-13h
+];
+const precip = [
+  0,0,0,0,0,0,0,0,0,0, // gestern 14-23h
+  0,0,0,0.1,0.1,0,0,0,0,0,0,0,0,0, // heute 00-13h (gemessen)
+  0, // Jetzt
+  0.1,0.2,0.8,1.2,0.5,0.1,0,0,0, // heute 15-23h (Vorhersage)
+  0,0,0,0,0,0,0,0,0,0,0,0,0,0  // morgen 00-13h
+];
+// Vergangenheit: 100% wo Regen gemessen, 0% sonst. Zukunft: Vorhersagewahrscheinlichkeit.
+const probs = [
+  0,0,0,0,0,0,0,0,0,0, // gestern 14-23h
+  0,0,0,100,100,0,0,0,0,0,0,0,0,0, // heute 00-13h (gemessen)
+  10, // Jetzt
+  15,30,70,85,60,25,10,5,5, // heute 15-23h
+  5,5,5,5,5,5,5,5,5,5,5,5,5,5  // morgen
+];
+
+const barColors = probs.map(p => {
+  const a = (0.15 + 0.75 * (Math.max(0, Math.min(100, p)) / 100)).toFixed(3);
+  return `rgba(54,162,235,${a})`;
+});
+const precipMax = Math.max(...precip);
+
+const DASH = { borderColor: 'rgba(60,60,60,0.35)', borderWidth: 1, borderDash: [6, 3] };
+
+new Chart(document.getElementById('wc'), {
+  type: 'bar',
+  data: {
+    labels: rawTimes.map(t => t.slice(11, 16)),
+    datasets: [
+      {
+        type: 'line', label: 'Temperatur (°C)', data: temps,
+        borderColor: 'rgb(255,159,64)', backgroundColor: 'rgba(0,0,0,0)',
+        fill: false, yAxisID: 'yTemp', tension: 0.3, pointRadius: 0, borderWidth: 2,
+      },
+      {
+        type: 'bar', label: 'Niederschlag (mm)', data: precip,
+        backgroundColor: barColors, yAxisID: 'yPrecip',
+      },
+    ],
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      title: { display: true, text: 'Wetterverlauf — letzte & nächste 24h', font: { size: 14, weight: 'bold' } },
+      legend: { display: false },
+      datalabels: { display: false },
+      annotation: (function() {
+        const ann = {
+          zeroLine: { type: 'line', yMin: 0, yMax: 0, yScaleID: 'yTemp', ...DASH },
+        };
+        for (let i = 0; i < 48; i++) {
+          if (i % 3 === 0) {
+            ann['g' + i] = { type: 'line', xMin: i, xMax: i, borderColor: 'rgba(0,0,0,0.07)', borderWidth: 1 };
+          }
+        }
+        ann.nowLine = { type: 'line', xMin: nowIndex, xMax: nowIndex, ...DASH };
+        return { annotations: ann };
+      })(),
+    },
+    scales: {
+      x: {
+        grid: { display: false },
+        ticks: {
+          callback: function(value, index) {
+            if (index === nowIndex) return 'Jetzt';
+            if (index % 3 === 0) return rawTimes[index].slice(11, 16);
+            return null;
+          },
+          minRotation: 45,
+          maxRotation: 45,
+          font: { size: 12 },
+        },
+      },
+      yTemp: {
+        type: 'linear', position: 'left',
+        title: { display: true, text: 'Temperatur (°C)', font: { size: 12 } },
+        min: -10, max: 40, grid: { color: 'rgba(0,0,0,0.07)' },
+      },
+      yPrecip: {
+        type: 'linear', position: 'right',
+        title: { display: true, text: 'Niederschlag (mm)', font: { size: 12 } },
+        min: 0, max: Math.max(5, Math.ceil(precipMax * 1.2)),
+        grid: { drawOnChartArea: false },
+      },
+    },
+  },
+});
+</script>
+
+<hr style="margin: 2rem 0; border: none; border-top: 1px solid #eee;">
+<h2 style="font-size: 0.95rem; font-weight: 500;">User Stories</h2>
+<ul style="font-size: 0.85rem; color: #444; line-height: 1.8;">
+  <li>Als Benutzer möchte ich im Wetterchart die letzten 24 Stunden und die nächsten 24 Stunden sehen — dasselbe Zeitfenster, das der Bewässerungshinweis verwendet —, damit Chart und Entscheidung auf denselben Daten basieren.</li>
+  <li>Als Benutzer möchte ich die aktuelle Uhrzeit als „Jetzt" auf der Zeitachse beschriftet sehen, damit ich auf einen Blick erkenne, was Vergangenheit und was Vorhersage ist.</li>
+  <li>Als Benutzer möchte ich eine dezente vertikale Linie bei „Jetzt", die optisch zur bestehenden 0°C-Linie passt, damit das Chart einheitlich wirkt.</li>
+  <li>Als Benutzer möchte ich, dass Beschriftungen und Gitternetzlinien genau übereinstimmen (alle 3 Stunden), damit ich Werte präzise ablesen kann.</li>
+  <li>Als Benutzer möchte ich, dass gemessener Regen der Vergangenheit voll opak dargestellt wird, damit ich visuell zwischen sicheren Messwerten und unsicherer Vorhersage unterscheiden kann.</li>
+  <li>Als Benutzer möchte ich, dass das Chart auch dann korrekt angezeigt wird, wenn die Wetterdaten mehrere Stunden alt sind — in diesem Fall einfach ohne die Jetzt-Markierung.</li>
+</ul>
+
+</body>
+</html>
