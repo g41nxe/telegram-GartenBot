@@ -165,16 +165,23 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         else:
             rain_prob = 0
             
-        # Stündliche Vorhersage: 2h vor aktueller Stunde bis +22h (= 24 Einträge gesamt)
-        chart_start = max(0, current_idx - 2)
-        forecast_end = min(chart_start + 24, len(times))
+        # Stündliche Vorhersage: ±24h (= 48 Einträge), passend zum Bewässerungshinweis-Fenster
+        chart_start = max(0, current_idx - 24)
+        forecast_end = min(chart_start + 48, len(times))
         # precip_probs kann kürzer sein (z.B. leer bei nicht-best_match-Modell) — auf Länge auffüllen
         safe_probs = list(precip_probs) + [0] * max(0, forecast_end - len(precip_probs))
+        # Vergangenheitsstunden: gemessener Regen → prob 100, trocken → prob 0
+        chart_probs = []
+        for i in range(chart_start, forecast_end):
+            if i < current_idx:
+                chart_probs.append(100 if (i < len(precip) and precip[i] is not None and precip[i] > 0) else 0)
+            else:
+                chart_probs.append(safe_probs[i] if i < len(safe_probs) else 0)
         hourly_forecast_json = json.dumps({
             "times": times[chart_start:forecast_end],
             "temp": hourly_temps[chart_start:forecast_end],
             "precip_mm": precip[chart_start:forecast_end],
-            "precip_prob": safe_probs[chart_start:forecast_end],
+            "precip_prob": chart_probs,
             "wmo": hourly_wmo[chart_start:forecast_end],
         })
 

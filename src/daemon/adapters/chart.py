@@ -3,6 +3,7 @@ import logging
 import math
 import urllib.request
 import urllib.error
+from datetime import datetime
 from . import database
 from .. import config
 from ..core.watering_advice import evaluate_rain_window
@@ -12,6 +13,15 @@ logger = logging.getLogger("garden_chart")
 QUICKCHART_URL = "https://quickchart.io/chart"
 # QuickChart.io defaults to Chart.js v2 — "version": "4" is required for v3+ syntax
 # (scales as objects with ID-keys, per-dataset type overrides). Omitting it causes HTTP 400.
+
+
+def _find_now_index(times: list[str]) -> int:
+    """Index des aktuellen Stunden-Zeitstempels in der Chart-Zeitreihe; -1 wenn nicht gefunden."""
+    now_str = datetime.now().strftime("%Y-%m-%dT%H:00")
+    for i, t in enumerate(times):
+        if t[:16] == now_str[:16]:
+            return i
+    return -1
 
 
 def _bar_color(prob: int) -> str:
@@ -27,8 +37,8 @@ def _bar_color(prob: int) -> str:
 def _build_caption(rain_last_24h_mm: float, rain_next_24h_mm: float) -> str:
     result = evaluate_rain_window(rain_last_24h_mm, rain_next_24h_mm, config.get_setting("RAIN_THRESHOLD_MM", 2.0))
     if result.skip:
-        return f"🌤 Wetterverlauf — nächste 24h\n☔ Kein Gießen nötig — Regen erwartet ({result.total_mm:.1f}mm)"
-    return "🌤 Wetterverlauf — nächste 24h\n🌱 Gießen empfohlen — trocken bis morgen"
+        return f"🌤 Wetterverlauf — letzte & nächste 24h\n☔ Kein Gießen nötig — Regen erwartet ({result.total_mm:.1f}mm)"
+    return "🌤 Wetterverlauf — letzte & nächste 24h\n🌱 Gießen empfohlen — trocken bis morgen"
 
 
 def generate_weather_chart() -> tuple[bytes, str] | None:
@@ -62,11 +72,16 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
         logger.warning("Keine Stundendaten für Chart verfügbar.")
         return None
 
-    # Nur jede 3. Stunde beschriften, Rest leer lassen
+    now_index = _find_now_index(times)
+
     labels = []
     for i, t in enumerate(times):
-        hour_str = t[11:16] if len(t) >= 16 else t
-        labels.append(hour_str if i % 3 == 0 else "")
+        if i == now_index:
+            labels.append("Jetzt")
+        elif i % 3 == 0:
+            labels.append(t[11:16] if len(t) >= 16 else t)
+        else:
+            labels.append("")
 
     bar_colors = [
         _bar_color(precip_prob[i] if i < len(precip_prob) else 0)
@@ -74,6 +89,38 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
     ]
 
     precip_max = max(precip_mm) if precip_mm else 0
+
+    dash_line = {
+        "borderColor": "rgba(60, 60, 60, 0.35)",
+        "borderWidth": 1,
+        "borderDash": [6, 3],
+    }
+
+    annotations: dict = {
+        "zeroLine": {
+            "type": "line",
+            "yMin": 0,
+            "yMax": 0,
+            "yScaleID": "yTemp",
+            **dash_line,
+        }
+    }
+    for i in range(len(times)):
+        if i % 3 == 0:
+            annotations[f"g{i}"] = {
+                "type": "line",
+                "xMin": i,
+                "xMax": i,
+                "borderColor": "rgba(0,0,0,0.07)",
+                "borderWidth": 1,
+            }
+    if now_index >= 0:
+        annotations["nowLine"] = {
+            "type": "line",
+            "xMin": now_index,
+            "xMax": now_index,
+            **dash_line,
+        }
 
     chart_config = {
         "type": "bar",
@@ -105,26 +152,18 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
             "plugins": {
                 "title": {
                     "display": True,
-                    "text": "Wetterverlauf — nächste 24h",
+                    "text": "Wetterverlauf — letzte & nächste 24h",
                     "font": {"size": 14, "weight": "bold"},
                 },
                 "legend": {"display": False},
                 "datalabels": {"display": False},
-                "annotation": {
-                    "annotations": {
-                        "zeroLine": {
-                            "type": "line",
-                            "yMin": 0,
-                            "yMax": 0,
-                            "yScaleID": "yTemp",
-                            "borderColor": "rgba(60, 60, 60, 0.35)",
-                            "borderWidth": 1,
-                            "borderDash": [6, 3],
-                        }
-                    }
-                },
+                "annotation": {"annotations": annotations},
             },
             "scales": {
+                "x": {
+                    "grid": {"display": False},
+                    "ticks": {"minRotation": 45, "maxRotation": 45},
+                },
                 "yTemp": {
                     "type": "linear",
                     "position": "left",

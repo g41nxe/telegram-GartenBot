@@ -113,29 +113,126 @@ class TestHourlyForecastJson(unittest.TestCase):
             self.assertIn(key, fc, f"Schlüssel '{key}' fehlt in hourly_forecast_json")
 
     @patch("urllib.request.urlopen")
-    def test_hourly_forecast_json_starts_2h_before_current_hour(self, mock_urlopen):
-        """Forecast-Fenster startet 2 Stunden vor der aktuellen Stunde."""
+    def test_hourly_forecast_json_starts_24h_before_current_hour(self, mock_urlopen):
+        """Forecast-Fenster startet 24 Stunden vor der aktuellen Stunde."""
         event = self._call_and_capture_event(_make_api_response(), mock_urlopen)
         fc = json.loads(event.hourly_forecast_json)
-        expected_start = (datetime.now() - timedelta(hours=2)).strftime("%Y-%m-%dT%H:00")
+        expected_start = (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%dT%H:00")
         self.assertEqual(fc["times"][0], expected_start,
-                         "Erster Forecast-Eintrag muss 2 Stunden vor der aktuellen Stunde liegen")
+                         "Erster Forecast-Eintrag muss 24 Stunden vor der aktuellen Stunde liegen")
 
     @patch("urllib.request.urlopen")
-    def test_hourly_forecast_json_max_24_entries(self, mock_urlopen):
-        event = self._call_and_capture_event(_make_api_response(n_hours=72), mock_urlopen)
+    def test_hourly_forecast_json_has_48_entries_for_full_api_window(self, mock_urlopen):
+        """Bei 48h API-Daten werden alle 48 Einträge geliefert."""
+        event = self._call_and_capture_event(_make_api_response(n_hours=48), mock_urlopen)
         fc = json.loads(event.hourly_forecast_json)
-        self.assertLessEqual(len(fc["times"]), 24)
-        self.assertEqual(len(fc["temp"]), len(fc["times"]))
-        self.assertEqual(len(fc["precip_mm"]), len(fc["times"]))
+        self.assertEqual(len(fc["times"]), 48)
+        self.assertEqual(len(fc["temp"]), 48)
+        self.assertEqual(len(fc["precip_mm"]), 48)
+        self.assertEqual(len(fc["precip_prob"]), 48)
 
     @patch("urllib.request.urlopen")
     def test_hourly_forecast_json_fewer_when_near_end_of_data(self, mock_urlopen):
-        # Nur 26 Stunden total → current_idx=24, nur 2 Einträge verbleiben
+        # Nur 26 Stunden total → current_idx=24, chart_start=0, forecast_end=min(48,26)=26
         event = self._call_and_capture_event(_make_api_response(n_hours=26), mock_urlopen)
         fc = json.loads(event.hourly_forecast_json)
-        self.assertLess(len(fc["times"]), 24,
-                        "Bei weniger als 24 verbleibenden Einträgen darf kein IndexError entstehen")
+        self.assertLessEqual(len(fc["times"]), 26,
+                             "Bei weniger Daten als 48h darf kein IndexError entstehen")
+
+    @patch("urllib.request.urlopen")
+    def test_past_hours_with_rain_have_prob_100(self, mock_urlopen):
+        """Vergangene Stunden mit gemessenem Regen: precip_prob = 100."""
+        now = datetime.now()
+        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        start_hour = current_hour - timedelta(hours=24)
+        times = [(start_hour + timedelta(hours=i)).strftime("%Y-%m-%dT%H:00") for i in range(48)]
+        precip = [0.0] * 48
+        precip[12] = 1.5   # Regen in Vergangenheit (12h vor jetzt)
+        precip[13] = 0.3   # Regen in Vergangenheit
+
+        response = json.dumps({
+            "current": {"temperature_2m": 20.0, "weather_code": 0, "precipitation": 0.0},
+            "hourly": {
+                "time": times,
+                "precipitation": precip,
+                "precipitation_probability": [50] * 48,
+                "temperature_2m": [20.0] * 48,
+                "weather_code": [0] * 48,
+            },
+            "daily": {
+                "time": [now.strftime("%Y-%m-%d")],
+                "temperature_2m_max": [25.0],
+                "temperature_2m_min": [15.0],
+            },
+        }).encode("utf-8")
+
+        event = self._call_and_capture_event(response, mock_urlopen)
+        fc = json.loads(event.hourly_forecast_json)
+        # chart_start = max(0, 24-24) = 0; precip[12] und [13] sind in Vergangenheit
+        self.assertEqual(fc["precip_prob"][12], 100, "Stunde mit Regen soll prob=100 haben")
+        self.assertEqual(fc["precip_prob"][13], 100, "Stunde mit Regen soll prob=100 haben")
+
+    @patch("urllib.request.urlopen")
+    def test_past_dry_hours_have_prob_0(self, mock_urlopen):
+        """Vergangene trockene Stunden: precip_prob = 0 (nicht Vorhersagewert)."""
+        now = datetime.now()
+        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        start_hour = current_hour - timedelta(hours=24)
+        times = [(start_hour + timedelta(hours=i)).strftime("%Y-%m-%dT%H:00") for i in range(48)]
+
+        response = json.dumps({
+            "current": {"temperature_2m": 20.0, "weather_code": 0, "precipitation": 0.0},
+            "hourly": {
+                "time": times,
+                "precipitation": [0.0] * 48,
+                "precipitation_probability": [75] * 48,   # API liefert 75% für alle
+                "temperature_2m": [20.0] * 48,
+                "weather_code": [0] * 48,
+            },
+            "daily": {
+                "time": [now.strftime("%Y-%m-%d")],
+                "temperature_2m_max": [25.0],
+                "temperature_2m_min": [15.0],
+            },
+        }).encode("utf-8")
+
+        event = self._call_and_capture_event(response, mock_urlopen)
+        fc = json.loads(event.hourly_forecast_json)
+        # Stunden 0–23 sind Vergangenheit; precip=0 → prob soll 0 sein
+        for i in range(24):
+            self.assertEqual(fc["precip_prob"][i], 0,
+                             f"Vergangenheitsstunde {i}: kein Regen → prob soll 0 sein (war {fc['precip_prob'][i]})")
+
+    @patch("urllib.request.urlopen")
+    def test_future_hours_keep_forecast_probability(self, mock_urlopen):
+        """Zukünftige Stunden behalten die API-Vorhersagewahrscheinlichkeit."""
+        now = datetime.now()
+        current_hour = now.replace(minute=0, second=0, microsecond=0)
+        start_hour = current_hour - timedelta(hours=24)
+        times = [(start_hour + timedelta(hours=i)).strftime("%Y-%m-%dT%H:00") for i in range(48)]
+
+        response = json.dumps({
+            "current": {"temperature_2m": 20.0, "weather_code": 0, "precipitation": 0.0},
+            "hourly": {
+                "time": times,
+                "precipitation": [0.0] * 48,
+                "precipitation_probability": [60] * 48,
+                "temperature_2m": [20.0] * 48,
+                "weather_code": [0] * 48,
+            },
+            "daily": {
+                "time": [now.strftime("%Y-%m-%d")],
+                "temperature_2m_max": [25.0],
+                "temperature_2m_min": [15.0],
+            },
+        }).encode("utf-8")
+
+        event = self._call_and_capture_event(response, mock_urlopen)
+        fc = json.loads(event.hourly_forecast_json)
+        # Stunden 24–47 sind Zukunft; API-Wert 60% soll erhalten bleiben
+        for i in range(24, 48):
+            self.assertEqual(fc["precip_prob"][i], 60,
+                             f"Zukunftsstunde {i}: prob soll API-Wert 60 behalten (war {fc['precip_prob'][i]})")
 
     @patch("urllib.request.urlopen")
     def test_hourly_forecast_json_all_arrays_same_length(self, mock_urlopen):

@@ -363,7 +363,7 @@ def log_weather(rain_last_24h: float, rain_next_24h: float, current_temp: float 
             (timestamp, rain_last_24h, rain_next_24h, current_temp, weather_code, temp_min, temp_max, rain_probability, current_precipitation_mm, hourly_forecast_json or None, rain_last_source)
         )
         conn.commit()
-        logger.info("Stundendaten erfolgreich in weather_history gespeichert (24 Einträge).")
+        logger.info("Stundendaten erfolgreich in weather_history gespeichert (48 Einträge).")
     except Exception as e:
         logger.error(f"Fehler beim Protokollieren der Wetterdaten: {e}")
     finally:
