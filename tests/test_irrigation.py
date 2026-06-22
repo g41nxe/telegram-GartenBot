@@ -129,12 +129,15 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertEqual(history[0]["status"], "completed")
         self.assertIn("Volumenlimit", history[0]["details"])
 
+    @patch("daemon.adapters.weather.database.get_daily_max_temps", return_value=[])
     @patch("urllib.request.urlopen")
-    def test_06_weather_api_parsing_and_skip(self, mock_urlopen):
+    def test_06_weather_api_parsing_and_skip(self, mock_urlopen, _mock_temps):
         """Simuliert eine erfolgreiche Open-Meteo API-Antwort und testet die Skip-Logik.
 
-        Verwendet einen kühlen Tag (temp_max=15°C), sodass die Schwelle nicht durch
-        Hitzefaktor angehoben wird. rain_last=1.5mm + rain_next_eff≈1.875mm > 3.0mm → skip.
+        Verwendet einen kühlen Tag (temp_max=15°C) ohne Hitzestrecke, sodass die
+        Schwelle nicht angehoben wird. rain_last=1.5mm + rain_next_eff≈1.875mm > 3.0mm → skip.
+        Patch auf get_daily_max_temps nötig: die echte DB kann Hitzetage aus dem
+        Produktivbetrieb enthalten, die hitze_faktor > 1 erzeugen und T_eff über R_eff heben.
         """
         # Mocking der stündlichen Niederschläge (48 Stunden: 24h Vergangenheit + 24h Zukunft)
         precipitation = [0.0] * 48
