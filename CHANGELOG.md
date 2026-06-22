@@ -1,3 +1,19 @@
+## v1.5.0 — 2026-06-22
+
+### Neu
+- Regensensor-Integration: lokale Messungen ersetzen ERA5 als Regen-Quelle (Feature 0016)
+- Guss-Unterbrechung: laufender Guss stoppt sofort, wenn Regen einsetzt
+- Regen-Benachrichtigung beim Ein- und Aussetzen von Regen (Flankensteuerung)
+- Graduierte Gieß-Steuerung: 0–100 % Skalierungsfaktor statt binärem Skip (Feature 0009)
+- /giesscheck: Gieß-Empfehlung mit Verdict und Begründung
+- Wetterchart zeigt jetzt ±24 h (gefallener + erwarteter Regen)
+
+### Intern
+- Sandcastle-Pipeline: Review-only-Modus, EOL-robuster Diff
+- Zeilenenden im Repo auf LF normalisiert (.gitattributes)
+
+---
+
 ## v1.4.0 — 2026-06-21
 
 ### Neu
