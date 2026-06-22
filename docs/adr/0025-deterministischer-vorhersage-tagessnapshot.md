@@ -26,3 +26,15 @@ Beim Lesen wird zusätzlich durch einen Datums-Guard sichergestellt, dass der Sn
 - Der Abweichungsvergleich im Bericht ist für den gesamten Kalendertag stabil und reproduzierbar.
 - Klarere Trennung von planmäßigen Mutationen (`send_daily_report`) und manuellen Ad-Hoc-Abfragen (`generate_daily_report`).
 - Referenziert: ADR 0012 (Metadata-Tabelle).
+
+## Ergänzung: Warum der Bericht live abruft statt aus dem Cache zu lesen
+
+`generate_daily_report()` ruft bewusst `weather.get_weather_data()` **live** ab und liest die Wetterwerte **nicht** aus dem DB-Cache (`get_last_weather()`). Das ist eine load-bearing Entscheidung, die im Widerspruch zur Cache-first-Strategie (ADR 0020) zu stehen scheint, aber durch das Zeitfenster begründet ist:
+
+- Der gecachte Skalar `rain_next_24h_mm` wird **zum Poll-Zeitpunkt** des stündlichen Hintergrund-Polls über `precip[current_idx:current_idx+24]` summiert. Sein 24h-Fenster hängt damit an der letzten Hintergrund-Abfrage (z. B. 07:30), nicht am Berichtszeitpunkt.
+- Der Morgen-Bericht zeigt „Heute X mm erwartet" und benötigt das auf den **Berichtszeitpunkt** (≈ 08:00) zentrierte Fenster. Genau dieses liefert der frische Live-Call, der `current_idx` für „jetzt" bestimmt.
+- Zusätzlich frischt der Live-Call den Cache, den `send_daily_report()` unmittelbar danach für den oben beschriebenen deterministischen Snapshot liest. Ein Cache-Read würde beide Mechanismen brechen.
+
+**Konsequenz für künftige Architektur-Reviews:** „Lies die Wetterwerte aus dem Cache statt live" ist hier **kein** gültiger Vereinfachungsvorschlag, solange die Berichts-Anzeigewerte fenster-abhängige Skalare sind.
+
+**Auflösungspfad (ADR 0031):** Sobald die Berichts-Anzeigewerte — analog zur graduierten Gieß-Entscheidung — **zur Aufrufzeit** aus den gecachten Rohdaten (`hourly_forecast_json`) gegen `_find_current_index(now)` re-zentriert werden, ist das Fenster stets auf „jetzt" zentriert und der Live-Call kann entfallen. Bis dahin bleibt er erforderlich.
