@@ -28,6 +28,63 @@ class WateringDecision(NamedTuple):
     skip: bool
 
 
+class ScheduledRunPlan(NamedTuple):
+    """Reines Ergebnis der Zeitplan-Auswertung: ob und wie ein Guss ausgeführt wird.
+
+    Trennt die Entscheidung (rein, testbar) von der Ausführung (Scheduler-I/O).
+    """
+    skip: bool
+    skip_reason: str            # Begründung wenn skip=True, sonst ""
+    duration: int               # auszuführende Dauer (ggf. skaliert); bei skip=True nur nominal, nicht ausführen
+    volume: int                 # auszuführendes Volumen (ggf. skaliert); bei skip=True nur nominal, nicht ausführen
+    scaled: bool                # True wenn 0 < factor < 1 angewandt wurde
+    factor: float               # angewandter Faktor (1.0 wenn keine Skalierung)
+    duration_original: int
+    volume_original: int
+    reasons: list[str]          # Begründungs-Reasons der Entscheidung; [] wenn kein Entscheidungs-Kontext
+
+
+def plan_scheduled_run(duration: int, volume: int, decision: "WateringDecision | None") -> ScheduledRunPlan:
+    """Berechnet rein (ohne I/O) aus Dauer, Volumen und Wetter-Entscheidung den auszuführenden Guss.
+
+    - decision None (Wetter-Check fehlgeschlagen) -> voller Guss (fail-safe Richtung Gießen).
+    - decision.skip -> übersprungen, Begründung als ' | '-verkettete Reasons.
+    - 0 < factor < 1 -> Dauer/Volumen skaliert (Dauer mindestens 1 Minute).
+    - factor >= 1 -> voller Guss unverändert.
+
+    Hinweis: Nur die Dauer hat einen Mindestwert (1 Minute). Das Volumen darf bewusst
+    auf 0 runden (= kein Volumenlimit, rein zeitbasiert) — dies entspricht dem
+    bestehenden Scheduler-Verhalten vor der Extraktion.
+    """
+    if decision is None:
+        return ScheduledRunPlan(
+            skip=False, skip_reason="", duration=duration, volume=volume,
+            scaled=False, factor=1.0,
+            duration_original=duration, volume_original=volume, reasons=[],
+        )
+    if decision.skip:
+        return ScheduledRunPlan(
+            skip=True, skip_reason=" | ".join(decision.reasons),
+            duration=duration, volume=volume, scaled=False, factor=decision.factor,
+            duration_original=duration, volume_original=volume,
+            reasons=list(decision.reasons),
+        )
+    if 0.0 < decision.factor < 1.0:
+        return ScheduledRunPlan(
+            skip=False, skip_reason="",
+            duration=max(1, round(duration * decision.factor)),
+            volume=round(volume * decision.factor),
+            scaled=True, factor=decision.factor,
+            duration_original=duration, volume_original=volume,
+            reasons=list(decision.reasons),
+        )
+    return ScheduledRunPlan(
+        skip=False, skip_reason="", duration=duration, volume=volume,
+        scaled=False, factor=decision.factor,
+        duration_original=duration, volume_original=volume, reasons=list(decision.reasons),
+    )
+
+
 def _compute_heat_streak(
     past_daily_temps: list[tuple[str, float]],
     hot_temp_c: float,

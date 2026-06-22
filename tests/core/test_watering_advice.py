@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 import daemon.core.watering_advice as advice
+from daemon.core.watering_advice import plan_scheduled_run, ScheduledRunPlan, WateringDecision
 
 
 class TestEvaluateRainWindow(unittest.TestCase):
@@ -189,3 +190,44 @@ class TestEvaluateWatering(unittest.TestCase):
         d_partial = self._eval(rain_last=1.5, rain_next_eff=0.0, temp_today=15.0)
         self.assertIn("💧", d_partial.verdict)
         self.assertIn("%", d_partial.verdict)
+
+
+def _decision(factor, skip, reasons=("r",)):
+    return WateringDecision(factor=factor, verdict="v", reasons=list(reasons), skip=skip)
+
+
+class TestPlanScheduledRun(unittest.TestCase):
+    def test_decision_none_means_full_run(self):
+        plan = plan_scheduled_run(duration=10, volume=20, decision=None)
+        self.assertFalse(plan.skip)
+        self.assertFalse(plan.scaled)
+        self.assertEqual(plan.duration, 10)
+        self.assertEqual(plan.volume, 20)
+        self.assertEqual(plan.factor, 1.0)
+
+    def test_skip_joins_reasons(self):
+        plan = plan_scheduled_run(10, 20, _decision(factor=0.0, skip=True, reasons=["a", "b"]))
+        self.assertTrue(plan.skip)
+        self.assertEqual(plan.skip_reason, "a | b")
+
+    def test_scales_duration_and_volume(self):
+        plan = plan_scheduled_run(10, 20, _decision(factor=0.5, skip=False))
+        self.assertTrue(plan.scaled)
+        self.assertEqual(plan.duration, 5)
+        self.assertEqual(plan.volume, 10)
+        self.assertEqual(plan.duration_original, 10)
+        self.assertEqual(plan.volume_original, 20)
+        self.assertEqual(plan.skip_reason, "")  # kein skip → leere Begründung
+
+    def test_full_factor_not_scaled(self):
+        plan = plan_scheduled_run(10, 20, _decision(factor=1.0, skip=False))
+        self.assertFalse(plan.scaled)
+        self.assertEqual(plan.duration, 10)
+        self.assertEqual(plan.volume, 20)
+
+    def test_scaled_duration_floored_to_one_minute(self):
+        # round(1 * 0.3) == 0 -> max(1, 0) == 1; round(1 * 0.3) == 0 volume
+        plan = plan_scheduled_run(1, 1, _decision(factor=0.3, skip=False))
+        self.assertTrue(plan.scaled)
+        self.assertEqual(plan.duration, 1)
+        self.assertEqual(plan.volume, 0)
