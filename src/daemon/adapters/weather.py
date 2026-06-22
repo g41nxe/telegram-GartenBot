@@ -7,7 +7,7 @@ from .. import config
 from . import database
 from .mqtt_client import _global_bus
 from ..core.scheduler_events import WeatherDataFetched
-from ..core.watering_advice import evaluate_rain_window, evaluate_watering, WateringDecision
+from ..core.watering_advice import evaluate_watering, WateringDecision
 
 WEATHER_FORECAST_WINDOW_SECONDS = 86400  # Open-Meteo liefert genau 24h voraus
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
