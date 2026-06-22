@@ -226,8 +226,20 @@ class TestPlanScheduledRun(unittest.TestCase):
         self.assertEqual(plan.volume, 20)
 
     def test_scaled_duration_floored_to_one_minute(self):
-        # round(1 * 0.3) == 0 -> max(1, 0) == 1; round(1 * 0.3) == 0 volume
+        # round(1 * 0.3) == 0 -> duration max(1,0)=1; volume max(1,0)=1 (Ziel gesetzt)
         plan = plan_scheduled_run(1, 1, _decision(factor=0.3, skip=False))
         self.assertTrue(plan.scaled)
         self.assertEqual(plan.duration, 1)
+        self.assertEqual(plan.volume, 1)
+
+    def test_small_volume_keeps_minimum_of_one_liter_when_target_set(self):
+        # 3 L * 0.1 = 0.3 -> round = 0; da Ziel > 0 gesetzt: mindestens 1 L
+        plan = plan_scheduled_run(10, 3, _decision(factor=0.1, skip=False))
+        self.assertTrue(plan.scaled)
+        self.assertEqual(plan.volume, 1)
+
+    def test_zero_volume_stays_zero_when_no_target_set(self):
+        # volume=0 bedeutet kein Ziel; auch skaliert bleibt es 0 (zeitbasierter Guss)
+        plan = plan_scheduled_run(10, 0, _decision(factor=0.5, skip=False))
+        self.assertTrue(plan.scaled)
         self.assertEqual(plan.volume, 0)

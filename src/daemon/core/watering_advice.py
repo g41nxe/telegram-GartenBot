@@ -52,9 +52,9 @@ def plan_scheduled_run(duration: int, volume: int, decision: "WateringDecision |
     - 0 < factor < 1 -> Dauer/Volumen skaliert (Dauer mindestens 1 Minute).
     - factor >= 1 -> voller Guss unverändert.
 
-    Hinweis: Nur die Dauer hat einen Mindestwert (1 Minute). Das Volumen darf bewusst
-    auf 0 runden (= kein Volumenlimit, rein zeitbasiert) — dies entspricht dem
-    bestehenden Scheduler-Verhalten vor der Extraktion.
+    Hinweis: Nur die Dauer hat einen Mindestwert (1 Minute). Das Volumen hat einen
+    Mindestwert von 1 L, sofern ein Ziel gesetzt ist (volume > 0). War kein Ziel
+    gesetzt (volume == 0), bleibt es 0 (= kein Volumenlimit, zeitbasierter Guss).
     """
     if decision is None:
         return ScheduledRunPlan(
@@ -73,7 +73,7 @@ def plan_scheduled_run(duration: int, volume: int, decision: "WateringDecision |
         return ScheduledRunPlan(
             skip=False, skip_reason="",
             duration=max(1, round(duration * decision.factor)),
-            volume=round(volume * decision.factor),
+            volume=max(1, round(volume * decision.factor)) if volume > 0 else 0,
             scaled=True, factor=decision.factor,
             duration_original=duration, volume_original=volume,
             reasons=list(decision.reasons),
