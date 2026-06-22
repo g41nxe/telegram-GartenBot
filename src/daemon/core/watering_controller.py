@@ -164,6 +164,27 @@ class WateringController:
         if event.is_raining:
             self.interrupt_watering("Regen erkannt", event.rainlevel_mm)
 
+    def _complete_on_volume_limit(self, mqtt_name: str, cycle: Dict[str, Any], current_volume: float) -> None:
+        """Schließt das Ventil und feuert WateringCycleCompleted bei erreichtem Volumenlimit.
+
+        Gemeinsamer Abschlusspfad der Durchfluss-Integration (_integrate_flow) und der
+        direkten Gerätemeldung (_apply_device_volume). Aufruf muss unter gehaltenem
+        self._lock erfolgen.
+        """
+        target_volume = cycle["target_volume"]
+        logger.info(f"Guss-Steuerung [{mqtt_name}]: Volumenlimit von {target_volume}l erreicht. Schließe Ventil...")
+        cycle["timer"].cancel()
+        valve_topic = cycle.get("valve_topic", f"zigbee2mqtt/{mqtt_name}")
+        self.publish_fn(f"{valve_topic}/set", '{"state": "OFF"}')
+        duration_run = max(1, int((datetime.now() - cycle["start_time"]).total_seconds() / 60))
+        source = cycle["source"]
+        del self._active_cycles[mqtt_name]
+        self._last_flow_update_time.pop(mqtt_name, None)
+        self.event_bus.publish(WateringCycleCompleted(
+            duration_run, current_volume, source,
+            f"Volumenlimit von {target_volume}l erreicht in {duration_run} Min."
+        ))
+
     def _integrate_flow(self, flow_rate: float, elapsed_seconds: float, mqtt_name: str = "garden_valve"):
         """Integriert den Durchfluss für ein bestimmtes Ventil."""
         with self._lock:
@@ -180,18 +201,7 @@ class WateringController:
             logger.debug(f"Guss-Steuerung [{mqtt_name}]: +{added_liters:.3f}l (Gesamt: {current_volume:.2f}l)")
 
             if target_volume > 0 and current_volume >= target_volume:
-                logger.info(f"Guss-Steuerung [{mqtt_name}]: Volumenlimit von {target_volume}l erreicht. Schließe Ventil...")
-                cycle["timer"].cancel()
-                valve_topic = cycle.get("valve_topic", f"zigbee2mqtt/{mqtt_name}")
-                self.publish_fn(f"{valve_topic}/set", '{"state": "OFF"}')
-                duration_run = max(1, int((datetime.now() - cycle["start_time"]).total_seconds() / 60))
-                source = cycle["source"]
-                del self._active_cycles[mqtt_name]
-                self._last_flow_update_time.pop(mqtt_name, None)
-                self.event_bus.publish(WateringCycleCompleted(
-                    duration_run, current_volume, source,
-                    f"Volumenlimit von {target_volume}l erreicht in {duration_run} Min."
-                ))
+                self._complete_on_volume_limit(mqtt_name, cycle, current_volume)
 
     def _apply_device_volume(self, irrigation_volume: float, mqtt_name: str = "garden_valve"):
         """Übernimmt das kumulative Volumen direkt vom Gerät (SWV-ZFE: real_time_irrigation_volume)."""
@@ -208,18 +218,7 @@ class WateringController:
             logger.debug(f"Guss-Steuerung [{mqtt_name}]: Gerätevolumen = {current_volume:.2f}l")
 
             if target_volume > 0 and current_volume >= target_volume:
-                logger.info(f"Guss-Steuerung [{mqtt_name}]: Volumenlimit von {target_volume}l erreicht. Schließe Ventil...")
-                cycle["timer"].cancel()
-                valve_topic = cycle.get("valve_topic", f"zigbee2mqtt/{mqtt_name}")
-                self.publish_fn(f"{valve_topic}/set", '{"state": "OFF"}')
-                duration_run = max(1, int((datetime.now() - cycle["start_time"]).total_seconds() / 60))
-                source = cycle["source"]
-                del self._active_cycles[mqtt_name]
-                self._last_flow_update_time.pop(mqtt_name, None)
-                self.event_bus.publish(WateringCycleCompleted(
-                    duration_run, current_volume, source,
-                    f"Volumenlimit von {target_volume}l erreicht in {duration_run} Min."
-                ))
+                self._complete_on_volume_limit(mqtt_name, cycle, current_volume)
 
     def _on_valve_status_reported(self, event: ValveStatusReported):
         """Callback beim Empfang eines neuen Ventil-Zustands — filtert nach mqtt_name."""
