@@ -1,3 +1,15 @@
+## v1.6.0 — 2026-06-22
+
+### Neu
+- Wetterchart: „Jetzt"-Markierung mit vertikaler Linie und Stunden-Raster
+
+### Intern
+- Guss-Steuerung: doppelten Volumenlimit-Abschluss in Helfer extrahiert
+- Scheduler: reine, isoliert testbare Entscheidungsfunktion extrahiert
+- Test-Isolation der Hitzestrecke (test_06) verbessert
+
+---
+
 ## v1.5.0 — 2026-06-22
 
 ### Neu
