@@ -458,5 +458,33 @@ class TestGetDailyMaxTemps(unittest.TestCase):
         self.assertAlmostEqual(temp_max, 22.5)
 
 
+    def test_excludes_today_by_local_clock_not_utc(self):
+        """Tagesgrenze muss lokal berechnet werden, nicht als date('now') (UTC).
+
+        Simulation: Eintrag für lokales Heute (2026-06-15) einfügen,
+        datetime.now() auf 02:00 Uhr patchen (entspricht UTC-gestern in MESZ).
+        Die Funktion muss den Eintrag trotzdem ausschließen.
+        """
+        fake_today = datetime(2026, 6, 15, 2, 0, 0)
+        today_str = "2026-06-15"
+
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO weather_history (timestamp, rain_last_24h_mm, rain_next_24h_mm, "
+            "current_temp, weather_code, temp_min, temp_max, rain_probability) "
+            "VALUES (?, 0, 0, 20, 0, 15, ?, 0)",
+            (f"{today_str}T02:00:00", 35.0),
+        )
+        conn.commit()
+        conn.close()
+
+        with patch("daemon.adapters.database.datetime") as mock_dt:
+            mock_dt.now.return_value = fake_today
+            result = db.get_daily_max_temps(5)
+
+        self.assertEqual(result, [])
+
+
 if __name__ == "__main__":
     unittest.main()

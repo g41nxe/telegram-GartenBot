@@ -392,17 +392,18 @@ def get_daily_max_temps(days: int = 5) -> list[tuple[str, float]]:
     conn = get_connection()
     try:
         cursor = conn.cursor()
+        today_local = datetime.now().strftime("%Y-%m-%d")
         cursor.execute(
             """
             SELECT date(timestamp) AS day, MAX(temp_max) AS max_temp
             FROM weather_history
-            WHERE date(timestamp) < date('now')
+            WHERE date(timestamp) < ?
               AND temp_max IS NOT NULL
             GROUP BY day
             ORDER BY day DESC
             LIMIT ?
             """,
-            (days,),
+            (today_local, days),
         )
         return [(row[0], float(row[1])) for row in cursor.fetchall()]
     except Exception as e:
