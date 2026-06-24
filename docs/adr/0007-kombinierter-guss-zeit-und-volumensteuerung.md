@@ -33,13 +33,19 @@ Sobald einer der beiden Wächter anschlägt, wird das Schließen des Ventils aus
 - **Volumenlimit zuerst erreicht**: Der Guss war erfolgreich. Das Ventil schließt planmäßig.
 - **Zeitlimit erreicht bei aktivem Volumenlimit**: Dies deutet auf einen Fehler hin (Sensor blockiert, verstopfter Schlauch, Druckabfall). Das Ventil wird sofort geschlossen, und es wird eine Notfall-Warnung per Telegram-Push versendet: `⚠️ Notfall-Abschaltung nach X Minuten ausgelöst! Zielwassermenge von Y Litern wurde nicht erreicht (geflossen: Z Liter).` Dieser Lauf wird in der Historie als `failed` markiert.
 
-### Volumen-Quelle: kumulativer Gerätezähler statt Durchflussrate
+### Volumen-Quelle: Guss-Volumen als Delta des kumulativen Gerätezählers
 
-Das Sonoff SWV-ZFE meldet **kein** instantanes `flow_rate`-Feld (L/min). Stattdessen liefert es `real_time_irrigation_volume` — einen kumulativen Zähler in Litern, der beim Öffnen des Ventils bei 0 beginnt und während des Laufs wächst.
+Das Sonoff SWV-ZFE meldet **kein** instantanes `flow_rate`-Feld (L/min). Stattdessen liefert es `real_time_irrigation_volume` — einen kumulativen Zähler in Litern.
 
-Der `WateringController` liest diesen Wert daher **direkt** aus dem `ValveStatusReported`-Event (`irrigation_volume`-Feld) und übernimmt ihn als `current_volume`, ohne zeitbasierte Integration. Die `_integrate_flow()`-Methode (flow_rate × elapsed_time) bleibt als Fallback für den `SimulatedMqttAdapter` und potenzielle zukünftige Geräte erhalten, die tatsächlich eine Durchflussrate melden.
+**Korrektur einer früheren Fehlannahme:** Dieser Zähler beginnt **nicht** beim Öffnen des Ventils bei 0. Er läuft geräteweit über alle Bewässerungen hinweg weiter und wird durch unseren rohen `state:ON`-Befehl **nicht** zurückgesetzt (ein Reset erfolgt nur über das geräteeigene Bewässerungsprogramm, das wir nicht verwenden). Der Absolutwert ist daher als Guss-Volumen unbrauchbar.
 
-Die oben beschriebene "Volumen-Deckelung" (60-Sekunden-Cap) gilt nur für den flow_rate-Pfad und ist beim kumulativen Pfad nicht relevant.
+Der `WateringController` berechnet das **Guss-Volumen** deshalb als **Differenz** zum Zählerstand beim Öffnen (Baseline):
+
+- Die Guss-Steuerung schreibt den zuletzt gemeldeten Zählerstand pro Ventil fortlaufend mit (`_latest_device_volume`) — auch außerhalb eines Gusses. Beim Start eines Gusses wird dieser Stand als Baseline (Nullpunkt) in den Zyklus übernommen. So ist der Nullpunkt auch dann aktuell, wenn der Zähler zwischen zwei Güssen (z. B. durch ein Geräte-Reset oder manuelle Nutzung) verändert wurde.
+- Pro Geräte-Report gilt `guss_volumen = max(bisheriges_guss_volumen, gemeldeter_wert − baseline)`. Das `max()` ignoriert transiente Funk-Ausreißer (einzelne zu niedrige Reports); die Subtraktion der Baseline liefert die real geflossene Menge dieses Gusses und verhindert negative Werte bei einem Zähler-Rücksprung.
+- Ist der Zählerstand beim Öffnen unbekannt (Kaltstart, noch kein Report gesehen), dient der erste In-Guss-Report als Baseline (vernachlässigbare Unterzählung).
+
+Die `_integrate_flow()`-Methode (flow_rate × elapsed_time) bleibt als Fallback für den `SimulatedMqttAdapter` und potenzielle zukünftige Geräte erhalten, die tatsächlich eine Durchflussrate melden. Die oben beschriebene "Volumen-Deckelung" (60-Sekunden-Cap) gilt nur für diesen flow_rate-Pfad.
 
 ## Konsequenzen
 
@@ -49,3 +55,5 @@ Die oben beschriebene "Volumen-Deckelung" (60-Sekunden-Cap) gilt nur für den fl
   - **Einheitliches Datenbankschema**: Das Datenbankschema verwaltet für alle Zyklen permanent beide Werte (`duration_minutes` und `target_volume_liters`), was die Datenhaltung vereinheitlicht.
 - **Nachteile**:
   - Geringfügig höhere Komplexität im Code durch die parallele Überwachung (Threading und Timer).
+  - Die Guss-Steuerung hält jetzt zyklusübergreifenden Zustand (`_latest_device_volume`), um den Nullpunkt beim Öffnen zu kennen.
+- **Gelernte Lehre**: Eine frühere Fehlannahme (der Gerätezähler beginne pro Guss bei 0) führte dazu, dass der kumulative Lebensdauer-Zählerstand direkt als Guss-Volumen interpretiert wurde. Folge: Volumenlimits lösten an Zufallspunkten aus (sobald der Lebenszähler das Limit überschritt) und die Historie wurde mit kumulativen Müll-Litern verfälscht. Die Baseline/Delta-Berechnung behebt dies; der flow_rate-Pfad des Simulators deckte den realen Gerätepfad nicht ab und ließ den Fehler durchrutschen.

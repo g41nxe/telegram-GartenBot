@@ -179,11 +179,19 @@ class TestWateringController(unittest.TestCase):
         """get_active_cycle() ohne Argument gibt None zurück wenn kein Zyklus läuft."""
         self.assertIsNone(self.controller.get_active_cycle())
 
-    # --- irrigation_volume (Gerät meldet kumulatives Volumen direkt) ---
+    # --- Guss-Volumen: Delta des kumulativen Gerätezählers (ADR 0007) ---
 
-    def test_irrigation_volume_used_directly_from_device(self):
-        """WateringController übernimmt irrigation_volume direkt; kein Integrieren nötig."""
+    def _seed_device_counter(self, value, mqtt_name="garden_valve"):
+        """Simuliert einen vor dem Guss bekannten, geräteweiten Zählerstand (Baseline-Quelle)."""
         from daemon.core.valve_events import ValveStatusReported
+        self.bus.publish(ValveStatusReported(mqtt_name, "OFF", 0.0, 95, 120, irrigation_volume=value))
+
+    def test_guss_volumen_is_delta_from_open_baseline(self):
+        """Guss-Volumen = gemeldeter Zähler − Stand beim Öffnen, nicht der Absolutwert."""
+        from daemon.core.valve_events import ValveStatusReported
+
+        # Gerätezähler steht vor dem Guss bereits bei 200 L (kumulativ, geräteweit)
+        self._seed_device_counter(200.0)
 
         success, _ = self.controller.start_watering(
             duration_minutes=10, target_volume_liters=20, source="manual",
@@ -191,33 +199,118 @@ class TestWateringController(unittest.TestCase):
         )
         self.assertTrue(success)
 
-        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=3.5))
-        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 3.5, places=2)
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=203.0))
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 3.0, places=2)
 
-        # Kumulativer Wert wächst weiter → Controller übernimmt den neuen Wert
-        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=7.2))
-        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 7.2, places=2)
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=207.0))
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 7.0, places=2)
 
-    def test_volume_limit_triggers_from_irrigation_volume(self):
-        """Volumenlimit löst aus wenn irrigation_volume das Target überschreitet."""
+    def test_cumulative_counter_not_reset_between_guss(self):
+        """Reproduziert Guss C: Zähler steht schon hoch — darf das Volumenlimit NICHT sofort auslösen."""
+        from daemon.core.valve_events import ValveStatusReported
+
+        # Vorheriger Guss hinterließ den Zähler bei 206 L
+        self._seed_device_counter(206.0)
+
+        success, _ = self.controller.start_watering(
+            duration_minutes=5, target_volume_liters=50, source="manual",
+            mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve"
+        )
+        self.assertTrue(success)
+
+        # Gerät meldet weiterhin 206 (noch kein Wasser geflossen) → Guss-Volumen 0, NICHT ausgelöst
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=206.0))
+        self.assertIsNotNone(self.controller.get_active_cycle("garden_valve"),
+                             "Volumenlimit darf nicht durch den kumulativen Altbestand ausgelöst werden")
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 0.0, places=2)
+
+        # 4 L fließen tatsächlich → Zähler 210, Guss-Volumen 4, Ziel 50 weiter nicht erreicht
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=210.0))
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 4.0, places=2)
+        self.assertIsNotNone(self.controller.get_active_cycle("garden_valve"))
+
+    def test_volume_limit_triggers_on_real_delta(self):
+        """Volumenlimit löst aus, wenn das Guss-Volumen (Delta) das Target erreicht."""
         from daemon.core.valve_events import ValveStatusReported
 
         events = []
         self.bus.subscribe(WateringCycleCompleted, lambda e: events.append(e))
 
+        self._seed_device_counter(200.0)
         success, _ = self.controller.start_watering(
             duration_minutes=10, target_volume_liters=5, source="manual",
             mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve"
         )
         self.assertTrue(success)
 
-        # Gerät meldet 5.3 L — überschreitet Limit von 5 L
-        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=5.3))
+        # 3 L Delta → noch nicht ausgelöst
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=203.0))
+        self.assertIsNotNone(self.controller.get_active_cycle("garden_valve"))
 
+        # 6 L Delta ≥ 5 → ausgelöst, volume_run = 6
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=206.0))
         self.assertIsNone(self.controller.get_active_cycle("garden_valve"))
         self.assertEqual(len(events), 1)
-        self.assertAlmostEqual(events[0].volume_run, 5.3, places=2)
+        self.assertAlmostEqual(events[0].volume_run, 6.0, places=2)
         self.assertIn("Volumenlimit", events[0].details)
+
+    def test_transient_low_report_is_ignored(self):
+        """Ein einzelner zu niedriger Funk-Ausreißer darf das Guss-Volumen nicht verfälschen (max-Schutz)."""
+        from daemon.core.valve_events import ValveStatusReported
+
+        self._seed_device_counter(200.0)
+        self.controller.start_watering(
+            duration_minutes=10, target_volume_liters=100, source="manual",
+            mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve"
+        )
+
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=210.0))
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 10.0, places=2)
+
+        # Glitch: Einzel-Report mit zu niedrigem Wert → ignoriert
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=3.0))
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 10.0, places=2)
+
+        # Weiter normal → 11 L
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=211.0))
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 11.0, places=2)
+
+    def test_mid_guss_counter_reset_never_negative(self):
+        """Echter Zähler-Reset mitten im Guss: Volumen bleibt stehen, wird nie negativ."""
+        from daemon.core.valve_events import ValveStatusReported
+
+        self._seed_device_counter(200.0)
+        self.controller.start_watering(
+            duration_minutes=10, target_volume_liters=100, source="manual",
+            mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve"
+        )
+
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=210.0))
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 10.0, places=2)
+
+        # Gerät verliert Strom, Zähler springt auf 5 → Volumen bleibt auf 10, nicht negativ
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=5.0))
+        vol = self.controller.get_active_volume("garden_valve")
+        self.assertGreaterEqual(vol, 0.0)
+        self.assertAlmostEqual(vol, 10.0, places=2)
+
+    def test_cold_start_uses_first_report_as_baseline(self):
+        """Ohne vorher bekannten Zählerstand dient der erste In-Guss-Report als Baseline."""
+        from daemon.core.valve_events import ValveStatusReported
+
+        # Kein _seed_device_counter → Baseline beim Öffnen unbekannt
+        self.controller.start_watering(
+            duration_minutes=10, target_volume_liters=20, source="manual",
+            mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve"
+        )
+
+        # Erster Report = Baseline → Guss-Volumen 0
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=50.0))
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 0.0, places=2)
+
+        # +3.7 L
+        self.bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120, irrigation_volume=53.7))
+        self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 3.7, places=2)
 
 
 if __name__ == "__main__":

@@ -41,6 +41,9 @@ class WateringController:
         # Indiziert nach mqtt_name; unterstützt mehrere parallele Zyklen
         self._active_cycles: Dict[str, Dict[str, Any]] = {}
         self._last_flow_update_time: Dict[str, Optional[datetime]] = {}
+        # Zuletzt gemeldeter kumulativer Gerätezählerstand pro Ventil — auch außerhalb
+        # eines Gusses fortgeschrieben, damit beim Öffnen der Nullpunkt (Baseline) bekannt ist.
+        self._latest_device_volume: Dict[str, float] = {}
 
         self.event_bus.subscribe(ValveStatusReported, self._on_valve_status_reported)
         self.event_bus.subscribe(RainSensorMeasured, self._on_rain_sensor_measured)
@@ -101,6 +104,9 @@ class WateringController:
                 "duration": duration_minutes,
                 "target_volume": target_volume_liters,
                 "current_volume": 0.0,
+                # Nullpunkt des Guss-Volumens: Gerätezählerstand beim Öffnen (ADR 0007).
+                # None, falls noch kein Stand bekannt ist → erster In-Guss-Report wird Baseline.
+                "baseline_device_volume": self._latest_device_volume.get(mqtt_name),
                 "source": source,
                 "timer": timer,
                 "valve_topic": valve_topic,
@@ -204,18 +210,33 @@ class WateringController:
                 self._complete_on_volume_limit(mqtt_name, cycle, current_volume)
 
     def _apply_device_volume(self, irrigation_volume: float, mqtt_name: str = "garden_valve"):
-        """Übernimmt das kumulative Volumen direkt vom Gerät (SWV-ZFE: real_time_irrigation_volume)."""
+        """Berechnet das Guss-Volumen als Delta des kumulativen Gerätezählers seit dem Öffnen.
+
+        Der Sonoff SWV-ZFE meldet `real_time_irrigation_volume` als geräteweiten, NICHT pro
+        Guss zurückgesetzten Zähler. Das Guss-Volumen ist daher die Differenz zum Stand beim
+        Öffnen (Baseline). Das `max()` ignoriert transiente Funk-Ausreißer (zu niedrige
+        Einzel-Reports) und verhindert negative Werte bei einem Zähler-Rücksprung. Siehe ADR 0007.
+        """
         with self._lock:
             if mqtt_name not in self._active_cycles:
                 return
 
             cycle = self._active_cycles[mqtt_name]
-            new_volume = max(cycle.get("current_volume", 0.0), irrigation_volume)
-            cycle["current_volume"] = new_volume
-            current_volume = round(new_volume, 2)
+            baseline = cycle.get("baseline_device_volume")
+            if baseline is None:
+                # Kaltstart: Stand beim Öffnen war unbekannt → erster Report ist die Baseline.
+                baseline = irrigation_volume
+                cycle["baseline_device_volume"] = baseline
+
+            guss_volume = max(cycle.get("current_volume", 0.0), irrigation_volume - baseline)
+            cycle["current_volume"] = guss_volume
+            current_volume = round(guss_volume, 2)
             target_volume = cycle["target_volume"]
 
-            logger.debug(f"Guss-Steuerung [{mqtt_name}]: Gerätevolumen = {current_volume:.2f}l")
+            logger.debug(
+                f"Guss-Steuerung [{mqtt_name}]: Gerätezähler={irrigation_volume:.2f}l, "
+                f"Baseline={baseline:.2f}l, Guss-Volumen={current_volume:.2f}l"
+            )
 
             if target_volume > 0 and current_volume >= target_volume:
                 self._complete_on_volume_limit(mqtt_name, cycle, current_volume)
@@ -226,6 +247,10 @@ class WateringController:
         now = datetime.now()
 
         with self._lock:
+            # Gerätezählerstand auch außerhalb eines Gusses mitschreiben → Baseline beim
+            # nächsten Öffnen kennt den aktuellen Stand (inkl. zwischenzeitlicher Änderungen).
+            if event.irrigation_volume > 0:
+                self._latest_device_volume[mqtt_name] = event.irrigation_volume
             if mqtt_name not in self._active_cycles:
                 return
             last_update = self._last_flow_update_time.get(mqtt_name)

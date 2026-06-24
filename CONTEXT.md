@@ -48,6 +48,10 @@ _Avoid_: Abrufzeitpunkt, API-Zeit
 Ein Bewässerungslauf, der durch eine maximale Dauer (Zeitlimit) und eine maximale Wassermenge (Volumenlimit) definiert ist. Die Bewässerung stoppt automatisch, sobald einer der beiden Grenzwerte zuerst erreicht wird. Im parallelen Betrieb gilt dies individuell pro Ventil.
 _Avoid_: Dual-Modus, Mengen-Guss, Zeit-Guss
 
+**Guss-Volumen**:
+Die im aktuellen Kombinierten Guss tatsächlich geflossene Wassermenge in Litern. Wird als **Differenz** des kumulativen Gerätezählers (`real_time_irrigation_volume` des Ventils) seit dem Öffnen des Ventils berechnet — **nicht** als dessen Absolutwert, da der Zähler geräteweit weiterläuft und durch unseren `state:ON`-Befehl nicht zurückgesetzt wird. Wird gegen das Volumenlimit geprüft und in der Datenbank protokolliert. Siehe ADR 0007.
+_Avoid_: geflossene Menge, current_volume, Gerätezähler (meint den rohen Absolutwert)
+
 **Ventil-Kopplung**:
 Der geführte Einrichtungsvorgang im Telegram-Bot (`/setup`), bei dem ein neues Ventil mit dem Funk-Koordinator verbunden wird. Der Benutzer vergibt vorab einen Wunschnamen. Der Bewässerungs-Daemon aktiviert temporär den Koppelmodus des Mittelweg-Dienstes, wartet auf das Beitrittssignal des Ventils, weist ihm einen eindeutigen Systemnamen (`valve_<ieee_address>`) zu und registriert es in der Datenbank.
 _Avoid_: Pairing, Registrierung, Gerät hinzufügen
