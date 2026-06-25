@@ -1,3 +1,13 @@
+## v1.7.0 — 2026-06-25
+
+### Neu
+- Benachrichtigung bei unerwarteter Ventilöffnung (Push, wenn ein Ventil ohne aktiven Guss öffnet)
+
+### Behoben
+- Wassermengenmessung: Guss-Volumen wieder korrekt erfasst (Volumenlimit greift, Historie stimmt)
+
+---
+
 ## v1.6.1 — 2026-06-25
 
 ### Behoben
