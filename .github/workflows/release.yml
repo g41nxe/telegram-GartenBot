@@ -62,7 +62,7 @@ jobs:
 
           # Alles in ein Archiv packen
           tar -czf "garden-${VERSION}.tar.gz" \
-            src/ scripts/ tools/ \
+            src/ scripts/ tools/ config/ \
             VERSION Z2M_VERSION \
             -C /tmp/z2m-stage zigbee2mqtt
 

@@ -84,7 +84,7 @@ curl -sfL \
 log "Lege Backup an..."
 rm -rf "$BACKUP_DIR"
 mkdir -p "$BACKUP_DIR"
-for DIR in src scripts tools; do
+for DIR in src scripts tools config; do
     [ -d "$GARDEN_DIR/$DIR" ] && cp -r "$GARDEN_DIR/$DIR" "$BACKUP_DIR/"
 done
 [ -d "$Z2M_DIR" ] && cp -r "$Z2M_DIR" "$BACKUP_DIR/zigbee2mqtt_backup"
@@ -101,7 +101,7 @@ mkdir -p "$TMP_EXTRACT"
 tar -xzf "$TMP_ARCHIVE" -C "$TMP_EXTRACT"
 
 # Dateien übertragen — .env und garden.db nie anfassen
-for DIR in src scripts tools; do
+for DIR in src scripts tools config; do
     if [ -d "$TMP_EXTRACT/$DIR" ]; then
         rm -rf "$GARDEN_DIR/$DIR"
         cp -r "$TMP_EXTRACT/$DIR" "$GARDEN_DIR/"
@@ -151,7 +151,7 @@ fi
 
 # --- Rollback ---
 log "Health-Check fehlgeschlagen. Starte Rollback auf $LOCAL_VERSION..."
-for DIR in src scripts tools; do
+for DIR in src scripts tools config; do
     if [ -d "$BACKUP_DIR/$DIR" ]; then
         rm -rf "$GARDEN_DIR/$DIR"
         cp -r "$BACKUP_DIR/$DIR" "$GARDEN_DIR/"
