@@ -3,7 +3,7 @@ import threading
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, Optional, Tuple
 from .event_bus import Event, EventBus
-from .valve_events import ValveStatusReported
+from .valve_events import ValveStatusReported, UnexpectedValveOpened, UnexpectedValveResolved
 from .sensor_events import RainSensorMeasured
 from .watering_events import (
     WateringCycleStarted,
@@ -41,6 +41,10 @@ class WateringController:
         # Indiziert nach mqtt_name; unterstützt mehrere parallele Zyklen
         self._active_cycles: Dict[str, Dict[str, Any]] = {}
         self._last_flow_update_time: Dict[str, Optional[datetime]] = {}
+        # Unerwartete Ventilöffnung (Feature 0029): zuletzt gemeldeter Zustand und
+        # Episode-Flag pro Ventil — flankengesteuerte Erkennung ohne aktiven Zyklus.
+        self._last_valve_state: Dict[str, Optional[str]] = {}
+        self._unexpected_open: Dict[str, bool] = {}
 
         self.event_bus.subscribe(ValveStatusReported, self._on_valve_status_reported)
         self.event_bus.subscribe(RainSensorMeasured, self._on_rain_sensor_measured)
@@ -86,9 +90,6 @@ class WateringController:
             if mqtt_name in self._active_cycles:
                 return False, "Es läuft bereits eine Bewässerung."
 
-            if not self.publish_fn(f"{valve_topic}/set", '{"state": "ON"}'):
-                return False, "Fehler beim Ansteuern des Ventils über MQTT."
-
             duration_seconds = duration_minutes * 60
             timer = threading.Timer(duration_seconds, self._time_limit_callback, args=(mqtt_name, valve_topic))
             timer.daemon = True
@@ -105,6 +106,15 @@ class WateringController:
                 "timer": timer,
                 "valve_topic": valve_topic,
             }
+
+            # Zyklus ist registriert, BEVOR das Ventil geöffnet wird. So wird ein synchron
+            # zurückgemeldeter ON-Status (z.B. SimulatedMqttAdapter) korrekt dem Zyklus
+            # zugeordnet und nicht als Unerwartete Ventilöffnung (Feature 0029) fehlgedeutet.
+            if not self.publish_fn(f"{valve_topic}/set", '{"state": "ON"}'):
+                del self._active_cycles[mqtt_name]
+                self._last_flow_update_time.pop(mqtt_name, None)
+                return False, "Fehler beim Ansteuern des Ventils über MQTT."
+
             timer.start()
 
         self.event_bus.publish(WateringCycleStarted(duration_minutes, target_volume_liters, source))
@@ -231,6 +241,27 @@ class WateringController:
         """Callback beim Empfang eines neuen Ventil-Zustands — filtert nach mqtt_name."""
         mqtt_name = event.mqtt_name
         now = datetime.now()
+
+        # --- Unerwartete Ventilöffnung (Feature 0029) ---
+        # Flankengesteuert, auch ohne aktiven Zyklus. Zustand unter dem Lock ermitteln,
+        # das Ereignis aber NACH dem Lock publizieren (EventBus ist synchron → Re-Entrancy meiden).
+        alert_event = None
+        with self._lock:
+            if config.UNEXPECTED_VALVE_ALERT_ENABLED:
+                has_cycle = mqtt_name in self._active_cycles
+                last_state = self._last_valve_state.get(mqtt_name)
+                if event.state == "ON" and not has_cycle:
+                    # Cold-Start (last_state None) feuert NICHT; nur echte Flanke Nicht-ON → ON.
+                    if last_state is not None and last_state != "ON" and not self._unexpected_open.get(mqtt_name):
+                        self._unexpected_open[mqtt_name] = True
+                        alert_event = UnexpectedValveOpened(mqtt_name)
+                elif event.state != "ON" and self._unexpected_open.get(mqtt_name):
+                    self._unexpected_open[mqtt_name] = False
+                    alert_event = UnexpectedValveResolved(mqtt_name)
+            self._last_valve_state[mqtt_name] = event.state
+
+        if alert_event is not None:
+            self.event_bus.publish(alert_event)
 
         with self._lock:
             if mqtt_name not in self._active_cycles:

@@ -32,6 +32,7 @@ from ..adapters import weather as _weather_adapter
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
 from ..core.camera_events import CameraInactivityAlertTriggered, CameraInactivityAlertResolved
 from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
+from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 
 logger = logging.getLogger("garden_telegram_ui")
 
@@ -2158,6 +2159,24 @@ def _on_rain_sensor_inactivity_alert(event: RainSensorInactivityAlertTriggered):
 def _on_rain_sensor_inactivity_resolved(event: RainSensorInactivityAlertResolved):
     telegram_client.broadcast_notification("🟢 *Regensensor wieder aktiv* — Messung empfangen.")
 
+def _on_unexpected_valve_opened(event: UnexpectedValveOpened):
+    valve = database.get_valve_by_mqtt_name(event.mqtt_name) if event.mqtt_name else None
+    wish_name = valve["wish_name"] if valve else event.mqtt_name
+    safety_min = config.get_setting("SAFETY_TIMEOUT_MINUTES", 30)
+    telegram_client.broadcast_notification(
+        f"⚠️ *Ventil von außen geöffnet*\n"
+        f"„{wish_name}“ wurde ohne aktiven Guss geöffnet.\n"
+        f"Warst das nicht du, prüf die Leitung — das Hardware-Sicherheits-Timeout "
+        f"schließt spätestens nach {safety_min} Min."
+    )
+
+def _on_unexpected_valve_resolved(event: UnexpectedValveResolved):
+    valve = database.get_valve_by_mqtt_name(event.mqtt_name) if event.mqtt_name else None
+    wish_name = valve["wish_name"] if valve else event.mqtt_name
+    telegram_client.broadcast_notification(
+        f"✅ *Ventil wieder geschlossen*\n„{wish_name}“ ist wieder zu."
+    )
+
 def subscribe_event_handlers():
     """Verdrahtet alle telegram_ui-Benachrichtigungs-Handler mit dem globalen Ereignis-Kanal.
 
@@ -2181,3 +2200,5 @@ def subscribe_event_handlers():
     _global_bus.subscribe(WateringCycleInterrupted, _on_watering_interrupted)
     _global_bus.subscribe(RainSensorInactivityAlertTriggered, _on_rain_sensor_inactivity_alert)
     _global_bus.subscribe(RainSensorInactivityAlertResolved, _on_rain_sensor_inactivity_resolved)
+    _global_bus.subscribe(UnexpectedValveOpened, _on_unexpected_valve_opened)
+    _global_bus.subscribe(UnexpectedValveResolved, _on_unexpected_valve_resolved)

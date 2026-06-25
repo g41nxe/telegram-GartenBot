@@ -116,6 +116,9 @@ except ValueError:
 
 DAILY_REPORT_TIME = os.getenv("DAILY_REPORT_TIME", "08:00")
 
+# --- Unerwartete Ventilöffnung ---
+UNEXPECTED_VALVE_ALERT_ENABLED = os.getenv("UNEXPECTED_VALVE_ALERT_ENABLED", "true").lower() == "true"
+
 # --- Inaktivitäts-Watchdog ---
 WATCHDOG_ENABLED = os.getenv("WATCHDOG_ENABLED", "true").lower() == "true"
 try:

@@ -27,3 +27,15 @@ class DeviceJoinedEvent(Event):
     """Event, das gefeuert wird, wenn ein neues Zigbee-Gerät beigetreten ist."""
     def __init__(self, ieee_address: str):
         self.ieee_address = ieee_address
+
+
+class UnexpectedValveOpened(Event):
+    """Ein Ventil wurde ohne aktiven Guss geöffnet (Unerwartete Ventilöffnung)."""
+    def __init__(self, mqtt_name: str):
+        self.mqtt_name = mqtt_name
+
+
+class UnexpectedValveResolved(Event):
+    """Ein zuvor unerwartet geöffnetes Ventil ist wieder geschlossen."""
+    def __init__(self, mqtt_name: str):
+        self.mqtt_name = mqtt_name

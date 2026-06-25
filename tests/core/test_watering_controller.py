@@ -4,8 +4,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
+from unittest.mock import patch
+
 from daemon.core.event_bus import EventBus
 from daemon.adapters.mqtt_client import SimulatedMqttAdapter
+from daemon.core.valve_events import (
+    ValveStatusReported,
+    UnexpectedValveOpened,
+    UnexpectedValveResolved,
+)
 from daemon.core.watering_controller import (
     WateringController,
     WateringCycleStarted,
@@ -272,6 +279,76 @@ class TestWateringController(unittest.TestCase):
 
         self._running(12.0)
         self.assertAlmostEqual(self.controller.get_active_volume("garden_valve"), 12.0, places=2)
+
+
+class TestUnexpectedValveOpen(unittest.TestCase):
+    """Erkennung der Unerwarteten Ventilöffnung (Feature 0029, ADR 0032)."""
+
+    def setUp(self):
+        self.bus = EventBus()
+        # No-op-publish: präzise Kontrolle über die Event-Sequenz (kein synchroner OFF-Echo).
+        self.controller = WateringController(self.bus, lambda t, p: True)
+        self.opened = []
+        self.resolved = []
+        self.bus.subscribe(UnexpectedValveOpened, lambda e: self.opened.append(e))
+        self.bus.subscribe(UnexpectedValveResolved, lambda e: self.resolved.append(e))
+
+    def _report(self, state, name="garden_valve"):
+        self.bus.publish(ValveStatusReported(name, state, 0.0, 95, 120))
+
+    def test_external_open_emits_event_once(self):
+        """Echte Flanke OFF→ON ohne aktiven Zyklus → genau ein Ereignis, auch bei Folge-Reports."""
+        self._report("OFF")   # bekannter Vorzustand (kein Cold-Start)
+        self._report("ON")    # externe Öffnung
+        self._report("ON")    # Folge-Report
+        self.assertEqual(len(self.opened), 1)
+        self.assertEqual(self.opened[0].mqtt_name, "garden_valve")
+
+    def test_cold_start_on_does_not_emit(self):
+        """Allererster Report ist ON (unbekannter Vorzustand) → kein Ereignis (Doppelfeuer-Schutz)."""
+        self._report("ON")
+        self.assertEqual(self.opened, [])
+
+    def test_open_with_active_cycle_no_event(self):
+        """ON mit aktivem Zyklus (regulärer Guss) → kein Ereignis."""
+        self.controller.start_watering(5, 0, "manual", mqtt_name="garden_valve",
+                                       valve_topic="zigbee2mqtt/garden_valve")
+        self._report("ON")
+        self.assertEqual(self.opened, [])
+
+    def test_resolved_on_close(self):
+        """Nach einer Episode meldet OFF die Entwarnung."""
+        self._report("OFF")
+        self._report("ON")
+        self.assertEqual(len(self.opened), 1)
+        self._report("OFF")
+        self.assertEqual(len(self.resolved), 1)
+        self.assertEqual(self.resolved[0].mqtt_name, "garden_valve")
+
+    def test_daemon_close_lingering_on_no_false_alarm(self):
+        """Daemon schließt (Zyklus weg), Ventil meldet noch kurz ON → kein Fehlalarm, keine Entwarnung."""
+        self.controller.start_watering(5, 0, "manual", mqtt_name="garden_valve",
+                                       valve_topic="zigbee2mqtt/garden_valve")
+        self._report("ON")                          # während des Zyklus (last_state=ON)
+        self.controller.stop_watering("garden_valve")  # Zyklus entfernt (No-op-publish, kein Echo)
+        self._report("ON")                          # lagged ON nach dem Schließen
+        self.assertEqual(self.opened, [])
+        self._report("OFF")
+        self.assertEqual(self.resolved, [])         # Episode war nie aktiv
+
+    def test_disabled_emits_nothing(self):
+        """Bei UNEXPECTED_VALVE_ALERT_ENABLED=False wird nichts veröffentlicht."""
+        with patch("daemon.core.watering_controller.config.UNEXPECTED_VALVE_ALERT_ENABLED", False):
+            self._report("OFF")
+            self._report("ON")
+        self.assertEqual(self.opened, [])
+
+    def test_detection_is_per_valve(self):
+        """Erkennung läuft unabhängig pro mqtt_name."""
+        self._report("OFF", "valve_a")
+        self._report("OFF", "valve_b")
+        self._report("ON", "valve_a")
+        self.assertEqual([e.mqtt_name for e in self.opened], ["valve_a"])
 
 
 if __name__ == "__main__":

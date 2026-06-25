@@ -950,6 +950,45 @@ class TestWatchdogUiHandlers(unittest.TestCase):
         self.assertIn("Hochbeet", msg)
 
 
+class TestUnexpectedValveUiHandlers(unittest.TestCase):
+    """telegram_ui-Handler für UnexpectedValveOpened / UnexpectedValveResolved (Feature 0029)."""
+
+    @patch("daemon.ui.telegram_ui.config.get_setting", return_value=30)
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_opened_notifies_with_wish_name_and_safety_minutes(self, mock_client, mock_db, mock_get):
+        from daemon.ui.telegram_ui import _on_unexpected_valve_opened
+        from daemon.core.valve_events import UnexpectedValveOpened
+        mock_db.get_valve_by_mqtt_name.return_value = {"wish_name": "Rasen"}
+        _on_unexpected_valve_opened(UnexpectedValveOpened("garden_valve"))
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("Rasen", msg)
+        self.assertIn("von außen geöffnet", msg)
+        self.assertIn("30", msg)
+
+    @patch("daemon.ui.telegram_ui.config.get_setting", return_value=30)
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_opened_falls_back_to_mqtt_name(self, mock_client, mock_db, mock_get):
+        from daemon.ui.telegram_ui import _on_unexpected_valve_opened
+        from daemon.core.valve_events import UnexpectedValveOpened
+        mock_db.get_valve_by_mqtt_name.return_value = None
+        _on_unexpected_valve_opened(UnexpectedValveOpened("valve_xyz"))
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("valve_xyz", msg)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_resolved_notifies_with_wish_name(self, mock_client, mock_db):
+        from daemon.ui.telegram_ui import _on_unexpected_valve_resolved
+        from daemon.core.valve_events import UnexpectedValveResolved
+        mock_db.get_valve_by_mqtt_name.return_value = {"wish_name": "Hochbeet"}
+        _on_unexpected_valve_resolved(UnexpectedValveResolved("garden_valve"))
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("Hochbeet", msg)
+        self.assertIn("wieder", msg)
+
+
 def _make_camera(wish_name="Garten", last_seen=None, sleep_duration_seconds=900,
                   resolution="UXGA", quality=10):
     return {

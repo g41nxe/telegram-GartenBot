@@ -44,6 +44,7 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertEqual(config.RAIN_THRESHOLD_MM, 3.0)
         self.assertEqual(config.SAFETY_TIMEOUT_MINUTES, 30)
         self.assertEqual(config.MQTT_BROKER_PORT, 1883)
+        self.assertTrue(config.UNEXPECTED_VALVE_ALERT_ENABLED)
         
     def test_02_database_schedule_crud(self):
         """Testet das Anlegen, Modifizieren, Umschalten und Löschen von Zeitplänen."""
@@ -740,6 +741,52 @@ class TestGardenIrrigation(unittest.TestCase):
         finally:
             scheduler._controller.start_watering = original_start
             database.delete_schedule(sched_id)
+
+    def test_23_unexpected_valve_open_emits_and_resolves(self):
+        """End-to-End: Ventil öffnet ohne aktiven Guss → UnexpectedValveOpened; schließt → Resolved."""
+        from daemon.core.valve_events import (
+            ValveStatusReported, UnexpectedValveOpened, UnexpectedValveResolved,
+        )
+        bus = mqtt_client._global_bus
+        self.watering_ctrl.stop_watering()
+        mqtt_client.valve_status["state"] = "OFF"  # Simulations-Loop ruhig halten
+        # Bekannten Vorzustand OFF setzen + evtl. Alt-Episode löschen (vor dem Subscriben)
+        bus.publish(ValveStatusReported("garden_valve", "OFF", 0.0, 95, 120))
+
+        opened, resolved = MagicMock(), MagicMock()
+        bus.subscribe(UnexpectedValveOpened, opened)
+        bus.subscribe(UnexpectedValveResolved, resolved)
+        try:
+            bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120))
+            opened.assert_called_once()
+            self.assertEqual(opened.call_args[0][0].mqtt_name, "garden_valve")
+
+            bus.publish(ValveStatusReported("garden_valve", "OFF", 0.0, 95, 120))
+            resolved.assert_called_once()
+        finally:
+            bus.unsubscribe(UnexpectedValveOpened, opened)
+            bus.unsubscribe(UnexpectedValveResolved, resolved)
+
+    def test_24_regular_guss_no_unexpected_event(self):
+        """Regression: ein regulärer Guss (Start → Stopp) erzeugt keine UnexpectedValveOpened."""
+        from daemon.core.valve_events import ValveStatusReported, UnexpectedValveOpened
+        bus = mqtt_client._global_bus
+        self.watering_ctrl.stop_watering()
+        mqtt_client.valve_status["state"] = "OFF"
+        bus.publish(ValveStatusReported("garden_valve", "OFF", 0.0, 95, 120))
+
+        opened = MagicMock()
+        bus.subscribe(UnexpectedValveOpened, opened)
+        try:
+            ok, _ = self.watering_ctrl.start_watering(
+                5, 0, "manual", mqtt_name="garden_valve", valve_topic="zigbee2mqtt/garden_valve")
+            self.assertTrue(ok)
+            bus.publish(ValveStatusReported("garden_valve", "ON", 0.0, 95, 120))  # ON während Zyklus
+            self.watering_ctrl.stop_watering("garden_valve")
+            opened.assert_not_called()
+        finally:
+            self.watering_ctrl.stop_watering()
+            bus.unsubscribe(UnexpectedValveOpened, opened)
 
 if __name__ == "__main__":
     unittest.main()

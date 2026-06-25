@@ -579,6 +579,17 @@ Terrasse · 4 Min · 2.1 l geflossen · 0.6 mm erkannt</div>
 
     <div class="src">_on_rain_sensor_inactivity_resolved · RainSensorInactivityAlertResolved</div>
     <div class="bubble">🟢 <b>Regensensor wieder aktiv</b> — Messung empfangen.</div>
+
+    <div class="src">_on_unexpected_valve_opened · UnexpectedValveOpened</div>
+    <div class="bubble">⚠️ <b>Ventil von außen geöffnet</b>
+„Rasen“ wurde ohne aktiven Guss geöffnet.
+Warst das nicht du, prüf die Leitung — das Hardware-Sicherheits-Timeout schließt spätestens nach 30 Min.</div>
+    <div class="note">Feature 0029: Ventil meldet ON ohne aktiven Guss (Knopf am Ventil, Hersteller-App). Der Daemon schließt NICHT — der Hardware-Sicherheits-Timeout ist der Flutschutz. Abschaltbar via <code>UNEXPECTED_VALVE_ALERT_ENABLED</code>. „30 Min." = aktueller <code>SAFETY_TIMEOUT_MINUTES</code>.</div>
+
+    <div class="src">_on_unexpected_valve_resolved · UnexpectedValveResolved</div>
+    <div class="bubble">✅ <b>Ventil wieder geschlossen</b>
+„Rasen“ ist wieder zu.</div>
+    <div class="note">Entwarnung, sobald das zuvor unerwartet geöffnete Ventil wieder schließt.</div>
   </div>
 
 </div>
