@@ -2138,9 +2138,15 @@ def _on_rain_sensor_measured(event: RainSensorMeasured):
         database.set_metadata(_RAIN_FLAG_KEY, "0")
         telegram_client.broadcast_notification("🌤 *Regen vorbei*")
 
+def _resolve_wish_name(mqtt_name, fallback=None):
+    """Löst den Wunschnamen eines Ventils aus der DB auf; Fallback bei unbekanntem Ventil."""
+    valve = database.get_valve_by_mqtt_name(mqtt_name) if mqtt_name else None
+    if valve:
+        return valve["wish_name"]
+    return fallback if fallback is not None else mqtt_name
+
 def _on_watering_interrupted(event: WateringCycleInterrupted):
-    valve = database.get_valve_by_mqtt_name(event.mqtt_name) if event.mqtt_name else None
-    valve_name = valve["wish_name"] if valve else "Ventil"
+    valve_name = _resolve_wish_name(event.mqtt_name, "Ventil")
     rain_mm = event.rain_mm
     rain_str = f" · {rain_mm} mm erkannt" if rain_mm > 0 else ""
     msg = (
@@ -2160,8 +2166,7 @@ def _on_rain_sensor_inactivity_resolved(event: RainSensorInactivityAlertResolved
     telegram_client.broadcast_notification("🟢 *Regensensor wieder aktiv* — Messung empfangen.")
 
 def _on_unexpected_valve_opened(event: UnexpectedValveOpened):
-    valve = database.get_valve_by_mqtt_name(event.mqtt_name) if event.mqtt_name else None
-    wish_name = valve["wish_name"] if valve else event.mqtt_name
+    wish_name = _resolve_wish_name(event.mqtt_name)
     safety_min = config.get_setting("SAFETY_TIMEOUT_MINUTES", 30)
     telegram_client.broadcast_notification(
         f"⚠️ *Ventil von außen geöffnet*\n"
@@ -2171,8 +2176,7 @@ def _on_unexpected_valve_opened(event: UnexpectedValveOpened):
     )
 
 def _on_unexpected_valve_resolved(event: UnexpectedValveResolved):
-    valve = database.get_valve_by_mqtt_name(event.mqtt_name) if event.mqtt_name else None
-    wish_name = valve["wish_name"] if valve else event.mqtt_name
+    wish_name = _resolve_wish_name(event.mqtt_name)
     telegram_client.broadcast_notification(
         f"✅ *Ventil wieder geschlossen*\n„{wish_name}“ ist wieder zu."
     )

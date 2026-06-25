@@ -106,6 +106,10 @@ class WateringController:
                 "timer": timer,
                 "valve_topic": valve_topic,
             }
+            # Der Daemon übernimmt das Ventil → eine evtl. laufende Fremdöffnungs-Episode
+            # (Feature 0029) ist damit gegenstandslos; Flag löschen, damit das reguläre
+            # Guss-Ende keine falsche "wieder geschlossen"-Entwarnung auslöst.
+            self._unexpected_open[mqtt_name] = False
 
             # Zyklus ist registriert, BEVOR das Ventil geöffnet wird. So wird ein synchron
             # zurückgemeldeter ON-Status (z.B. SimulatedMqttAdapter) korrekt dem Zyklus

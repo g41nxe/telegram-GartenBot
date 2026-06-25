@@ -293,6 +293,9 @@ class TestUnexpectedValveOpen(unittest.TestCase):
         self.bus.subscribe(UnexpectedValveOpened, lambda e: self.opened.append(e))
         self.bus.subscribe(UnexpectedValveResolved, lambda e: self.resolved.append(e))
 
+    def tearDown(self):
+        self.controller.stop_watering()  # offene Zyklen + Timer aufräumen
+
     def _report(self, state, name="garden_valve"):
         self.bus.publish(ValveStatusReported(name, state, 0.0, 95, 120))
 
@@ -349,6 +352,22 @@ class TestUnexpectedValveOpen(unittest.TestCase):
         self._report("OFF", "valve_b")
         self._report("ON", "valve_a")
         self.assertEqual([e.mqtt_name for e in self.opened], ["valve_a"])
+
+    def test_guss_takeover_clears_pending_episode(self):
+        """Übernimmt der Daemon ein fremd geöffnetes Ventil per Guss, gibt es beim Guss-Ende keine stale Entwarnung."""
+        # Fremdöffnung → Episode aktiv
+        self._report("OFF")
+        self._report("ON")
+        self.assertEqual(len(self.opened), 1)
+
+        # Daemon übernimmt das bereits offene Ventil
+        self.controller.start_watering(5, 0, "manual", mqtt_name="garden_valve",
+                                       valve_topic="zigbee2mqtt/garden_valve")
+        # Regulärer Guss endet → Ventil meldet OFF
+        self.controller.stop_watering("garden_valve")
+        self._report("OFF")
+        self.assertEqual(self.resolved, [],
+                         "Reguläres Guss-Ende darf keine Fremdöffnungs-Entwarnung auslösen")
 
 
 if __name__ == "__main__":
