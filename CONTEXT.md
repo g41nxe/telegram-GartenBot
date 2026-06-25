@@ -126,6 +126,10 @@ _Avoid_: Temp-Ordner, Cache, Raw-Archiv.
 Das konfigurierbare Intervall (in Tagen), nach dem die gesammelten Bilder des Bild-Puffers in ein GIF umgewandelt und die Rohdaten anschließend gelöscht werden.
 _Avoid_: GIF-Intervall, Zusammenfassungs-Tage.
 
+**Aufnahme-Zeitpunkt**:
+Ein von der Steuerzentrale berechneter Zeitpunkt, zu dem die Garten-Kamera gezielt für ein Foto geweckt wird — im Gegensatz zum regulären Sende-Intervall (Zeitraffer). Zwei Quellen: nach jedem zeitgesteuerten Guss (Startzeit + Dauer + Nach-Offset) sowie global konfigurierte feste Uhrzeiten. Da die Kamera nur über die dynamisch berechnete Schlafdauer gesteuert werden kann (sie schläft und ist nur beim Aufwachen per `GET /config` erreichbar), nähert sich das Aufwachen dem Aufnahme-Zeitpunkt an. Zu einem Aufnahme-Zeitpunkt entstandene Fotos werden per Telegram-Bot zugestellt; reguläre Intervall-Bilder nicht.
+_Avoid_: Foto-Termin, Trigger-Zeit, Schnappschuss-Zeit.
+
 **Regensensor**:
 Der batteriebetriebene, WLAN-basierte Niederschlagsmesser (Aqua Scope RANWIE01), der Regenmengen und Temperatur lokal im Garten erfasst und per MQTT an die Steuerzentrale sendet. Er ist die primäre Quelle für gemessene Niederschlagsmengen; die ERA5-Reanalyse des Wetter-Dienstes dient als automatischer Fallback bei Ausfall.
 _Avoid_: Wetterstation, Regenmesser, Sensor-Modul.
