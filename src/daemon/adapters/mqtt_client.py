@@ -202,11 +202,16 @@ class PahoMqttAdapter(MqttClient):
                     linkquality = int(data.get("linkquality", valve_status["linkquality"]))
                     valve_abnormal_state = data.get("valve_abnormal_state", valve_status.get("valve_abnormal_state", "normal"))
 
-                irrigation_volume = float(data.get("real_time_irrigation_volume", 0.0))
+                # Guss-Volumen = live mitlaufende Menge der aktuellen Session, NICHT der
+                # kumulative real_time_irrigation_volume (steht während des Gusses still). ADR 0007.
+                sched = data.get("irrigation_schedule_status") or {}
+                schedule_status = sched.get("schedule_status")
+                actual = sched.get("actual_irrigation_amount")
+                irrigation_volume = float(actual) if actual is not None else 0.0
                 mqtt_name = msg.topic.split("/")[-1]
                 self.event_bus.publish(ValveStatusReported(
                     mqtt_name, state, flow_rate, battery, linkquality, valve_abnormal_state,
-                    irrigation_volume=irrigation_volume
+                    irrigation_volume=irrigation_volume, schedule_status=schedule_status
                 ))
 
             elif msg.topic == "zigbee2mqtt/bridge/event":

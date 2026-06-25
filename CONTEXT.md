@@ -49,8 +49,12 @@ Ein Bewässerungslauf, der durch eine maximale Dauer (Zeitlimit) und eine maxima
 _Avoid_: Dual-Modus, Mengen-Guss, Zeit-Guss
 
 **Guss-Volumen**:
-Die im aktuellen Kombinierten Guss tatsächlich geflossene Wassermenge in Litern. Wird als **Differenz** des kumulativen Gerätezählers (`real_time_irrigation_volume` des Ventils) seit dem Öffnen des Ventils berechnet — **nicht** als dessen Absolutwert, da der Zähler geräteweit weiterläuft und durch unseren `state:ON`-Befehl nicht zurückgesetzt wird. Wird gegen das Volumenlimit geprüft und in der Datenbank protokolliert. Siehe ADR 0007.
-_Avoid_: geflossene Menge, current_volume, Gerätezähler (meint den rohen Absolutwert)
+Die im aktuellen Kombinierten Guss tatsächlich geflossene Wassermenge in Litern. Quelle ist `irrigation_schedule_status.actual_irrigation_amount` des Ventils — die live mitlaufende Menge der aktuellen Bewässerungs-Session, die pro Session bei 0 startet und nur gültig ist, solange `schedule_status == "running"`. **Nicht** zu verwechseln mit `real_time_irrigation_volume`, dem kumulativen geräteweiten Zähler, der während eines Gusses still steht und erst verspätet springt. Wird gegen das Volumenlimit geprüft und in der Datenbank protokolliert. Siehe ADR 0007.
+_Avoid_: geflossene Menge, current_volume, real_time_irrigation_volume (kumulativer Gerätezähler)
+
+**Mindest-Flussrate**:
+Die konfigurierbare untere Schwelle der durchschnittlichen Flussrate (L/min) eines Gusses, unterhalb derer eine Abschaltung durch das Zeitlimit als Defekt gewertet wird (zu wenig oder kein Wasser — Verstopfung, Druckabfall, defektes Ventil) und als Notfall-Abschaltung gemeldet wird. Liegt die erreichte Flussrate darüber, gilt das Erreichen des Zeitlimits als normaler Abschluss des Kombinierten Gusses. Einstellbar über den Telegram-Bot (`MIN_FLOW_RATE_LPM`, Standard 0,5 L/min).
+_Avoid_: Durchflussschwelle, Min-Flow
 
 **Ventil-Kopplung**:
 Der geführte Einrichtungsvorgang im Telegram-Bot (`/setup`), bei dem ein neues Ventil mit dem Funk-Koordinator verbunden wird. Der Benutzer vergibt vorab einen Wunschnamen. Der Bewässerungs-Daemon aktiviert temporär den Koppelmodus des Mittelweg-Dienstes, wartet auf das Beitrittssignal des Ventils, weist ihm einen eindeutigen Systemnamen (`valve_<ieee_address>`) zu und registriert es in der Datenbank.
@@ -133,6 +137,10 @@ _Avoid_: Sensor-Signal, Telemetrie-Paket, Messwert.
 **Guss-Unterbrechung**:
 Der systemseitige vorzeitige Abbruch eines laufenden Kombinierten Gusses durch einen externen Auslöser (z. B. Regen). Im Unterschied zum manuellen Stopp durch den Benutzer wird eine Guss-Unterbrechung im Ereignis-Kanal als eigenständiges Ereignis (`WateringCycleInterrupted`) veröffentlicht.
 _Avoid_: Auto-Stop, Notfall-Abbruch, Rain-Stop.
+
+**Unerwartete Ventilöffnung**:
+Das Öffnen eines Ventils außerhalb der Kontrolle des Bewässerungs-Daemons — z. B. über den Knopf am Ventil, die Hersteller-App oder einen anderen MQTT-Client — also ohne aktiven Guss in der Guss-Steuerung. Wird zur Laufzeit flankengesteuert erkannt und per Telegram-Bot gemeldet (Ereignis `UnexpectedValveOpened`, Entwarnung `UnexpectedValveResolved`). Der Daemon schließt das Ventil dabei **nicht** — der hardwareseitige Sicherheits-Timeout dient als Flutschutz (ADR 0032). Abzugrenzen von der Guss-Unterbrechung (externer Abbruch eines *laufenden* Gusses) und der einmaligen Sicherheits-Schließung beim Daemon-Start.
+_Avoid_: Fremd-Öffnung, Ventil-Manipulation, Tamper.
 
 **Garten-Ampel**:
 Das dreistufige Gesundheitsmodell, das den Gesamtzustand des Systems in der `/status`-Anzeige als Farb-Status zusammenfasst: 🟢 grün (alles aktiv und unauffällig), 🟡 gelb (nicht-kritisch: niedrige Batterie oder kritisches Signal, Gerät meldet aber noch), 🔴 rot (kritisch: Dienst offline, aktiver Inaktivitäts-Watchdog-Alarm oder Ventil-Anomalie). Die Headline zeigt stets die schlimmste aktive Stufe; technische Details werden nur für nicht-grüne Geräte eingeblendet. Definiert in ADR 0029.

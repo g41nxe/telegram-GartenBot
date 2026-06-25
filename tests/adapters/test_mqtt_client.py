@@ -148,8 +148,8 @@ class TestPahoMqttClient(unittest.TestCase):
         self.assertEqual(event.flow_rate, 5.5)
         self.assertEqual(event.battery, 80)
         
-    def test_on_message_reads_real_time_irrigation_volume(self):
-        """_on_message liest real_time_irrigation_volume und gibt es als irrigation_volume im Event weiter."""
+    def test_on_message_reads_actual_irrigation_amount(self):
+        """_on_message liest actual_irrigation_amount + schedule_status, NICHT real_time_irrigation_volume (ADR 0007)."""
         from unittest.mock import MagicMock
         import json
         from daemon import config
@@ -163,13 +163,39 @@ class TestPahoMqttClient(unittest.TestCase):
 
         msg = MockMsg(config.MQTT_VALVE_TOPIC, json.dumps({
             "state": "ON", "battery": 95, "linkquality": 120,
-            "real_time_irrigation_volume": 4.7
+            "real_time_irrigation_volume": 140,  # kumulativ — darf NICHT als Guss-Volumen genutzt werden
+            "irrigation_schedule_status": {"schedule_status": "running", "actual_irrigation_amount": 4.7}
         }).encode())
 
         self.adapter._on_message(None, None, msg)
 
         event = mock_handler.call_args[0][0]
         self.assertAlmostEqual(event.irrigation_volume, 4.7, places=2)
+        self.assertEqual(event.schedule_status, "running")
+
+    def test_on_message_missing_actual_amount_is_zero(self):
+        """Ohne irrigation_schedule_status ist irrigation_volume 0 und schedule_status None."""
+        from unittest.mock import MagicMock
+        import json
+        from daemon import config
+        mock_handler = MagicMock()
+        self.bus.subscribe(ValveStatusReported, mock_handler)
+
+        class MockMsg:
+            def __init__(self, topic, payload):
+                self.topic = topic
+                self.payload = payload
+
+        msg = MockMsg(config.MQTT_VALVE_TOPIC, json.dumps({
+            "state": "OFF", "battery": 95, "linkquality": 120,
+            "real_time_irrigation_volume": 140
+        }).encode())
+
+        self.adapter._on_message(None, None, msg)
+
+        event = mock_handler.call_args[0][0]
+        self.assertEqual(event.irrigation_volume, 0.0)
+        self.assertIsNone(event.schedule_status)
 
     def test_on_message_device_joined(self):
         from unittest.mock import MagicMock
