@@ -1,3 +1,16 @@
+## v1.6.1 — 2026-06-25
+
+### Behoben
+- Wassermengenmessung: Guss-Volumen wird korrekt gezählt (Volumenlimit & Historie)
+- Gießcheck: Tageshöchsttemperaturen nutzen jetzt die lokale Zeitzone
+- Reduzierter Guss erhält mindestens 1 Liter Volumenlimit
+
+### Intern
+- Regenschwelle aus Config statt hartkodiert (chart.py), Import aufgeräumt
+- Folge-Ticket dokumentiert: Simulator-Treue für Volumen-Pfad (Feature 0028)
+
+---
+
 ## v1.6.0 — 2026-06-22
 
 ### Neu
