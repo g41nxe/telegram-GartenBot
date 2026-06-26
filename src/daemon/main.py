@@ -28,7 +28,7 @@ def register_telegram_commands():
         {"command": "photo",         "description": "Aktuelles Kamerabild"},
         {"command": "camera_setup",  "description": "Kamera koppeln"},
         {"command": "photo_clear",   "description": "Bild-Historie löschen"},
-        {"command": "camera_times",  "description": "Foto-Uhrzeiten verwalten"},
+        {"command": "aufnahmen",      "description": "Foto-Uhrzeiten verwalten"},
         {"command": "update",        "description": "Software-Update starten"},
         {"command": "einstellungen", "description": "Schwellenwerte anpassen"},
     ]

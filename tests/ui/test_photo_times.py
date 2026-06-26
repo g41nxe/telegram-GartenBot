@@ -1,4 +1,4 @@
-"""Tests für /camera_times Wizard und TimedPhotoCaptured-Handler (Feature 0030)."""
+"""Tests für /aufnahmen Wizard und TimedPhotoCaptured-Handler (Feature 0030)."""
 import sys
 import unittest
 from pathlib import Path
@@ -28,7 +28,7 @@ def _cb_data(markup):
 
 
 # ===========================================================================
-# /camera_times — Listenansicht
+# /aufnahmen — Listenansicht
 # ===========================================================================
 
 class TestCameraTimesCommand(unittest.TestCase):
@@ -38,7 +38,7 @@ class TestCameraTimesCommand(unittest.TestCase):
     def test_keine_eintraege_zeigt_hinweis_und_add_button(self, mock_db, mock_tc):
         """Keine gespeicherten Foto-Uhrzeiten → Hinweis + 'Uhrzeit hinzufügen'-Button."""
         mock_db.get_photo_times.return_value = []
-        _process_message(_msg("/camera_times"))
+        _process_message(_msg("/aufnahmen"))
 
         mock_tc.send_message.assert_called_once()
         text = mock_tc.send_message.call_args.args[1]
@@ -56,7 +56,7 @@ class TestCameraTimesCommand(unittest.TestCase):
             {"id": 1, "time": "08:00"},
             {"id": 2, "time": "18:00"},
         ]
-        _process_message(_msg("/camera_times"))
+        _process_message(_msg("/aufnahmen"))
 
         mock_tc.send_message.assert_called_once()
         text = mock_tc.send_message.call_args.args[1]

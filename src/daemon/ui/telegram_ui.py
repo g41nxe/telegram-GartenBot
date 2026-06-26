@@ -690,7 +690,7 @@ def _get_photo_time_minute_keyboard() -> dict:
     return {"inline_keyboard": rows}
 
 
-def handle_camera_times(chat_id: int):
+def handle_aufnahmen(chat_id: int):
     """Zeigt die Liste der Foto-Uhrzeiten und einen Button zum Hinzufügen."""
     times = database.get_photo_times()
     add_button = [{"text": "➕ Uhrzeit hinzufügen", "callback_data": "phtadd_start"}]
@@ -1376,8 +1376,8 @@ def _process_message(msg_obj: dict):
         handle_photo_clear(chat_id)
     elif text == "📸 Foto anzeigen" or text == "📷 Foto anzeigen" or text.startswith("/photo") or (text.startswith("/camera") and not text.startswith("/camera_")):
         handle_photo(chat_id)
-    elif text.startswith("/camera_times"):
-        handle_camera_times(chat_id)
+    elif text.startswith("/aufnahmen"):
+        handle_aufnahmen(chat_id)
     elif text == "📷 Kamera koppeln" or text.startswith("/camera_setup"):
         handle_camera_setup(chat_id)
     elif text.startswith("/camera_interval"):
