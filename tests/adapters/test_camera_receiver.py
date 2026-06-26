@@ -160,3 +160,83 @@ def test_upload_ohne_akkuheader_behaelt_wert(running_server):
 
     cam = database.get_camera("CA:BB:CC:DD:EE:FF")
     assert cam["battery"] == 55
+
+
+# ===========================================================================
+# Getimte Kamera-Aufnahmen — Feature 0030
+# ===========================================================================
+
+JPEG_PAYLOAD = b'\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00'
+
+
+def test_config_gibt_dynamische_schlafdauer_bei_foto_uhrzeit(running_server):
+    """/config gibt eine kürzere Schlafdauer zurück, wenn eine Foto-Uhrzeit bald ansteht."""
+    database.add_camera("FC:00:01:02:03:04", "TimeCam")
+    # Kamera hat Intervall 900 s; Foto-Uhrzeit in 5 Minuten
+    from datetime import datetime, timedelta
+    from src.daemon import config as cfg
+    target = datetime.now() + timedelta(minutes=5)
+    time_str = target.strftime("%H:%M")
+    database.add_photo_time(time_str)
+
+    url = f"http://127.0.0.1:{running_server}/config"
+    req = urllib.request.Request(url, headers={"X-Camera-MAC": "FC:00:01:02:03:04"}, method="GET")
+    with urllib.request.urlopen(req) as resp:
+        data = json.loads(resp.read())
+
+    sleep = data["sleep_duration_seconds"]
+    # Muss kürzer als Intervall (900) sein, mindestens 60 s
+    assert 60 <= sleep < 900
+
+
+def test_upload_innerhalb_toleranz_publiziert_timed_photo(running_server, event_bus):
+    """/upload innerhalb des Toleranzfensters einer Foto-Uhrzeit → TimedPhotoCaptured."""
+    from datetime import datetime
+    from src.daemon.core.camera_events import TimedPhotoCaptured
+
+    database.add_camera("FC:00:AA:BB:CC:DD", "TolCam")
+
+    # Foto-Uhrzeit = jetzt (Upload fällt genau ins Fenster)
+    now = datetime.now()
+    database.add_photo_time(now.strftime("%H:%M"))
+
+    captured = []
+    event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+    url = f"http://127.0.0.1:{running_server}/upload"
+    req = urllib.request.Request(
+        url,
+        headers={"X-Camera-MAC": "FC:00:AA:BB:CC:DD"},
+        data=JPEG_PAYLOAD,
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200
+
+    assert len(captured) == 1
+    assert captured[0].wish_name == "TolCam"
+    assert "Foto um" in captured[0].caption
+
+
+def test_upload_ausserhalb_toleranz_kein_timed_photo(running_server, event_bus):
+    """/upload weit außerhalb jedes Aufnahme-Zeitpunkts → kein TimedPhotoCaptured."""
+    from src.daemon.core.camera_events import TimedPhotoCaptured
+
+    database.add_camera("FC:00:EE:FF:00:11", "NoCam")
+    # Foto-Uhrzeit 2 Stunden entfernt → kein Treffer
+    database.add_photo_time("02:00")  # Mitten in der Nacht
+
+    captured = []
+    event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+    url = f"http://127.0.0.1:{running_server}/upload"
+    req = urllib.request.Request(
+        url,
+        headers={"X-Camera-MAC": "FC:00:EE:FF:00:11"},
+        data=JPEG_PAYLOAD,
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200
+
+    assert len(captured) == 0

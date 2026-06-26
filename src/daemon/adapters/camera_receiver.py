@@ -11,7 +11,8 @@ from pathlib import Path
 from src.daemon import config
 from src.daemon.adapters import database
 from src.daemon.core.event_bus import EventBus
-from src.daemon.core.camera_events import CameraImageReceived, CameraRegistered
+from src.daemon.core.camera_events import CameraImageReceived, CameraRegistered, TimedPhotoCaptured
+from src.daemon.core import camera_schedule
 
 logger = logging.getLogger("garden_camera_receiver")
 
@@ -121,12 +122,19 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             return
             
+        interval = camera.get("sleep_duration_seconds", 900)
+        schedules = database.get_schedules()
+        photo_times = database.get_photo_times()
+        sleep_secs = camera_schedule.compute_next_sleep_seconds(
+            datetime.now(), schedules, photo_times, interval,
+            config.CAMERA_AFTER_GUSS_OFFSET_MINUTES
+        )
         settings = {
-            "sleep_duration_seconds": camera.get("sleep_duration_seconds", 900),
+            "sleep_duration_seconds": sleep_secs,
             "resolution": camera.get("resolution", "XGA"),
             "quality": camera.get("quality", 10)
         }
-        
+
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
@@ -193,7 +201,16 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
 
         if _global_bus:
             _global_bus.publish(CameraImageReceived(mac, wish_name, str(file_path)))
-            
+            caption = camera_schedule.find_matching_photo_target(
+                now,
+                database.get_schedules(),
+                database.get_photo_times(),
+                config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
+                config.TIMED_PHOTO_TOLERANCE_MINUTES,
+            )
+            if caption:
+                _global_bus.publish(TimedPhotoCaptured(wish_name, str(file_path), caption))
+
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")

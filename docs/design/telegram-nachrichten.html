@@ -256,6 +256,17 @@ Ich bin Ihr lokaler Assistent. Nutzen Sie die Buttons unten oder die Chat-Befehl
   </div>
 
   <div class="phone">
+    <div class="src">handle_camera_times() · „/camera_times" (Foto-Uhrzeiten verwalten)</div>
+    <div class="bubble">📷 <b>Foto-Uhrzeiten</b>
+
+Keine Aufnahme-Uhrzeiten konfiguriert.</div>
+    <div class="btnrow"><span class="btn">➕ Uhrzeit hinzufügen</span></div>
+    <ul class="variants">
+      <li>Mit Einträgen: Liste aller Uhrzeiten (z. B. <code>• 08:00</code>, <code>• 18:00</code>) + je Eintrag 🗑️-Button + „➕ Uhrzeit hinzufügen"</li>
+    </ul>
+  </div>
+
+  <div class="phone">
     <div class="src">handle_photo_clear() · „/photo_clear" (Bild-Historie löschen)</div>
     <div class="bubble">🗑️ <b>Bild-Historie löschen</b>
 
@@ -474,6 +485,19 @@ Soll das Update jetzt installiert werden?
     <div class="note">Bereits aktuell: <code>✅ Bereits aktuell (v1.2.1). Kein Update verfügbar.</code></div>
   </div>
 
+  <div class="phone">
+    <div class="src">Wizard phtadd_start → phtadd_h_ → phtadd_m_ · /camera_times „Uhrzeit hinzufügen"</div>
+    <div class="bubble">📷 <b>Foto-Uhrzeit hinzufügen</b>
+
+Zu welcher <b>Stunde</b> soll die Kamera aufnehmen?</div>
+    <div class="note">6×4-Grid für Stunden 00–23 + ❌ Abbrechen</div>
+    <div class="bubble">📷 <b>Foto-Uhrzeit hinzufügen</b>
+
+Stunde: <b>08</b> — Wähle jetzt die <b>Minute</b>:</div>
+    <div class="note">3×4-Grid für Minuten 00, 05, 10 … 55 (5-Min-Schritte) + ❌ Abbrechen</div>
+    <div class="bubble">✅ Foto-Uhrzeit <b>08:30</b> gespeichert.</div>
+  </div>
+
 </div>
 
 <!-- ============ EREIGNIS-BENACHRICHTIGUNGEN ============ -->
@@ -598,10 +622,18 @@ Terrasse · 4 Min · 2.1 l geflossen · 0.6 mm erkannt</div>
 Warst das nicht du, prüf die Leitung — das Hardware-Sicherheits-Timeout schließt spätestens nach 30 Min.</div>
     <div class="note">Feature 0029: Ventil meldet ON ohne aktiven Guss (Knopf am Ventil, Hersteller-App). Der Daemon schließt NICHT — der Hardware-Sicherheits-Timeout ist der Flutschutz. Abschaltbar via <code>UNEXPECTED_VALVE_ALERT_ENABLED</code>. „30 Min." = aktueller <code>SAFETY_TIMEOUT_MINUTES</code>.</div>
 
-    <div class="src">_on_unexpected_valve_resolved · UnexpectedValveResolved</div>
-    <div class="bubble">✅ <b>Ventil wieder geschlossen</b>
-„Rasen“ ist wieder zu.</div>
-    <div class="note">Entwarnung, sobald das zuvor unerwartet geöffnete Ventil wieder schließt.</div>
+    <div class=”src”>_on_unexpected_valve_resolved · UnexpectedValveResolved</div>
+    <div class=”bubble”>✅ <b>Ventil wieder geschlossen</b>
+„Rasen” ist wieder zu.</div>
+    <div class=”note”>Entwarnung, sobald das zuvor unerwartet geöffnete Ventil wieder schließt.</div>
+
+    <div class=”src”>_on_timed_photo_captured · TimedPhotoCaptured</div>
+    <div class=”photo-placeholder”>[Foto]</div>
+    <div class=”bubble”>📷 Foto um 08:00</div>
+    <ul class=”variants”>
+      <li>Nach Guss: <code>📷 Nach dem Guss um 06:00</code> (Guss-Startzeit aus Zeitplan)</li>
+      <li>Absolut: <code>📷 Foto um 18:00</code> (konfigurierte Uhrzeit)</li>
+    </ul>
   </div>
 
 </div>

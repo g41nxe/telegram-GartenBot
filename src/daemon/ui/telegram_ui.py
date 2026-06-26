@@ -30,7 +30,7 @@ from ..core.scheduler_events import (
 )
 from ..adapters import weather as _weather_adapter
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
-from ..core.camera_events import CameraInactivityAlertTriggered, CameraInactivityAlertResolved
+from ..core.camera_events import CameraInactivityAlertTriggered, CameraInactivityAlertResolved, TimedPhotoCaptured
 from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 
@@ -659,6 +659,63 @@ def handle_camera_interval(chat_id: int, text: str):
             
     except ValueError:
         telegram_client.send_message(chat_id, "❌ *Ungültiges Format.* Nutzen Sie: `/camera_interval <minuten>` (z.B. `/camera_interval 15`)")
+
+
+# --- Getimte Kamera-Aufnahmen (Feature 0030) ---
+
+_phtadd_states: dict[int, dict] = {}
+
+
+def _get_photo_time_hour_keyboard() -> dict:
+    rows = []
+    for r in range(4):
+        row = []
+        for c in range(6):
+            h = r * 6 + c
+            row.append({"text": f"{h:02d}", "callback_data": f"phtadd_h_{h}"})
+        rows.append(row)
+    rows.append([{"text": "❌ Abbrechen", "callback_data": "cancel"}])
+    return {"inline_keyboard": rows}
+
+
+def _get_photo_time_minute_keyboard() -> dict:
+    rows = []
+    for r in range(3):
+        row = []
+        for c in range(4):
+            m = (r * 4 + c) * 5
+            row.append({"text": f"{m:02d}", "callback_data": f"phtadd_m_{m}"})
+        rows.append(row)
+    rows.append([{"text": "❌ Abbrechen", "callback_data": "cancel"}])
+    return {"inline_keyboard": rows}
+
+
+def handle_camera_times(chat_id: int):
+    """Zeigt die Liste der Foto-Uhrzeiten und einen Button zum Hinzufügen."""
+    times = database.get_photo_times()
+    add_button = [{"text": "➕ Uhrzeit hinzufügen", "callback_data": "phtadd_start"}]
+    if not times:
+        telegram_client.send_message(
+            chat_id,
+            "📷 *Foto-Uhrzeiten*\n\nKeine Aufnahme-Uhrzeiten konfiguriert.",
+            {"inline_keyboard": [add_button]}
+        )
+        return
+    lines = [f"📷 *Foto-Uhrzeiten*\n"]
+    for t in times:
+        lines.append(f"• {t['time']}")
+    rows = [[{"text": f"🗑️ {t['time']}", "callback_data": f"phtime_del_ask_{t['id']}"}] for t in times]
+    rows.append(add_button)
+    telegram_client.send_message(chat_id, "\n".join(lines), {"inline_keyboard": rows})
+
+
+def _on_timed_photo_captured(event: TimedPhotoCaptured):
+    """Sendet ein getimtes Foto mit Beschriftung an alle Benutzer."""
+    path = Path(event.file_path)
+    if not path.exists():
+        return
+    telegram_client.broadcast_photo(path.read_bytes(), caption=event.caption)
+
 
 _WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
@@ -1319,6 +1376,8 @@ def _process_message(msg_obj: dict):
         handle_photo_clear(chat_id)
     elif text == "📸 Foto anzeigen" or text == "📷 Foto anzeigen" or text.startswith("/photo") or (text.startswith("/camera") and not text.startswith("/camera_")):
         handle_photo(chat_id)
+    elif text.startswith("/camera_times"):
+        handle_camera_times(chat_id)
     elif text == "📷 Kamera koppeln" or text.startswith("/camera_setup"):
         handle_camera_setup(chat_id)
     elif text.startswith("/camera_interval"):
@@ -1785,6 +1844,61 @@ def _process_callback_query(cb_obj: dict):
         wish_name = data[len("photoclear_"):]
         telegram_client.answer_callback_query(cb_id)
         _ask_photo_clear_confirmation(chat_id, wish_name)
+
+    elif data == "phtadd_start":
+        telegram_client.answer_callback_query(cb_id)
+        telegram_client.send_message(
+            chat_id,
+            "📷 *Foto-Uhrzeit hinzufügen*\n\nZu welcher *Stunde* soll die Kamera aufnehmen?",
+            _get_photo_time_hour_keyboard()
+        )
+
+    elif data.startswith("phtadd_h_"):
+        hour = int(data[len("phtadd_h_"):])
+        _phtadd_states[chat_id] = {"hour": hour}
+        telegram_client.answer_callback_query(cb_id, f"Stunde: {hour:02d}")
+        telegram_client.send_message(
+            chat_id,
+            f"📷 *Foto-Uhrzeit hinzufügen*\n\nStunde: *{hour:02d}* — Wähle jetzt die *Minute*:",
+            _get_photo_time_minute_keyboard()
+        )
+
+    elif data.startswith("phtadd_m_"):
+        state = _phtadd_states.pop(chat_id, None)
+        if state is None:
+            telegram_client.answer_callback_query(cb_id, "Sitzung abgelaufen.", show_alert=True)
+        else:
+            minute = int(data[len("phtadd_m_"):])
+            hour = state["hour"]
+            time_str = f"{hour:02d}:{minute:02d}"
+            database.add_photo_time(time_str)
+            telegram_client.answer_callback_query(cb_id, f"✅ {time_str} gespeichert")
+            telegram_client.send_message(
+                chat_id,
+                f"✅ Foto-Uhrzeit *{time_str}* gespeichert.",
+                get_main_keyboard()
+            )
+
+    elif data.startswith("phtime_del_ask_"):
+        photo_time_id = int(data[len("phtime_del_ask_"):])
+        telegram_client.answer_callback_query(cb_id)
+        times = database.get_photo_times()
+        entry = next((t for t in times if t["id"] == photo_time_id), None)
+        label = entry["time"] if entry else f"#{photo_time_id}"
+        telegram_client.send_message(
+            chat_id,
+            f"🗑️ Foto-Uhrzeit *{label}* wirklich löschen?",
+            {"inline_keyboard": [[
+                {"text": "✅ Ja, löschen", "callback_data": f"phtime_del_confirm_{photo_time_id}"},
+                {"text": "❌ Abbrechen", "callback_data": "cancel"}
+            ]]}
+        )
+
+    elif data.startswith("phtime_del_confirm_"):
+        photo_time_id = int(data[len("phtime_del_confirm_"):])
+        database.delete_photo_time(photo_time_id)
+        telegram_client.answer_callback_query(cb_id, "Gelöscht.")
+        telegram_client.send_message(chat_id, "✅ Foto-Uhrzeit gelöscht.", get_main_keyboard())
 
     elif data.startswith("sched_edit_") and not data.startswith("sched_editfield_") and not data.startswith("sched_editday_"):
         if data == "sched_edit_cancel":
@@ -2261,3 +2375,4 @@ def subscribe_event_handlers():
     _global_bus.subscribe(RainSensorInactivityAlertResolved, _on_rain_sensor_inactivity_resolved)
     _global_bus.subscribe(UnexpectedValveOpened, _on_unexpected_valve_opened)
     _global_bus.subscribe(UnexpectedValveResolved, _on_unexpected_valve_resolved)
+    _global_bus.subscribe(TimedPhotoCaptured, _on_timed_photo_captured)

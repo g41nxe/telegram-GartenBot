@@ -486,5 +486,62 @@ class TestGetDailyMaxTemps(unittest.TestCase):
         self.assertEqual(result, [])
 
 
+class TestCameraPhotoTimesCRUD(unittest.TestCase):
+    """Testet CRUD für die Tabelle camera_photo_times (Feature 0030)."""
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._patcher.start()
+        db.init_db()
+
+    def tearDown(self):
+        self._patcher.stop()
+        import gc; gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def test_get_photo_times_leer(self):
+        self.assertEqual(db.get_photo_times(), [])
+
+    def test_add_und_get(self):
+        self.assertTrue(db.add_photo_time("08:00"))
+        self.assertTrue(db.add_photo_time("18:00"))
+        times = db.get_photo_times()
+        self.assertEqual(len(times), 2)
+        self.assertIn("08:00", [t["time"] for t in times])
+
+    def test_get_photo_times_sortiert(self):
+        db.add_photo_time("18:00")
+        db.add_photo_time("06:00")
+        db.add_photo_time("12:00")
+        times = db.get_photo_times()
+        times_list = [t["time"] for t in times]
+        self.assertEqual(times_list, sorted(times_list))
+
+    def test_duplikat_wird_ignoriert(self):
+        db.add_photo_time("08:00")
+        db.add_photo_time("08:00")
+        self.assertEqual(len(db.get_photo_times()), 1)
+
+    def test_delete_photo_time(self):
+        db.add_photo_time("08:00")
+        times = db.get_photo_times()
+        self.assertTrue(db.delete_photo_time(times[0]["id"]))
+        self.assertEqual(db.get_photo_times(), [])
+
+    def test_delete_nicht_vorhandene_id(self):
+        result = db.delete_photo_time(9999)
+        self.assertFalse(result)
+
+    def test_migration_auf_bestehender_db(self):
+        """Zweiter init_db()-Aufruf auf existierender DB ist idempotent."""
+        db.add_photo_time("10:00")
+        db.init_db()
+        self.assertEqual(len(db.get_photo_times()), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

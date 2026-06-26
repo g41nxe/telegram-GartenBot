@@ -26,3 +26,10 @@ class CameraRegistered(Event):
     def __init__(self, mac_address: str, wish_name: str):
         self.mac_address = mac_address
         self.wish_name = wish_name
+
+class TimedPhotoCaptured(Event):
+    """Wird gefeuert, wenn ein Upload einem Aufnahme-Zeitpunkt zugeordnet werden konnte."""
+    def __init__(self, wish_name: str, file_path: str, caption: str):
+        self.wish_name = wish_name
+        self.file_path = file_path
+        self.caption = caption

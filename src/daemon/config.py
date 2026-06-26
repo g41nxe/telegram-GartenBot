@@ -158,6 +158,16 @@ try:
 except ValueError:
     CAMERA_MAX_UPLOAD_BYTES = 512000
 
+try:
+    TIMED_PHOTO_TOLERANCE_MINUTES = int(os.getenv("TIMED_PHOTO_TOLERANCE_MINUTES", "5"))
+except ValueError:
+    TIMED_PHOTO_TOLERANCE_MINUTES = 5
+
+try:
+    CAMERA_AFTER_GUSS_OFFSET_MINUTES = int(os.getenv("CAMERA_AFTER_GUSS_OFFSET_MINUTES", "2"))
+except ValueError:
+    CAMERA_AFTER_GUSS_OFFSET_MINUTES = 2
+
 
 def get_setting(name: str, default=None):
     """Liest einen Konfigurationswert — DB-Override hat Vorrang vor Modulkonstante."""

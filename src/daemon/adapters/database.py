@@ -195,6 +195,14 @@ def init_db():
             logger.info("Migriere Datenbank: Füge battery Spalte zu cameras hinzu...")
             cursor.execute("ALTER TABLE cameras ADD COLUMN battery INTEGER")
 
+        # --- Getimte Kamera-Aufnahmen (Feature 0030) ---
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS camera_photo_times (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                time TEXT NOT NULL UNIQUE
+            )
+        """)
+
         # --- Regensensor-Schema (Feature 0016) ---
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS rain_measurements (
@@ -910,6 +918,54 @@ def delete_camera(mac_address: str) -> bool:
         return cursor.rowcount > 0
     except Exception as e:
         logger.error(f"Fehler beim Löschen der Kamera '{mac_address}': {e}")
+        return False
+    finally:
+        conn.close()
+
+
+# --- CRUD Operationen für camera_photo_times (Feature 0030) ---
+
+def get_photo_times() -> list:
+    """Gibt alle gespeicherten Foto-Uhrzeiten sortiert zurück."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, time FROM camera_photo_times ORDER BY time ASC")
+        return [dict(row) for row in cursor.fetchall()]
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Foto-Uhrzeiten: {e}")
+        return []
+    finally:
+        conn.close()
+
+
+def add_photo_time(time_str: str) -> bool:
+    """Fügt eine Foto-Uhrzeit hinzu. Duplikate werden ignoriert. Gibt True bei Erfolg zurück."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT OR IGNORE INTO camera_photo_times (time) VALUES (?)", (time_str,)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"Fehler beim Hinzufügen der Foto-Uhrzeit '{time_str}': {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def delete_photo_time(photo_time_id: int) -> bool:
+    """Löscht eine Foto-Uhrzeit anhand ihrer ID. Gibt True zurück, wenn eine Zeile gelöscht wurde."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM camera_photo_times WHERE id = ?", (photo_time_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        logger.error(f"Fehler beim Löschen der Foto-Uhrzeit {photo_time_id}: {e}")
         return False
     finally:
         conn.close()
