@@ -566,35 +566,61 @@ class TestGardenIrrigation(unittest.TestCase):
         """Testet den main _scheduler_loop auf weather updates und daily reports."""
         from daemon import scheduler
         from datetime import datetime
-        
+
+        # Erfasst die im Loop eingeplanten Thread-Targets, ohne echte Threads zu starten.
+        # Das verhindert, dass Worker-Threads (z. B. der Tagesbericht-Thread, der selbst
+        # time.sleep aufruft) die modulweit gepatchte sleep-Closure und das globale
+        # scheduler_running nebenläufig verändern — die bisherige Flaky-Quelle.
+        started_targets = []
+
+        class _CapturingThread:
+            def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+                self.target = target
+            def start(self):
+                started_targets.append(self.target)
+
         with patch("daemon.scheduler.datetime") as mock_datetime, \
              patch("daemon.scheduler.time.sleep") as mock_sleep, \
+             patch("daemon.scheduler.threading.Thread", _CapturingThread), \
              patch("daemon.scheduler.check_startup_safety") as mock_safety, \
              patch("daemon.scheduler.send_daily_report") as mock_report, \
              patch("daemon.adapters.weather.get_weather_data") as mock_weather:
-            
+
             # Setup mock time
             mock_now = datetime(2026, 6, 9, 8, 5) # 08:05
             mock_datetime.now.return_value = mock_now
             mock_datetime.fromisoformat = datetime.fromisoformat
-            
-            # Simulate one loop iteration
+
+            # Loop-Terminierung deterministisch machen:
+            # patch("...time.sleep") ersetzt time.sleep prozessweit (scheduler.time IST das
+            # globale time-Modul). Damit andere Daemon-Threads (z. B. _simulation_loop), die
+            # nebenläufig time.sleep aufrufen, den Stop-Zähler nicht verfälschen, werten wir
+            # ausschließlich Sleeps des MainThreads — auf dem dieser Test _scheduler_loop
+            # synchron ausführt (Start-Sleep + End-Sleep beenden den Loop deterministisch).
+            import threading as _thr
+            main_thread = _thr.current_thread()
             sleep_calls = [0]
             def side_effect_sleep(*args):
+                if _thr.current_thread() is not main_thread:
+                    return
                 sleep_calls[0] += 1
-                if sleep_calls[0] > 1:
+                if sleep_calls[0] >= 2:
                     scheduler.scheduler_running = False # Stop loop
-                
+
             mock_sleep.side_effect = side_effect_sleep
-            
+
             database.set_metadata("last_daily_report_date", "2026-06-08") # Yesterday
-            
+
             scheduler.scheduler_running = True
             scheduler._scheduler_loop()
-            
+
             mock_safety.assert_called_once()
-            # The thread is started, mock_report should be called in thread.
-            # But thread might take a moment.
+            # Der Tagesbericht-Thread wurde für heute eingeplant (deterministisch prüfbar,
+            # ersetzt die frühere zeitabhängige – und daher auskommentierte – Assertion).
+            self.assertIn(scheduler._send_daily_report_with_prefetch, started_targets)
+            # Der Tagesbericht-Thread wurde für heute eingeplant (deterministisch prüfbar,
+            # ersetzt die frühere zeitabhängige – und daher auskommentierte – Assertion).
+            self.assertIn(scheduler._send_daily_report_with_prefetch, started_targets)
             
     def test_18_generate_daily_report_exception(self):
         from daemon import scheduler
