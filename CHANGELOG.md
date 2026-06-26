@@ -1,3 +1,17 @@
+## v1.8.0 — 2026-06-26
+
+### Neu
+- Bild-Historie einer Kamera löschen: neuer Befehl /photo_clear (mit Rückfrage)
+
+### Behoben
+- OTA-Update: config/ wird ins Release-Archiv und Update-Skript aufgenommen
+
+### Intern
+- Scheduler-Loop-Test gegen prozessweiten time.sleep-Patch abgesichert (flaky behoben)
+- Spezifikation für getimte Kamera-Aufnahmen (Feature 0030) ergänzt
+
+---
+
 ## v1.7.0 — 2026-06-25
 
 ### Neu
