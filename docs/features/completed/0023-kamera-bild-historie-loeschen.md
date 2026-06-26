@@ -6,7 +6,7 @@ Die Steuerzentrale sammelt die Bild-Historie jeder Garten-Kamera dauerhaft im Da
 
 ## Lösung (Solution)
 
-Ein neuer Telegram-Befehl löscht auf Wunsch die gesamte Bild-Historie einer ausgewählten Garten-Kamera. Bei mehreren gekoppelten Garten-Kameras wählt der Nutzer zunächst die betroffene Kamera; bei nur einer geht es direkt weiter. Vor dem unwiderruflichen Löschen erscheint eine Ja/Nein-Rückfrage, die die Anzahl der betroffenen Bilder nennt. Nach Bestätigung werden alle gespeicherten Bilder der Garten-Kamera entfernt (einschließlich des aktuellsten Bildes); die Steuerzentrale meldet die Anzahl der gelöschten Bilder. Der Befehl ist bewusst nur als Slash-Befehl verfügbar und nicht als Menü-Button, damit er nicht versehentlich ausgelöst wird.
+Der Telegram-Befehl `/photo_clear` löscht auf Wunsch die gesamte Bild-Historie einer ausgewählten Garten-Kamera. Bei mehreren gekoppelten Garten-Kameras wählt der Nutzer zunächst die betroffene Kamera; bei nur einer geht es direkt weiter. Vor dem unwiderruflichen Löschen erscheint eine Ja/Nein-Rückfrage, die die Anzahl der betroffenen Bilder nennt. Nach Bestätigung werden alle Historienbilder der Garten-Kamera entfernt; die zuletzt empfangene Momentaufnahme für die Sofort-Anzeige (`/photo`) bleibt jedoch erhalten, damit die Foto-Anzeige weiter funktioniert. Die Steuerzentrale meldet anschließend die Anzahl der gelöschten Bilder. Der Befehl ist als Slash-Befehl verfügbar (auffindbar in der Telegram-Befehlsliste) und nicht als prominenter Reply-Keyboard-Button, damit er nicht versehentlich angetippt wird; die Ja/Nein-Rückfrage schützt zusätzlich vor versehentlichem Auslösen.
 
 ## User Stories
 
@@ -26,14 +26,14 @@ Ein neuer Telegram-Befehl löscht auf Wunsch die gesamte Bild-Historie einer aus
 
 ## Implementierungs-Entscheidungen (Implementation Decisions)
 
-- **Neuer Telegram-Befehl** (Arbeitsname `/camera_clear`; Alternative `/camera_delete` — finaler Name vor Implementierung mit dem Nutzer abstimmen), eingereiht in die bestehende `/camera_*`-Befehlsfamilie. **Kein** Menü-Button, da destruktiv.
+- **Neuer Telegram-Befehl `/photo_clear`** (final festgelegt), namentlich an die Foto-Anzeige `/photo` angelehnt statt an die `/camera_*`-Konfigfamilie. Er wird in der Telegram-Befehlsliste (`setMyCommands`) registriert, damit er auffindbar bleibt, aber **nicht** als Reply-Keyboard-Button angeboten, da destruktiv. Hinweis: Der Dispatcher prüft heute `text.startswith("/photo")`; der `/photo_clear`-Zweig muss daher **vor** dem `/photo`-Zweig stehen (bzw. `/photo` auf `not startswith("/photo_")` eingeengt werden).
 - **Auswahl- und Bestätigungsfluss:**
   - Keine Garten-Kamera gekoppelt → Hinweis-Nachricht, Abbruch.
   - Genau eine Garten-Kamera → direkt zur Lösch-Rückfrage.
   - Mehrere Garten-Kameras → Inline-Tastatur zur Auswahl der betroffenen Kamera (gleiches Muster wie die bestehende Bild-Anzeige).
   - Anschließend Ja/Nein-Rückfrage mit Anzahl der betroffenen Bilder via Inline-Tastatur. Bestätigung löscht, Abbruch lässt alles unverändert.
   - Sind null Bilder vorhanden → Hinweis statt Rückfrage.
-- **Löschfunktion:** eine neue Funktion in der Scheduler-Fassade, als Geschwister des bestehenden automatischen Cleanups. Sie leert das Bild-Verzeichnis einer Garten-Kamera (alle gespeicherten Bilder **einschließlich** des aktuellsten Bildes), lässt das nun leere Verzeichnis bestehen (das nächste empfangene Bild legt es ohnehin neu an) und gibt die Anzahl gelöschter Bilder zurück. Sie ist robust gegen ein fehlendes Verzeichnis (Rückgabe 0).
+- **Löschfunktion:** eine neue Funktion in der Scheduler-Fassade, als Geschwister des bestehenden automatischen Cleanups (`cleanup_camera_photos`). Sie löscht alle Historienbilder (`photo_*.jpg`) einer Garten-Kamera und **behält** dabei die `latest.jpg` (die abgeleitete Momentaufnahme für die Sofort-Anzeige), exakt wie der bestehende Cleanup, der `latest.jpg` ebenfalls nie anfasst. Sie gibt die Anzahl gelöschter Historienbilder zurück (entspricht der Anzahl der tatsächlich gelöschten Dateien, da `latest.jpg` nicht gelöscht wird) und ist robust gegen ein fehlendes Verzeichnis (Rückgabe 0).
 - **Adressierung:** Der Bezug Garten-Kamera → Verzeichnis erfolgt über den Wunschnamen; die Liste der Garten-Kameras stammt aus der Datenbank.
 - **Keine Datenbank-Änderung:** Die Bild-Historie hat keine eigenen Datenbank-Einträge; Kopplung, `last_seen` und Kamera-Einstellungen bleiben unberührt.
 - **Architektur:** Das Dateisystem-I/O verbleibt in der Scheduler-Fassade, wo bereits der automatische Cleanup liegt — keine neue Adapter-zu-Adapter-Kopplung und kein Verstoß gegen die „stateless adapters"-Regel. Die Telegram-UI ruft die Funktion direkt auf (analog dazu, wie die Bild-Anzeige direkt auf das aktuellste Bild im Verzeichnis zugreift). Ein Ereignis-Kanal ist nicht nötig, da es sich um eine direkte, nutzerausgelöste Aktion handelt und nicht um einen Querschnitts-Seiteneffekt.
@@ -43,8 +43,8 @@ Ein neuer Telegram-Befehl löscht auf Wunsch die gesamte Bild-Historie einer aus
 
 - **Gute Tests** prüfen nur das beobachtbare externe Verhalten — welche Bilder nach dem Aufruf noch existieren, welcher Zahlenwert zurückkommt und welche Nachrichten/Callback-Ergebnisse die UI erzeugt — nicht interne Implementierungsdetails.
 - **Höchste bestehende Nahtstelle für die Löschlogik:** direkter Aufruf der neuen Scheduler-Funktion mit einem temporären Verzeichnis (`tmp_path`) und gesetztem Bild-Verzeichnis, exakt nach dem Muster von `tests/core/test_camera_cleanup.py`. Abgedeckte Fälle:
-  - Alle gespeicherten Bilder einer Garten-Kamera (inkl. aktuellstem Bild) werden gelöscht.
-  - Der Rückgabewert entspricht der Anzahl gelöschter Bilder.
+  - Alle Historienbilder (`photo_*.jpg`) einer Garten-Kamera werden gelöscht; die `latest.jpg` bleibt erhalten.
+  - Der Rückgabewert entspricht der Anzahl gelöschter Historienbilder.
   - Ein fehlendes Verzeichnis liefert 0 ohne Fehler.
   - Bilder anderer Garten-Kameras bleiben unberührt.
 - **UI-/Callback-Fluss:** an der bestehenden UI-Test-Nahtstelle nach dem Muster von `tests/ui/test_camera_wizard.py`:
@@ -65,6 +65,6 @@ Ein neuer Telegram-Befehl löscht auf Wunsch die gesamte Bild-Historie einer aus
 
 ## Weitere Anmerkungen (Further Notes)
 
-- **Wechselwirkung mit dem Zeitraffer-GIF / Bild-Puffer:** Das Leeren der Bild-Historie entfernt Rohmaterial, das sonst in ein Zeitraffer-GIF einfließen würde. Vor der Implementierung ist zu prüfen, wo Bild-Puffer und bereits erzeugte GIFs liegen, damit der Befehl gezielt nur die Einzelbild-Historie der gewählten Garten-Kamera trifft und keine separat abgelegten GIFs löscht.
-- **Befehlsname** final mit dem Nutzer abstimmen (`/camera_clear` vs. `/camera_delete`).
-- Der bestehende automatische Cleanup verschont heute das aktuellste Bild; dieser Befehl löscht es bewusst mit, weil die Garten-Kamera bei der nächsten Aufnahme ohnehin ein neues aktuellstes Bild liefert.
+- **Wechselwirkung mit dem Zeitraffer-GIF / Bild-Puffer (geklärt):** Die Zeitraffer-GIF-Generierung (Feature 0026) ist noch nicht implementiert; im Dateisystem existieren heute pro Garten-Kamera nur `photo_*.jpg` (Bild-Historie) und `latest.jpg` (Momentaufnahme). Es gibt keinen separaten Bild-Puffer und keine abgelegten GIFs, die der Befehl versehentlich treffen könnte. Da die Löschfunktion gezielt nur `photo_*.jpg` per Glob entfernt, bleibt sie auch nach Einführung von 0026 unkritisch, sofern GIFs außerhalb dieses Glob-Musters abgelegt werden — dies ist bei der Umsetzung von 0026 zu beachten.
+- **Befehlsname (geklärt):** final `/photo_clear`.
+- **`latest.jpg` bleibt erhalten (Abweichung gegenüber einer früheren Annahme):** Anders als ursprünglich angedacht löscht der Befehl die Momentaufnahme `latest.jpg` **nicht** mit. So funktioniert `/photo` unmittelbar nach dem Leeren weiter und zeigt weiterhin den letzten Stand; konsistent mit dem bestehenden automatischen Cleanup, der `latest.jpg` ebenfalls verschont. Mit der nächsten regulären Aufnahme wird die Historie ohnehin neu befüllt.

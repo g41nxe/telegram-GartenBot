@@ -268,6 +268,38 @@ def cleanup_camera_photos():
                     except Exception as e:
                         logger.error(f"Fehler beim Löschen von {p_path}: {e}")
 
+def count_camera_history(wish_name: str) -> int:
+    """Zählt die Historienbilder (photo_*.jpg) einer Garten-Kamera, ohne zu löschen.
+
+    Ein fehlendes Kamera-Verzeichnis liefert 0.
+    """
+    cam_dir = Path(config.CAMERA_IMAGE_DIR) / wish_name
+    if not cam_dir.exists():
+        return 0
+    return sum(1 for _ in cam_dir.glob("photo_*.jpg"))
+
+
+def clear_camera_history(wish_name: str) -> int:
+    """Löscht alle Historienbilder (photo_*.jpg) einer Garten-Kamera und gibt deren Anzahl zurück.
+
+    Geschwister-Funktion zum automatischen Cleanup. Die Momentaufnahme latest.jpg
+    bleibt bewusst erhalten, damit die Sofort-Anzeige (/photo) weiter funktioniert.
+    Ein fehlendes Kamera-Verzeichnis liefert 0 ohne Fehler.
+    """
+    cam_dir = Path(config.CAMERA_IMAGE_DIR) / wish_name
+    if not cam_dir.exists():
+        return 0
+
+    deleted = 0
+    for file_path in cam_dir.glob("photo_*.jpg"):
+        try:
+            file_path.unlink()
+            deleted += 1
+        except Exception as e:
+            logger.error(f"Fehler beim Löschen von {file_path}: {e}")
+    return deleted
+
+
 def check_startup_safety() -> bool:
     """Prüft beim Systemstart, ob das Ventil unüberwacht offen steht, und schließt es gegebenenfalls."""
     global _controller

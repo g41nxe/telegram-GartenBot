@@ -591,6 +591,43 @@ def _send_latest_photo(chat_id: int, wish_name: str):
     else:
         telegram_client.send_message(chat_id, f"❌ Kein Foto für Kamera '{wish_name}' gefunden.")
 
+def handle_photo_clear(chat_id: int):
+    """Startet das Löschen der Bild-Historie: Kamera-Auswahl bei mehreren, sonst direkt zur Rückfrage."""
+    cameras = database.get_all_cameras()
+    if not cameras:
+        telegram_client.send_message(chat_id, "❌ Es sind keine Kameras gekoppelt.")
+        return
+
+    if len(cameras) == 1:
+        _ask_photo_clear_confirmation(chat_id, cameras[0]["wish_name"])
+    else:
+        rows = [[{"text": cam["wish_name"], "callback_data": f"photoclear_{cam['wish_name']}"}]
+                for cam in cameras]
+        telegram_client.send_message(
+            chat_id,
+            "Von welcher Kamera möchtest du die Bild-Historie löschen?",
+            {"inline_keyboard": rows}
+        )
+
+def _ask_photo_clear_confirmation(chat_id: int, wish_name: str):
+    """Zeigt die Ja/Nein-Rückfrage mit der Anzahl betroffener Bilder; bei 0 Bildern nur ein Hinweis."""
+    from .. import scheduler
+    count = scheduler.count_camera_history(wish_name)
+    if count == 0:
+        telegram_client.send_message(chat_id, f"ℹ️ Für die Kamera '{wish_name}' sind keine Bilder vorhanden.")
+        return
+
+    telegram_client.send_message(
+        chat_id,
+        f"🗑️ *Bild-Historie löschen*\n\n"
+        f"Möchtest du wirklich alle *{count}* Bilder der Kamera *'{wish_name}'* löschen?\n\n"
+        "_Diese Aktion kann nicht rückgängig gemacht werden._ Das aktuellste Foto bleibt erhalten.",
+        {"inline_keyboard": [[
+            {"text": "✅ Ja, löschen", "callback_data": f"photoclear_confirm_{wish_name}"},
+            {"text": "❌ Abbrechen", "callback_data": "cancel"}
+        ]]}
+    )
+
 def handle_camera_interval(chat_id: int, text: str):
     try:
         parts = text.split(" ")
@@ -1278,6 +1315,8 @@ def _process_message(msg_obj: dict):
         handle_setup_menu(chat_id)
     elif text == "🔧 Ventil koppeln" or text.startswith("/setup"):
         handle_setup(chat_id)
+    elif text.startswith("/photo_clear"):
+        handle_photo_clear(chat_id)
     elif text == "📸 Foto anzeigen" or text == "📷 Foto anzeigen" or text.startswith("/photo") or (text.startswith("/camera") and not text.startswith("/camera_")):
         handle_photo(chat_id)
     elif text == "📷 Kamera koppeln" or text.startswith("/camera_setup"):
@@ -1730,6 +1769,22 @@ def _process_callback_query(cb_obj: dict):
         wish_name = data.split("_", 1)[1]
         telegram_client.answer_callback_query(cb_id, f"Lade Foto von {wish_name}...")
         _send_latest_photo(chat_id, wish_name)
+
+    elif data.startswith("photoclear_confirm_"):
+        wish_name = data[len("photoclear_confirm_"):]
+        telegram_client.answer_callback_query(cb_id, "Lösche Bild-Historie...")
+        from .. import scheduler
+        deleted = scheduler.clear_camera_history(wish_name)
+        telegram_client.send_message(
+            chat_id,
+            f"🗑️ Bild-Historie der Kamera *'{wish_name}'* gelöscht — *{deleted}* Bilder entfernt.",
+            get_main_keyboard()
+        )
+
+    elif data.startswith("photoclear_"):
+        wish_name = data[len("photoclear_"):]
+        telegram_client.answer_callback_query(cb_id)
+        _ask_photo_clear_confirmation(chat_id, wish_name)
 
     elif data.startswith("sched_edit_") and not data.startswith("sched_editfield_") and not data.startswith("sched_editday_"):
         if data == "sched_edit_cancel":
