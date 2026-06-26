@@ -1,3 +1,16 @@
+## v1.9.0 — 2026-06-26
+
+### Neu
+- Getimte Kamera-Aufnahmen: Kamera nimmt automatisch zu konfigurierten Uhrzeiten auf
+- Neuer Befehl /aufnahmen zur Verwaltung der Foto-Zeitpunkte (inkl. Wizard)
+- Kamera wacht nach dem Guss automatisch kurz auf und macht ein Foto
+
+### Intern
+- Feature-Abschluss-Rule: Beads-Ticket und Docs-Pflege immer im selben Commit
+- Release-Trigger nur noch über Versions-Tag (nicht mehr bei jedem Branch-Push)
+
+---
+
 ## v1.8.0 — 2026-06-26
 
 ### Neu
