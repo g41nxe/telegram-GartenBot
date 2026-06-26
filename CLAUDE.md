@@ -165,3 +165,5 @@ Before implementing any feature or refactor, read in order:
 ADR deviations must be flagged explicitly for review.
 
 If the feature touches the Telegram UI, also review [`docs/design/telegram-nachrichten.html`](docs/design/telegram-nachrichten.html) for existing message style, and keep it in sync per `.claude/rules/telegram_messages.md`.
+
+When a feature is complete, follow the Definition of Done in `.agents/rules/feature-done.md`: close the Beads issue, move feature and plan docs to `completed/`, commit together.
