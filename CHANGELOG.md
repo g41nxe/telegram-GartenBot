@@ -1,3 +1,11 @@
+## v1.9.1 — 2026-06-26
+
+### Intern
+- Bot UX Redesign (Feature 0031): Spec, Implementierungsplan und Beads-Issue angelegt
+- CONTEXT.md: UI-Ausnahmen für Kamera-Untermenü-Labels dokumentiert
+
+---
+
 ## v1.9.0 — 2026-06-26
 
 ### Neu
