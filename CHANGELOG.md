@@ -1,3 +1,11 @@
+## v1.11.1 — 2026-06-27
+
+### Behoben
+- Zweites Ventil (Nebel-Düse) zeigte dauerhaft 🔴 in /status trotz aktivem Zigbee-Link
+- TestNebelScheduling schlug täglich nach 18 Uhr fehl (Datumsabhängigkeit behoben)
+
+---
+
 ## v1.11.0 — 2026-06-27
 
 ### Neu
