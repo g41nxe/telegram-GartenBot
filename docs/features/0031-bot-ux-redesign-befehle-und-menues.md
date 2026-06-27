@@ -32,6 +32,7 @@ Vollständiges UX-Redesign der Telegram-Bot-Navigation:
 8. Als Benutzer möchte ich ein aufgeräumtes Telegram-`/`-Menü mit maximal 4 Einträgen sehen, damit ich schnell den gewünschten Befehl finde.
 9. Als Benutzer möchte ich „Bild-Historie löschen" über das Kamera-Untermenü (Button „Fotos löschen") auslösen, damit die Löschaktion im richtigen Kontext liegt.
 10. Als Benutzer möchte ich, dass `/setup` dasselbe Einstellungen-Untermenü öffnet wie der Tastatur-Button, damit es kein inkonsistentes Verhalten gibt.
+11. Als Benutzer möchte ich beim Sofort-Nebel die Stoß-Dauer und die Pause zwischen den Stößen pro Lauf wählen, damit ich den Kühl-Takt situativ an Hitze und Wind anpassen kann, ohne die Konfiguration auf dem Pi zu ändern.
 
 ## Implementierungs-Entscheidungen (Implementation Decisions)
 
@@ -64,6 +65,23 @@ Vollständiges UX-Redesign der Telegram-Bot-Navigation:
 ```
 - Erweitert um „🔄 Software-Update" (bisher eigener Menü-Eintrag)
 
+### 🌫️ Sofort-Nebel — Takt pro Lauf wählbar (Inline-Flow)
+
+Bisher fragt der Sofort-Nebel nur die Gesamtlaufzeit ab und nutzt für Stoß-Dauer und Pause feste Config-Defaults (`NEBEL_ON_SECONDS`, `NEBEL_PAUSE_MINUTES`). Künftig fragt der Flow drei Schritte ab:
+
+```
+🌫️ Sofort-Nebel
+ 1. Stoß-Dauer?  [10s] [20s] [30s] [45s]
+ 2. Pause?       [2] [3] [5] [10] Min
+ 3. Laufzeit?    [15] [30] [60] [120] Min
+```
+
+- Reihenfolge: Stoß-Dauer → Pause → Laufzeit → Start. Erst nach dem dritten Schritt öffnet sich das Nebel-Ventil.
+- Die Tastaturen für Stoß-Dauer und Pause werden mit dem geplanten Nebel-Intervall geteilt (`get_nebel_on_keyboard()` / `get_nebel_pause_keyboard()`), bekommen aber eigene Callbacks (`nebel_now_on_{s}`, `nebel_now_pause_{m}`), damit der Dispatcher Sofort- und Zeitplan-Flow nicht verwechselt.
+- `NEBEL_ON_SECONDS` und `NEBEL_PAUSE_MINUTES` bleiben als voreingestellte Default-Werte erhalten (vorausgewählter Button bzw. Fallback), steuern das Verhalten aber nicht mehr fest.
+- `NEBEL_MANUAL_MAX_MINUTES` deckelt weiterhin die Laufzeit (harter Backstop, unverändert).
+- Der gewählte Takt gilt nur für diesen einen Lauf — es wird nichts persistiert (bewusst, analog zur „Laufzeit"-Wahl).
+
 ### Registriertes Telegram-Menü (4 Einträge, keine Duplikate zu Tastatur-Buttons)
 - `/tagesbericht` — Tagesbericht manuell abrufen
 - `/zeitplaene` — Gieß-Zeitpläne öffnen
@@ -83,7 +101,7 @@ Vollständiges UX-Redesign der Telegram-Bot-Navigation:
 
 ### ADR-Änderungen
 - ADR 0012, Punkt 6: `/report` und `/statusbericht` werden zu `/tagesbericht` zusammengeführt (domain-konform zu CONTEXT.md „Tagesbericht"; _Avoid_: Daily-Report, Status-Report)
-- Neuer ADR 0033 dokumentiert die Gesamtentscheidung zur Bot-Navigation
+- Neuer ADR **0034** dokumentiert die Gesamtentscheidung zur Bot-Navigation (ADR 0033 ist bereits vom Nebel-Intervall belegt). Der ADR hält auch fest, dass der Sofort-Nebel-Takt pro Lauf gewählt wird (nicht persistiert), konsistent zur Laufzeit-Wahl.
 
 ### telegram-nachrichten.html
 Bei der Implementierung muss `docs/design/telegram-nachrichten.html` aktualisiert werden:
@@ -106,13 +124,17 @@ Bei der Implementierung muss `docs/design/telegram-nachrichten.html` aktualisier
   - Entfernte Befehle (`/add`, `/delete`, `/toggle`, `/photo`, `/report` etc.) lösen „Unbekannter Befehl" aus
   - Callback `phtadd_start` (Fotozeiten-Wizard) erreichbar über Kamera-Untermenü
   - Callback `photoclear_` (Fotos löschen) erreichbar über Kamera-Untermenü
+  - Sofort-Nebel: `nebel_now` zeigt zuerst die Stoß-Dauer-Auswahl; `nebel_now_on_{s}` zeigt danach die Pause-Auswahl; `nebel_now_pause_{m}` zeigt zuletzt die Laufzeit-Auswahl
+  - Sofort-Nebel: Nach Laufzeit-Wahl wird `_nebel_ctrl.start(...)` mit den **gewählten** Stoß-/Pause-Werten aufgerufen — nicht mit `config.NEBEL_ON_SECONDS` / `config.NEBEL_PAUSE_MINUTES`
+  - Sofort-Nebel: Laufzeit über `NEBEL_MANUAL_MAX_MINUTES` bleibt gedeckelt
 
 ## Nicht im Leistungsumfang (Out of Scope)
 
-- Inhaltliche Änderungen an den Handler-Funktionen selbst (nur Routing und Benennung ändern sich)
+- Inhaltliche Änderungen an den Handler-Funktionen selbst, mit **einer Ausnahme**: der Sofort-Nebel-Flow wird um Stoß-Dauer- und Pause-Auswahl erweitert (siehe oben). Alle anderen Handler ändern nur Routing und Benennung.
 - Umbenennung interner Python-Funktionsnamen (soweit nicht nötig)
-- Redesign der Nachrichten-Texte oder Wizard-Dialoge
-- Neue Funktionalität
+- Redesign der Nachrichten-Texte oder Wizard-Dialoge (außer den neuen Sofort-Nebel-Prompts)
+- Persistieren des Sofort-Nebel-Takts (bewusst nur pro Lauf)
+- Weitere neue Funktionalität über den Sofort-Nebel-Takt hinaus
 
 ## Weitere Anmerkungen (Further Notes)
 
