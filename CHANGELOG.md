@@ -1,3 +1,14 @@
+## v1.11.0 — 2026-06-27
+
+### Neu
+- Ventil-Auswahl im Bewässerungs-Wizard: bei mehreren Ventilen wählt man eines aus
+- Bearbeiten-Menü zeigt das zugewiesene Ventil und erlaubt Änderung
+
+### Behoben
+- Nebel-Wizard-Bestätigung: Ventilname mit Sonderzeichen führte zu HTTP 400
+
+---
+
 ## v1.10.1 — 2026-06-27
 
 ### Behoben
