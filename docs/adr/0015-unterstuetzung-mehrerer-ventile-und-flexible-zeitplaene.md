@@ -29,6 +29,8 @@ Bisher unterstützte das System nur ein einzelnes physisches Ventil mit dem fest
    * Der manuelle Bewässerungs-Assistent erlaubt die Auswahl mehrerer Ventile und fragt nach dem Ausführungsmodus (sequentiell/parallel) sowie den Grenzwerten (Dauer/Volumen).
    * **Ein-Ventil-Fallstrick/Vereinfachung**: Befindet sich nur ein einziges Ventil im System, werden die Schritte zur Ventilauswahl und zum Ausführungsmodus im Dialog-Assistenten des Telegram-Bots automatisch übersprungen (Auto-Selektion), sodass der Dialog für den Benutzer genauso kurz und einfach bleibt wie zuvor.
 
+   _Amendment (ADR 0034):_ Die UI standardisiert auf **Einzel-Ventil-Auswahl** aus einer **ungefilterten** Ventil-Liste — sowohl in den Zeitplänen (seit v1.11.0) als auch im manuellen Sofort-Guss (Feature 0031). Die hier beschriebene **Mehrfach-Ventil-Zuweisung mit Ausführungsmodus** (sequenziell/parallel) bleibt im Datenmodell vorhanden (`schedule_valves`, `execution_mode`), wird in der UI aber bewusst nicht exponiert. Der manuelle Sofort-Guss steuert genau ein Ventil; Mehrfach-Bewässerung läuft konzeptionell über Zeitpläne.
+
 ## Konsequenzen
 
 * Höhere Flexibilität und Skalierbarkeit für größere Gartenlayouts.

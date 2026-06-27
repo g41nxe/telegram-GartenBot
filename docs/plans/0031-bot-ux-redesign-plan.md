@@ -23,8 +23,11 @@ Neue Tests in `tests/ui/test_ux_redesign.py`:
 - Sofort-Nebel: `nebel_now_on_{s}` zeigt danach die Pause-Auswahl
 - Sofort-Nebel: `nebel_now_pause_{m}` zeigt zuletzt die Laufzeit-Auswahl (`nebel_dur_{m}`)
 - Sofort-Nebel: nach der Laufzeit-Wahl wird `_nebel_ctrl.start(...)` mit den **gewählten** Stoß-/Pause-Werten aufgerufen (nicht mit den Config-Defaults)
-- Stopp: bei 0/1 aktivem Ventil sofort stoppen; bei mehreren aktiven erscheint die Auswahl inkl. `stop_valve_all`
-- Stopp: `stop_valve_{mqtt_name}` stoppt gezielt; `stop_valve_all` → `stop_watering()` ohne Argument
+- Stopp: aktive Quellen zählen Güsse + laufendes Nebel-Fenster; bei 0/1 sofort stoppen, bei mehreren erscheint die Auswahl inkl. `stop_valve_all`
+- Stopp: laufendes Nebel-Fenster erscheint als `stop_nebel_{mqtt_name}` und stoppt via `nebel_ctrl.stop(mqtt_name)`
+- Stopp: `stop_valve_{mqtt_name}` stoppt einen Guss gezielt; `stop_valve_all` → `stop_watering()` **und** `nebel_ctrl.stop()`
+- Nebel-Unterdrückung: nach `nebel_ctrl.stop()` ist `is_suppressed(mqtt_name)` bis `end_time` wahr; `_ensure_nebel_window` startet nicht neu
+- Nebel-Unterdrückung: `nebel_ctrl.start(mqtt_name)` hebt die Sperre auf; nach `end_time` läuft sie lazy ab
 - Zeitplan-Ansicht enthält keine Sofort-Nebel-Zeile mehr
 
 ## Schritt 2 — Legacy-Handler entfernen
@@ -113,22 +116,57 @@ Callbacks: `water_mode_guss`, `nebel_now` (bestehend).
 
 **Nebel-Button aus Zeitplänen entfernen:** In `get_schedules_inline_keyboard` die Zeile `rows.append([{"text": "🌫️ Sofort-Nebel", …}])` ([telegram_ui.py:258](../../src/daemon/ui/telegram_ui.py)) streichen.
 
-## Schritt 8 — „Stopp": Ventil-Auswahl bei mehreren aktiven
+## Schritt 8 — „Stopp": querschnittlicher Aus-Knopf (Güsse + Nebel) + Restart-Unterdrückung
 
-**Neue Controller-Lese-Methode** in `core/watering_controller.py`:
+**Neue Lese-Methoden in `core/`:**
 ```python
+# watering_controller.py
 def get_active_valve_names(self):
     with self._lock:
         return list(self._active_cycles.keys())
+
+# nebel_controller.py — laufendes Fenster fürs Stopp-Menü
+def get_active_window(self):           # -> mqtt_name | None (ein Fenster pro Ventil)
+    with self._lock:
+        return next(iter(self._cycles.keys()), None)
 ```
 
-**Dispatcher „🛑 Stopp":**
-- `aktiv = _watering_ctrl.get_active_valve_names()`
-- 0 → „Es läuft gerade keine Bewässerung."
-- 1 → `_watering_ctrl.stop_watering(aktiv[0])` direkt.
-- >1 → Inline-Keyboard mit `stop_valve_{mqtt_name}` je aktivem Ventil (Anzeigename via `database.get_valve_by_mqtt_name`) + `stop_valve_all`.
+**Restart-Unterdrückung in `nebel_controller.py` (C1, in-memory):**
+```python
+# __init__
+self._suppressed_until: Dict[str, datetime] = {}
 
-**Callbacks:** `stop_valve_{mqtt_name}` → `stop_watering(mqtt_name)`; `stop_valve_all` → `stop_watering()` (alle).
+# stop(mqtt_name): vor _finish die end_time des laufenden Fensters merken
+self._suppressed_until[name] = self._cycles[name]["end_time"]
+
+# start(mqtt_name): expliziter Neustart hebt die Sperre auf
+self._suppressed_until.pop(mqtt_name, None)
+
+def is_suppressed(self, mqtt_name: str) -> bool:
+    until = self._suppressed_until.get(mqtt_name)
+    if until is None:
+        return False
+    if datetime.now() >= until:       # lazy ablaufen lassen
+        self._suppressed_until.pop(mqtt_name, None)
+        return False
+    return True
+```
+
+**Scheduler-Prüfung** (`scheduler._ensure_nebel_window`): Start nur, wenn
+`not _nebel_controller.is_active(mqtt_name) and not _nebel_controller.is_suppressed(mqtt_name)`.
+
+**Dispatcher „🛑 Stopp":**
+- Aktive Quellen sammeln: Güsse (`get_active_valve_names()`) + laufendes Nebel-Fenster (`get_active_window()`).
+- 0 → „Es läuft gerade nichts."
+- 1 → direkt stoppen (Guss → `stop_watering(name)`; Nebel → `nebel_ctrl.stop(name)`).
+- >1 → Inline-Keyboard: je Guss `stop_valve_{mqtt_name}`, fürs Fenster `stop_nebel_{mqtt_name}` (Label „{wish_name} (Nebel)"), plus `stop_valve_all`.
+
+**Callbacks:**
+- `stop_valve_{mqtt_name}` → `stop_watering(mqtt_name)`
+- `stop_nebel_{mqtt_name}` → `nebel_ctrl.stop(mqtt_name)` (setzt damit die Suppression)
+- `stop_valve_all` → `stop_watering()` **und** `nebel_ctrl.stop()`
+
+**Hinweis:** Der bestehende „🛑 Nebel stoppen"-Button (`nebel_stop`) bleibt; auch er setzt künftig die Suppression (gleicher `stop()`-Pfad).
 
 ## Schritt 9 — Alle Dispatcher-Umbenennungen (Clean Cut)
 
@@ -158,15 +196,17 @@ def get_active_valve_names(self):
 - Sektion 1: alle umbenannten Befehle, neue Untermenü-Karten für Kamera und Einstellungen
 - „Bewässern"-Karte: neuer Art→Ventil→Details-Flow (Guss und Sofort-Nebel)
 - Sofort-Nebel-Karte: Ventil-Auswahl + Drei-Schritt-Takt (Stoß-Dauer → Pause → Laufzeit)
-- „Stopp"-Karte: Ventil-Auswahl bei mehreren aktiven (inkl. „Alle stoppen")
+- „Stopp"-Karte: querschnittlicher Aus-Knopf (Güsse + laufendes Nebel-Fenster), Auswahl bei mehreren aktiven (inkl. „Alle stoppen")
 - Zeitplan-Karte: Sofort-Nebel-Zeile entfernt
 - Entfernte Karten: alle wegfallenden Befehle
-- ADR 0012 Amendment einarbeiten: `/report` → `/tagesbericht`
+- ADR-Amendments einarbeiten: `/report` → `/tagesbericht` (0012)
 
-## Schritt 12 — ADR 0012 und ADR 0034
+## Schritt 12 — ADRs schreiben/ergänzen
 
-- ADR 0012: Amendment-Notiz zu `/tagesbericht` einfügen
-- Neuen ADR **0034** schreiben (0033 ist vom Nebel-Intervall belegt): Bot-Navigation — Gruppierung, Sprache, Menü-Struktur; inkl. Entscheidungen „Sofort-Nebel-Takt pro Lauf, nicht persistiert", „manuelle Bewässerung folgt Muster Art → Ventil → Details", „Ventil-Auswahl wird bei genau einem Ventil übersprungen", „Stopp fragt nur bei mehreren aktiven Ventilen"
+- **ADR 0012:** Amendment-Notiz zu `/tagesbericht` (bereits eingefügt — verifizieren).
+- **ADR 0015 (Amendment):** manueller Sofort-Guss = Einzel-Ventil; Mehrfach + Ausführungsmodus bleibt den Zeitplänen vorbehalten; systemweite Einzel-Ventil-Konvention, ungefilterte Ventil-Liste.
+- **ADR 0033 (Amendment):** (a) Sofort-Nebel fragt Stoß-Dauer/Pause pro Lauf; (b) manuell gestopptes Fenster wird bis `end_time` gegen Scheduler-Neustart unterdrückt (in-memory, C1); (c) „Stopp" ist querschnittlicher Notfall-Aus über Güsse + Nebel.
+- **Neuer ADR 0034** (0033 belegt): Bot-Navigation — Gruppierung, Sprache, Menü-Struktur, „Bewässern" als gemeinsamer Einstieg (Art → Ventil → Details), Auto-Selektion bei einem Ventil, „Stopp" als querschnittlicher Aus-Knopf. ADR 0034 ist im Grilling bereits gedraftet — bei Implementierung nur finalisieren.
 
 ## Definition of Done
 
@@ -174,8 +214,9 @@ def get_active_valve_names(self):
 - [ ] Coverage nicht regriert
 - [ ] `telegram-nachrichten.html` aktualisiert (inkl. Bewässern-Flow, Sofort-Nebel, Stopp-Auswahl)
 - [ ] Sofort-Nebel fragt Stoß-Dauer und Pause pro Lauf ab
-- [ ] Bewässern fragt Art und Ventil ab; Stopp fragt Ventil bei mehreren aktiven ab
+- [ ] Bewässern fragt Art und Ventil ab; Stopp ist querschnittlicher Aus-Knopf (Güsse + Nebel)
+- [ ] Manuell gestopptes Nebel-Fenster läuft nicht wieder an (Suppression, C1)
 - [ ] Sofort-Nebel aus der Zeitplan-Ansicht in „Bewässern" umgezogen
-- [ ] ADR 0012 und ADR 0034 geschrieben
+- [ ] ADR 0034 geschrieben; Amendments zu 0012, 0015, 0033 eingefügt
 - [ ] Beads-Issue `telegram-GartenBot-uxr` geschlossen
 - [ ] Feature- und Plan-Dokument nach `completed/` verschoben

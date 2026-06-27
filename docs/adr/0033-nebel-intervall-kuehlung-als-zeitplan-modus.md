@@ -56,10 +56,28 @@ sondern ein über Stunden wiederholter, sekundenkurzer Burst (ON 20 s / Pause 5 
   Telegram-Bot einen **Sofort-Nebel**: Der Benutzer wählt beim Start eine Laufzeit (Buttons,
   z. B. 30/60/120 Min); eine konfigurierte Maximaldauer begrenzt ihn als Backstop. Danach
   Auto-Stopp.
+
+  _Amendment (ADR 0034):_ Der Sofort-Nebel fragt zusätzlich zur Laufzeit nun **Stoß-Dauer und
+  Pause pro Lauf** ab (statt der festen Config-Defaults); die Werte werden nicht persistiert.
+  Der Sofort-Nebel zieht in den Einstieg „Bewässern" um (Art → Ventil → Details).
 - **Zustandsloser Neustart (ADR 0011).** Geplante Nebel-Fenster werden zustandslos aus dem
   Zeitplan abgeleitet: Nach einem Neustart schließt `check_startup_safety()` ein offenes
   Ventil, anschließend prüft der Scheduler „sind wir in einem Nebel-Fenster?" und nimmt den
   Takt wieder auf. Ein **Sofort-Nebel** wird nicht persistiert und verfällt beim Neustart.
+
+  _Amendment (ADR 0034):_ Ein **manuell gestopptes** Nebel-Fenster wird für den Rest seiner
+  Fensterzeit gegen den minütlichen Scheduler-Neustart **unterdrückt** (in-memory
+  `NebelController.is_suppressed`, läuft zur `end_time` lazy ab; ein expliziter Start hebt die
+  Sperre auf). Bewusst **nicht** über Neustarts hinweg persistiert (C1): Ein Daemon-Neustart
+  mitten im Fenster fällt auf die hier beschriebene zustandslose Fensterableitung zurück — das
+  Fenster läuft dann wie gehabt wieder an. Damit ist der manuelle Stopp innerhalb des laufenden
+  Daemons verlässlich, ohne die Zustandslosigkeit über Neustarts aufzugeben.
+
+- **Querschnittlicher Notfall-Stopp (ADR 0034).** Der Telegram-„🛑 Stopp" ist ein
+  einheitlicher Aus-Knopf über **alle** aktiven Aktuierungen — laufende Güsse *und* ein
+  laufendes Nebel-Fenster. Die begriffliche Trennung Kühlen ≠ Bewässern gilt im Normalfluss;
+  im Notfall-Stopp steht der gemeinsame Aus-Knopf bewusst darüber. Ein gestopptes Nebel-Fenster
+  wird dabei wie oben unterdrückt.
 
 ## Konsequenzen
 

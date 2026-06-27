@@ -68,18 +68,34 @@ Vollständiges UX-Redesign der Telegram-Bot-Navigation:
 - **Nebel-Zweig:** identisch zur Sofort-Nebel-Logik (siehe unten), nur dass die Ventil-Auswahl jetzt **vor** Stoß-Dauer/Pause/Laufzeit kommt — damit beide Zweige dem Muster „Art → Ventil → Details" folgen.
 - Die Sofort-Nebel-Zeile **wandert aus der Zeitplan-Ansicht** (`get_schedules_inline_keyboard`) hierher. Die Zeitplan-Ansicht zeigt danach nur noch Zeitpläne + „➕ Neuer Zeitplan".
 
-### 🛑 Sofort Stopp — Ventil-Auswahl (nur bei mehreren aktiven)
+### 🛑 Sofort Stopp — einheitlicher Aus-Knopf über alle aktiven Quellen
+
+„Stopp" listet **alle aktiven Aktuierungen** — laufende Güsse *und* ein laufendes Nebel-Fenster (geplant oder Sofort) — als einzeln stoppbare Einträge plus „Alle stoppen".
 
 ```
 🛑 Stopp
- 0/1 aktives Ventil → sofort stoppen (kein Extra-Klick im Notfall)
- >1 aktiv → [🛑 Rasen] [🛑 Beet] [🛑 Alle stoppen]
+ 0/1 aktive Quelle → sofort stoppen (kein Extra-Klick im Notfall)
+ >1 aktiv →
+   [🛑 Rasen]             ← aktiver Guss
+   [🛑 Beet]              ← aktiver Guss
+   [🛑 Terrasse (Nebel)]  ← laufendes Nebel-Fenster
+   [🛑 Alle stoppen]      ← Güsse + Nebel
 ```
 
-- Aktive Ventile kommen aus dem `WateringController` (neue Lese-Methode `get_active_valve_names()` → `list(self._active_cycles.keys())`).
-- 0 aktiv → „Es läuft gerade keine Bewässerung." 1 aktiv → direkt `stop_watering(mqtt_name)`. >1 aktiv → Auswahl `stop_valve_{mqtt_name}` je aktivem Ventil + „🛑 Alle stoppen" (`stop_valve_all` → `stop_watering()` ohne Argument).
-- Wunschname für die Buttons über `database.get_valve_by_mqtt_name(...)`.
-- Scope: „Stopp" bezieht sich auf laufende Güsse. Der Nebel-Intervall wird weiterhin über seinen eigenen „🛑 Nebel stoppen"-Button beendet (unverändert).
+- **Aktive Quellen** = aktive Güsse (`WateringController.get_active_valve_names()` → `list(self._active_cycles.keys())`) **+** ein aktives Nebel-Fenster (`NebelController` — Lese-Schnittstelle für laufendes Ventil + Wunschname).
+- **Skip-Logik zählt alle Quellen:** 0 → „Es läuft gerade nichts." 1 → direkt stoppen. >1 → Auswahl.
+- **Callbacks:** `stop_valve_{mqtt_name}` (Guss, → `stop_watering(mqtt_name)`); `stop_nebel_{mqtt_name}` (Nebel, → `nebel_ctrl.stop(mqtt_name)`); `stop_valve_all` (→ `stop_watering()` *und* `nebel_ctrl.stop()`).
+- Nebel-Eintrag mit Suffix „(Nebel)" kenntlich gemacht; Wunschname via `database.get_valve_by_mqtt_name(...)`.
+- Der separate „🛑 Nebel stoppen"-Button im Nebel-Flow bleibt zusätzlich erhalten (für den Fall, dass man direkt im Nebel-Kontext ist).
+
+### 🛑 Stopp beendet einen Nebel dauerhaft (Restart-Unterdrückung)
+
+Ein manuell gestopptes **geplantes** Nebel-Fenster würde der Scheduler sonst binnen ≤60 s wieder anstoßen (`_ensure_nebel_window` prüft je Minute, ob `now` im Fenster liegt). Damit „Stopp" hält:
+
+- **Unterdrückung in der Nebel-Steuerung (in-memory):** `NebelController._suppressed_until: Dict[mqtt_name, datetime]`. `stop(mqtt_name)` merkt sich `end_time` des laufenden Fensters; `is_suppressed(mqtt_name)` ist wahr, solange `now < end_time` (läuft lazy ab). `start(mqtt_name)` hebt die Sperre auf (expliziter Neustart gewinnt).
+- **Scheduler-Prüfung:** `_ensure_nebel_window` startet nur, wenn `not is_active(name) and not is_suppressed(name)`.
+- **Wirkung:** Geplantes Fenster 12–18 Uhr, Stopp um 14:00 → bleibt bis 18:00 heute aus; morgen läuft es normal. Sofort-Nebel: Sperre ist ein No-op (kein Scheduler-Fenster).
+- **Neustart-Caveat (bewusst, C1):** Die Sperre liegt nur im Speicher. Ein Daemon-Neustart mitten im Fenster setzt auf das bestehende 0033-Grundverhalten zurück (Fenster wird zustandslos neu abgeleitet und läuft an). Das ist identisch zum heutigen Verhalten *ohne* manuellen Stopp — kein neuer Bruch. Persistente Unterdrückung über Neustarts (C2) ist eine bewusst aufgeschobene Verfeinerung.
 
 ### 📷 Kamera-Untermenü (Inline-Keyboard)
 ```
@@ -135,8 +151,11 @@ Bisher fragt der Sofort-Nebel nur die Gesamtlaufzeit ab und nutzt für Stoß-Dau
 - `/statusbericht`, `/camera_interval` — wegfallende Aliases
 
 ### ADR-Änderungen
-- ADR 0012, Punkt 6: `/report` und `/statusbericht` werden zu `/tagesbericht` zusammengeführt (domain-konform zu CONTEXT.md „Tagesbericht"; _Avoid_: Daily-Report, Status-Report)
-- Neuer ADR **0034** dokumentiert die Gesamtentscheidung zur Bot-Navigation (ADR 0033 ist bereits vom Nebel-Intervall belegt). Der ADR hält auch fest, dass der Sofort-Nebel-Takt pro Lauf gewählt wird (nicht persistiert), konsistent zur Laufzeit-Wahl.
+- **ADR 0012, Punkt 6:** `/report` und `/statusbericht` werden zu `/tagesbericht` zusammengeführt (domain-konform zu CONTEXT.md „Tagesbericht"; _Avoid_: Daily-Report, Status-Report).
+- **ADR 0015, Punkt 4 (Amendment):** Der manuelle Sofort-Guss steuert genau **ein** Ventil (Auto-Selektion bei einem, Auswahl bei mehreren). Die Mehrfach-Ventil-Zuweisung mit Ausführungsmodus (sequenziell/parallel) bleibt den **Zeitplänen** vorbehalten und ist im Datenmodell vorhanden, in der manuellen UI aber bewusst nicht exponiert. Die gesamte UI (Zeitpläne wie manuell) standardisiert auf Einzel-Ventil-Auswahl mit ungefilterter Ventil-Liste (keine Guss/Nebel-Rolle im Schema) — konsistent zum v1.11.0-Zeitplan-Wizard.
+- **ADR 0029 (Notiz):** Die Hauptmenü-Buttons „🚿 Bewässern starten" / „🛑 Sofort Stopp" werden zu „🚿 Bewässern" / „🛑 Stopp" gekürzt; 🚿 bleibt der Bewässerungs-Oberbegriff (Guss + Nebel darunter), 🛑 der Stopp-Marker. Die Emoji-Semantik aus 0029 bleibt sonst unangetastet.
+- **ADR 0033 (Amendment):** (a) Der Sofort-Nebel fragt zusätzlich zur Laufzeit nun Stoß-Dauer und Pause pro Lauf ab (nicht persistiert). (b) Ein manuell gestopptes Nebel-Fenster wird für den Rest seiner Fensterzeit gegen den Scheduler-Neustart unterdrückt (in-memory, `is_suppressed`); ein Daemon-Neustart fällt auf die zustandslose Fensterableitung zurück. (c) „Stopp" ist ein querschnittlicher Notfall-Aus über Güsse **und** Nebel — die begriffliche Trennung Kühlen≠Bewässern gilt im Normalfluss, nicht im Notfall-Stopp.
+- **Neuer ADR 0034** (0033 ist vom Nebel-Intervall belegt): Bündelt die Gesamtentscheidung zur Bot-Navigation — Gruppierung, deutsche Sprache, Menü-Struktur, systemweite Einzel-Ventil-Konvention, „Bewässern" als gemeinsamer Einstieg (Art → Ventil → Details), „Stopp" als querschnittlicher Aus-Knopf.
 
 ### telegram-nachrichten.html
 Bei der Implementierung muss `docs/design/telegram-nachrichten.html` aktualisiert werden:
@@ -166,13 +185,16 @@ Bei der Implementierung muss `docs/design/telegram-nachrichten.html` aktualisier
   - Bewässern/Guss: bei genau einem gekoppelten Ventil entfällt die Ventil-Frage; bei mehreren erscheint die Auswahl (`water_valve_{id}`)
   - Bewässern/Guss: der gewählte `mqtt_name` wird an `_watering_ctrl.start_watering(..., mqtt_name=…)` durchgereicht
   - Bewässern: ohne gekoppeltes Ventil → Hinweis statt Start
-  - Stopp: bei 0/1 aktivem Ventil sofort stoppen; bei mehreren aktiven erscheint die Auswahl inkl. „Alle stoppen"
-  - Stopp: `stop_valve_{mqtt_name}` stoppt gezielt, `stop_valve_all` ruft `stop_watering()` ohne Argument
+  - Stopp: aktive Quellen zählen Güsse **und** ein laufendes Nebel-Fenster; bei 0/1 sofort stoppen, bei mehreren erscheint die Auswahl inkl. „Alle stoppen"
+  - Stopp: laufendes Nebel-Fenster erscheint als eigener Eintrag `stop_nebel_{mqtt_name}` und stoppt via `nebel_ctrl.stop(mqtt_name)`
+  - Stopp: `stop_valve_{mqtt_name}` stoppt einen Guss gezielt; `stop_valve_all` ruft `stop_watering()` **und** `nebel_ctrl.stop()`
+  - Nebel-Unterdrückung: nach `nebel_ctrl.stop()` ist `is_suppressed(mqtt_name)` bis `end_time` wahr; `_ensure_nebel_window` startet ein unterdrücktes Fenster **nicht** neu
+  - Nebel-Unterdrückung: `nebel_ctrl.start(mqtt_name)` hebt die Sperre auf; nach `end_time` läuft sie lazy ab
   - Zeitplan-Ansicht enthält nach dem Umzug **keine** Sofort-Nebel-Zeile mehr
 
 ## Nicht im Leistungsumfang (Out of Scope)
 
-- Inhaltliche Änderungen an den Handler-Funktionen selbst, mit **drei Ausnahmen**: (a) der Sofort-Nebel-Flow wird um Stoß-Dauer- und Pause-Auswahl erweitert; (b) „Bewässern" erhält Art- und Ventil-Auswahl; (c) „Stopp" erhält Ventil-Auswahl bei mehreren aktiven Ventilen. Alle anderen Handler ändern nur Routing und Benennung.
+- Inhaltliche Änderungen an den Handler-Funktionen selbst, mit **vier Ausnahmen**: (a) der Sofort-Nebel-Flow wird um Stoß-Dauer- und Pause-Auswahl erweitert; (b) „Bewässern" erhält Art- und Ventil-Auswahl; (c) „Stopp" wird querschnittlicher Aus-Knopf (Güsse + Nebel) mit Auswahl bei mehreren aktiven Quellen; (d) die Nebel-Steuerung erhält eine in-memory Restart-Unterdrückung (`is_suppressed`) plus eine Lese-Schnittstelle fürs laufende Fenster. Alle anderen Handler ändern nur Routing und Benennung.
 - Umbenennung interner Python-Funktionsnamen (soweit nicht nötig)
 - Redesign der Nachrichten-Texte oder Wizard-Dialoge (außer den neuen Sofort-Nebel-Prompts)
 - Persistieren des Sofort-Nebel-Takts (bewusst nur pro Lauf)
@@ -184,5 +206,5 @@ Bei der Implementierung muss `docs/design/telegram-nachrichten.html` aktualisier
 - **UI-Ausnahmen in CONTEXT.md:** „Fotos löschen" und „Fotozeiten" sind als _UI-Ausnahme_ in den Domain-Term-Einträgen „Bild-Historie" und „Aufnahme-Zeitpunkt" vermerkt.
 - **ADR 0013 (Bestätigungen via Reply-Keyboard):** Bleibt für „Fotos löschen" erhalten — Inline-Button löst Handler aus, der Reply-Keyboard-Bestätigung sendet.
 - **Kein Rückwärtskompatibilitäts-Shim:** Alle alten Befehlsnamen werden hart entfernt. Nutzer die `/photo` o.ä. gelernt haben, müssen sich umgewöhnen.
-- **Feature 0006 (Multi-Ventil):** Die Ventil-Auswahl in „Bewässern" und „Stopp" liefert faktisch den noch offenen UI-Schritt (Schritt 9) von Feature 0006 mit. Core und DB tragen Multi-Ventil bereits (`start_watering(mqtt_name=…)`, `stop_watering(mqtt_name=…)`, `database.get_all_valves()`); hier wird es nur in der UI sichtbar gemacht. Das „skip bei genau einem Ventil"-Muster ist aus dem Sofort-Nebel übernommen.
-- **Neue Controller-Methode:** `WateringController.get_active_valve_names()` (reine Lese-Methode, keine Architektur-Verletzung) für die Stopp-Auswahl.
+- **Re-Baseline Multi-Ventil (Stand v1.11.0):** Die Ventil-Auswahl ist im **Zeitplan-Wizard** und beim **Zeitplan-Bearbeiten** bereits ausgeliefert (v1.11.0, Einzel-Ventil, Auto-Selektion bei einem). Feature 0031 ergänzt nur noch die zwei offenen Stellen: **manueller Sofort-Guss** und **Stopp**. Der manuelle Guss spiegelt dabei 1:1 die v1.11.0-Mechanik des Zeitplan-Wizards (`get_all_valves()`, skip-bei-einem). Core und DB tragen Multi-Ventil schon lange (`start_watering(mqtt_name=…)`, `stop_watering(mqtt_name=…)`).
+- **Neue Controller-Methoden:** `WateringController.get_active_valve_names()` (aktive Güsse) und in der `NebelController` eine Lese-Schnittstelle fürs laufende Fenster (Ventil + Wunschname) sowie `is_suppressed(mqtt_name)` — alle reine Lese-/Zustands-Methoden in `core/`, architektur-konform.
