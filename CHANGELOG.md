@@ -1,3 +1,14 @@
+## v1.10.0 — 2026-06-27
+
+### Neu
+- Nebel-Intervall: Terrassen-Kühlung über eine Nebeldüse in regelmäßigen Stößen
+- Geplante Nebel-Fenster (Start–Ende) und manueller Sofort-Nebel per Telegram
+
+### Intern
+- CI: fetch-tags entfernt (kollidierte mit Tag-Trigger im Checkout)
+
+---
+
 ## v1.9.1 — 2026-06-26
 
 ### Intern
