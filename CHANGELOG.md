@@ -1,3 +1,10 @@
+## v1.11.2 — 2026-06-28
+
+### Behoben
+- Foto „nach dem Guss" wurde bei mehrfachem Kamera-Upload doppelt gesendet
+
+---
+
 ## v1.11.1 — 2026-06-27
 
 ### Behoben
