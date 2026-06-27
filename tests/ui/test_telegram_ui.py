@@ -187,7 +187,7 @@ class TestSchedulesInlineKeyboard(unittest.TestCase):
     def test_multiple_schedules_generate_correct_row_count(self):
         schedules = [self._s(1, "A", "07:00", 1), self._s(2, "B", "20:00", 0)]
         kb = get_schedules_inline_keyboard(schedules)
-        self.assertEqual(len(kb["inline_keyboard"]), 3)  # 2 schedule rows + add row
+        self.assertEqual(len(kb["inline_keyboard"]), 4)  # 2 schedule rows + Sofort-Nebel + add row
 
 
 class TestScheduleEditFlow(unittest.TestCase):
@@ -476,6 +476,130 @@ class TestManualWateringPresetCallback(unittest.TestCase):
 
         error_text = mock_client.send_message.call_args[0][1]
         self.assertIn("Fehler", error_text)
+
+
+class TestNebelUI(unittest.TestCase):
+    """Sofort-Nebel, Wizard-Nebel-Zweig und Benachrichtigungen (Feature 0032)."""
+
+    def setUp(self):
+        wizard_states.clear()
+        manual_states.clear()
+
+    def tearDown(self):
+        wizard_states.clear()
+        manual_states.clear()
+
+    def _cb(self, data, chat_id=100, msg_id=1):
+        return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
+
+    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_sofort_nebel_single_valve_starts(self, mock_client, mock_db, mock_nebel):
+        mock_db.get_all_valves.return_value = [{"id": 3, "wish_name": "Terrasse", "mqtt_name": "terrace_mist"}]
+        mock_nebel.start.return_value = (True, "OK")
+
+        _process_callback_query(self._cb("nebel_dur_60"))
+
+        self.assertTrue(mock_nebel.start.called)
+        args = mock_nebel.start.call_args[0]
+        self.assertEqual(args[0], "terrace_mist")          # mqtt_name
+        self.assertEqual(mock_nebel.start.call_args[0][4], "nebel_manual")  # source
+
+    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_sofort_nebel_caps_runtime(self, mock_client, mock_db, mock_nebel):
+        from daemon.ui import telegram_ui
+        mock_db.get_all_valves.return_value = [{"id": 3, "wish_name": "Terrasse", "mqtt_name": "terrace_mist"}]
+        mock_nebel.start.return_value = (True, "OK")
+
+        with patch.object(telegram_ui.config, "NEBEL_MANUAL_MAX_MINUTES", 90):
+            _process_callback_query(self._cb("nebel_dur_120"))   # über dem Cap
+
+        end_dt = mock_nebel.start.call_args[0][3]
+        # gedeckelt auf 90 Min ab jetzt (Toleranz)
+        delta_min = (end_dt - datetime.now()).total_seconds() / 60
+        self.assertLessEqual(delta_min, 91)
+        self.assertGreater(delta_min, 85)
+
+    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_nebel_stop_calls_controller(self, mock_client, mock_nebel):
+        mock_nebel.stop.return_value = (True, "gestoppt")
+        _process_callback_query(self._cb("nebel_stop"))
+        mock_nebel.stop.assert_called_once()
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_on_nebel_started_broadcasts(self, mock_client, mock_db):
+        from daemon.ui.telegram_ui import _on_nebel_interval_started
+        from daemon.core.nebel_events import NebelIntervalStarted
+        mock_db.get_all_valves.return_value = [{"wish_name": "Terrasse", "mqtt_name": "terrace_mist"}]
+        _on_nebel_interval_started(NebelIntervalStarted("terrace_mist", "nebel", "2026-06-27T18:00:00"))
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("Nebel-Intervall", msg)
+        self.assertIn("Terrasse", msg)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_on_nebel_ended_broadcasts(self, mock_client, mock_db):
+        from daemon.ui.telegram_ui import _on_nebel_interval_ended
+        from daemon.core.nebel_events import NebelIntervalEnded
+        mock_db.get_all_valves.return_value = [{"wish_name": "Terrasse", "mqtt_name": "terrace_mist"}]
+        _on_nebel_interval_ended(NebelIntervalEnded("terrace_mist", "nebel", 45, 9, "fertig"))
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("9", msg)
+        self.assertIn("Terrasse", msg)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_nebel_end_before_start_does_not_advance(self, mock_client):
+        """Endzeit ≤ Startzeit wird abgelehnt — der Wizard springt zur Endstunde zurück."""
+        _state_set(wizard_states, 100, {"step": "nebel_endmin", "mode": "nebel",
+                                        "name": "X", "hour": 12, "minute": 0, "end_hour": 11})
+        _process_callback_query(self._cb("nb_emin_30"))  # 11:30 ≤ 12:00
+        self.assertEqual(_state_get(wizard_states, 100)["step"], "nebel_endhour")
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_nebel_end_equal_start_does_not_advance(self, mock_client):
+        _state_set(wizard_states, 100, {"step": "nebel_endmin", "mode": "nebel",
+                                        "name": "X", "hour": 12, "minute": 0, "end_hour": 12})
+        _process_callback_query(self._cb("nb_emin_0"))   # 12:00 == 12:00
+        self.assertEqual(_state_get(wizard_states, 100)["step"], "nebel_endhour")
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_nebel_end_after_start_advances(self, mock_client):
+        _state_set(wizard_states, 100, {"step": "nebel_endmin", "mode": "nebel",
+                                        "name": "X", "hour": 12, "minute": 0, "end_hour": 18})
+        _process_callback_query(self._cb("nb_emin_30"))  # 18:30 > 12:00
+        self.assertEqual(_state_get(wizard_states, 100)["step"], "nebel_on")
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_wiz_mode_nebel_sets_state(self, mock_client):
+        _process_callback_query(self._cb("wiz_mode_nebel"))
+        state = _state_get(wizard_states, 100)
+        self.assertIsNotNone(state)
+        self.assertEqual(state["mode"], "nebel")
+        self.assertEqual(state["step"], 1)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_wiz_confirm_save_nebel_persists_fields(self, mock_client, mock_db):
+        mock_db.add_schedule.return_value = 42
+        _state_set(wizard_states, 100, {
+            "step": 7, "mode": "nebel", "name": "Terrassen-Nebel",
+            "hour": 12, "minute": 0, "end_hour": 18, "end_minute": 30,
+            "on_seconds": 20, "pause_minutes": 5, "valve_id": 3, "days": ["everyday"],
+        })
+
+        _process_callback_query(self._cb("wiz_confirm_save"))
+
+        kwargs = mock_db.add_schedule.call_args.kwargs
+        self.assertEqual(kwargs["mode"], "nebel")
+        self.assertEqual(kwargs["end_time"], "18:30")
+        self.assertEqual(kwargs["on_seconds"], 20)
+        self.assertEqual(kwargs["pause_minutes"], 5)
+        mock_db.set_schedule_valves.assert_called_once_with(42, [3])
 
 
 class TestTelegramWiringSmoke(unittest.TestCase):

@@ -12,6 +12,7 @@ from ..core.watering_events import (
 from .mqtt_client import ValveStatusReported
 from ..core.scheduler_events import WeatherDataFetched
 from ..core.sensor_events import RainSensorMeasured
+from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
 
 logger = logging.getLogger("garden_database_adapter")
 
@@ -29,6 +30,8 @@ class DatabaseLoggerAdapter:
         self.event_bus.subscribe(ValveStatusReported, self._on_valve_status_reported)
         self.event_bus.subscribe(WeatherDataFetched, self._on_weather_data_fetched)
         self.event_bus.subscribe(RainSensorMeasured, self._on_rain_sensor_measured)
+        self.event_bus.subscribe(NebelIntervalStarted, self._on_nebel_started)
+        self.event_bus.subscribe(NebelIntervalEnded, self._on_nebel_ended)
 
     def _on_cycle_started(self, event: WateringCycleStarted):
         limit_info = f"Zeitlimit: {event.duration} Min"
@@ -49,6 +52,13 @@ class DatabaseLoggerAdapter:
 
     def _on_cycle_interrupted(self, event: WateringCycleInterrupted):
         database.log_watering(event.duration_run, event.source, "interrupted", event.details, watered_volume=event.volume_run)
+
+    def _on_nebel_started(self, event: NebelIntervalStarted):
+        database.log_watering(0, event.source, "started", "Nebel-Intervall gestartet.")
+
+    def _on_nebel_ended(self, event: NebelIntervalEnded):
+        # Pro Fenster genau ein Abschluss-Eintrag; einzelne Nebelstöße werden nicht protokolliert.
+        database.log_watering(event.duration_run, event.source, "completed", event.details)
 
     def _on_valve_status_reported(self, event: ValveStatusReported):
         now = datetime.now().isoformat()

@@ -45,7 +45,10 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertEqual(config.SAFETY_TIMEOUT_MINUTES, 30)
         self.assertEqual(config.MQTT_BROKER_PORT, 1883)
         self.assertTrue(config.UNEXPECTED_VALVE_ALERT_ENABLED)
-        
+        self.assertEqual(config.NEBEL_ON_SECONDS, 20)
+        self.assertEqual(config.NEBEL_PAUSE_MINUTES, 5)
+        self.assertEqual(config.NEBEL_MANUAL_MAX_MINUTES, 120)
+
     def test_02_database_schedule_crud(self):
         """Testet das Anlegen, Modifizieren, Umschalten und Löschen von Zeitplänen."""
         # 1. Anlegen
@@ -813,6 +816,101 @@ class TestGardenIrrigation(unittest.TestCase):
         finally:
             self.watering_ctrl.stop_watering()
             bus.unsubscribe(UnexpectedValveOpened, opened)
+
+class TestNebelScheduling(unittest.TestCase):
+    """Scheduler-Integration des Nebel-Intervalls (Feature 0032): Fenster-basiert,
+    zustandslos, ohne Wetter-Check."""
+
+    @classmethod
+    def setUpClass(cls):
+        database.init_db()
+        mqtt_client.HAS_PAHO = False
+        mqtt_client.start_client()
+
+    def setUp(self):
+        from daemon.core.watering_controller import WateringController
+        from daemon.core.nebel_controller import NebelController
+        from daemon import scheduler
+        self.scheduler = scheduler
+        self.watering = WateringController(mqtt_client._global_bus, mqtt_client.client_instance.publish)
+        self.nebel = NebelController(
+            mqtt_client._global_bus, mqtt_client.client_instance.publish,
+            claim_fn=self.watering.claim_valve, release_fn=self.watering.release_valve)
+        scheduler.set_nebel_controller(self.nebel)
+        self.vid = self._ensure_valve()
+
+    def tearDown(self):
+        self.nebel.stop()
+        self.scheduler.set_nebel_controller(None)
+
+    def _ensure_valve(self, mqtt_name="terrace_mist", wish="Terrassen-Düse"):
+        for v in database.get_all_valves():
+            if v["mqtt_name"] == mqtt_name:
+                return v["id"]
+        return database.add_valve(wish, mqtt_name)
+
+    def _nebel_sched(self):
+        sid = database.add_schedule("Terrassen-Nebel", "12:00", "everyday", 0,
+                                    mode="nebel", end_time="18:00", on_seconds=20, pause_minutes=5)
+        database.set_schedule_valves(sid, [self.vid])
+        return database.get_schedule_by_id(sid)
+
+    def test_window_active_starts_nebel(self):
+        from datetime import datetime
+        sched = self._nebel_sched()
+        self.scheduler._ensure_nebel_window(sched, datetime(2026, 6, 27, 14, 0, 0))
+        self.assertTrue(self.nebel.is_active("terrace_mist"))
+
+    def test_outside_window_does_not_start(self):
+        from datetime import datetime
+        sched = self._nebel_sched()
+        self.scheduler._ensure_nebel_window(sched, datetime(2026, 6, 27, 19, 0, 0))
+        self.assertFalse(self.nebel.is_active("terrace_mist"))
+
+    def test_idempotent_within_window(self):
+        from datetime import datetime
+        sched = self._nebel_sched()
+        now = datetime(2026, 6, 27, 14, 0, 0)
+        self.scheduler._ensure_nebel_window(sched, now)
+        self.scheduler._ensure_nebel_window(sched, now)  # zweiter Tick
+        self.assertTrue(self.nebel.is_active("terrace_mist"))
+
+    def test_nebel_path_does_not_check_weather(self):
+        from datetime import datetime
+        sched = self._nebel_sched()
+        with patch.object(weather, "evaluate_watering_factor") as mock_weather:
+            self.scheduler._ensure_nebel_window(sched, datetime(2026, 6, 27, 14, 0, 0))
+            mock_weather.assert_not_called()
+
+    def test_nebelstoss_does_not_trigger_unexpected_open(self):
+        """End-to-End: ein vom Scheduler gestartetes Nebel-Fenster beansprucht das Ventil,
+        sodass ein Nebelstoß (ON ohne Guss-Zyklus) keine Unerwartete Ventilöffnung auslöst.
+
+        Nutzt einen isolierten Ereignis-Kanal — der globale Bus trägt Leichen-Controller
+        anderer Testklassen, die ohne Beanspruchung fälschlich Alarm auslösen würden."""
+        from datetime import datetime
+        from daemon.core.event_bus import EventBus
+        from daemon.core.watering_controller import WateringController
+        from daemon.core.nebel_controller import NebelController
+        from daemon.core.valve_events import ValveStatusReported, UnexpectedValveOpened
+
+        bus = EventBus()
+        watering = WateringController(bus, lambda t, p: True)
+        nebel = NebelController(bus, lambda t, p: True,
+                                claim_fn=watering.claim_valve, release_fn=watering.release_valve)
+        self.scheduler.set_nebel_controller(nebel)
+        sched = self._nebel_sched()
+        opened = []
+        bus.subscribe(UnexpectedValveOpened, lambda e: opened.append(e))
+        try:
+            bus.publish(ValveStatusReported("terrace_mist", "OFF", 0.0, 95, 120))  # bekannter Vorzustand
+            self.scheduler._ensure_nebel_window(sched, datetime(2026, 6, 27, 14, 0, 0))
+            self.assertTrue(nebel.is_active("terrace_mist"))
+            bus.publish(ValveStatusReported("terrace_mist", "ON", 0.0, 95, 120))   # Nebelstoß-Flanke
+            self.assertEqual(opened, [])
+        finally:
+            nebel.stop()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -198,6 +198,7 @@ class TestSendDailyReport(unittest.TestCase):
     def _setup_db_mock(self, mocks, success=1, failed=0, volume=5.0, skip_count=0, valves=None):
         mocks["db"].get_watering_stats_last_24h.return_value = (success, failed, volume)
         mocks["db"].get_watering_skip_count_last_24h.return_value = skip_count
+        mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = valves or []
         mocks["db"].get_metadata.return_value = None
 
@@ -267,6 +268,7 @@ class TestDailyReportDesignSystem(unittest.TestCase):
              patch("daemon.adapters.daily_report.mqtt_client") as mock_mqtt:
             mock_db.get_watering_stats_last_24h.return_value = (1, 0, 5.0)
             mock_db.get_watering_skip_count_last_24h.return_value = 0
+            mock_db.get_nebel_stats_last_24h.return_value = (0, 0.0)
             mock_db.get_all_valves.return_value = []
             mock_db.get_metadata.return_value = None
             mock_weather.get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5, "measured")
@@ -383,11 +385,31 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks = self._make_patches()
         mocks["db"].get_watering_stats_last_24h.return_value = (success, failed, volume)
         mocks["db"].get_watering_skip_count_last_24h.return_value = skip_count
+        mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = valves or []
         mocks["db"].get_metadata.return_value = None
         mocks["weather"].get_weather_data.return_value = (0.5, 0.0, 20.0, 0, 14.0, 24.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
         return generate_daily_report("2026-06-19")
+
+    def test_nebel_line_appears_when_misted(self):
+        """Wurde genebelt, erscheint eine Nebel-Zusammenfassungszeile (Feature 0032)."""
+        from daemon.adapters.daily_report import generate_daily_report
+        mocks = self._make_patches()
+        mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
+        mocks["db"].get_watering_skip_count_last_24h.return_value = 0
+        mocks["db"].get_nebel_stats_last_24h.return_value = (2, 360.0)
+        mocks["db"].get_all_valves.return_value = []
+        mocks["db"].get_metadata.return_value = None
+        mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 28.0, 0, 18.0, 30.0, 5, "measured")
+        mocks["mqtt"].HAS_PAHO = False
+        result = generate_daily_report("2026-06-27")
+        self.assertIn("Nebel-Intervall", result)
+        self.assertIn("2 Fenster", result)
+
+    def test_no_nebel_line_when_not_misted(self):
+        result = self._generate()
+        self.assertNotIn("Nebel-Intervall", result)
 
     def test_green_case_starts_with_guten_morgen(self):
         result = self._generate()
@@ -413,6 +435,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks = self._make_patches()
         mocks["db"].get_watering_stats_last_24h.return_value = (1, 0, 30.0)
         mocks["db"].get_watering_skip_count_last_24h.return_value = 0
+        mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = [valve]
         mocks["db"].get_metadata.return_value = None
         mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 14.0, 24.0, 5, "measured")
@@ -433,6 +456,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks = self._make_patches()
         mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
         mocks["db"].get_watering_skip_count_last_24h.return_value = 0
+        mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = [valve]
         mocks["db"].get_metadata.return_value = None
         mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 14.0, 24.0, 5, "measured")

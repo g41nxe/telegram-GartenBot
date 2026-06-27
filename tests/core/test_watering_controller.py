@@ -353,6 +353,19 @@ class TestUnexpectedValveOpen(unittest.TestCase):
         self._report("ON", "valve_a")
         self.assertEqual([e.mqtt_name for e in self.opened], ["valve_a"])
 
+    def test_claimed_valve_suppresses_unexpected_open(self):
+        """Ein von der Nebel-Steuerung beanspruchtes Ventil löst keine Fremdöffnung aus (Feature 0032)."""
+        self.controller.claim_valve("terrace_mist")
+        self._report("OFF", "terrace_mist")
+        self._report("ON", "terrace_mist")   # Nebelstoß-Flanke
+        self.assertEqual(self.opened, [])
+
+        # Nach Freigabe greift die Erkennung wieder
+        self.controller.release_valve("terrace_mist")
+        self._report("OFF", "terrace_mist")
+        self._report("ON", "terrace_mist")
+        self.assertEqual([e.mqtt_name for e in self.opened], ["terrace_mist"])
+
     def test_guss_takeover_clears_pending_episode(self):
         """Übernimmt der Daemon ein fremd geöffnetes Ventil per Guss, gibt es beim Guss-Ende keine stale Entwarnung."""
         # Fremdöffnung → Episode aktiv

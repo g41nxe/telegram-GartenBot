@@ -150,6 +150,16 @@ def _format_watering_morning(
     return line
 
 
+def _format_nebel_morning(window_count: int, total_minutes: float) -> "str | None":
+    """Nebel-Intervall-Zusammenfassung für den Morgen-Bericht (eine Zeile). None wenn nicht genebelt."""
+    if window_count <= 0:
+        return None
+    mins = int(round(total_minutes))
+    if window_count == 1:
+        return f"🌫️ Nebel-Intervall: 1 Fenster · ca. {mins} Min"
+    return f"🌫️ Nebel-Intervall: {window_count} Fenster · ca. {mins} Min gesamt"
+
+
 _RAIN_DEVIATION_THRESHOLD_MM = 2.0  # DWD-Schwellenwert für signifikante Abweichung
 
 
@@ -284,6 +294,7 @@ def generate_daily_report(today_str: str) -> str:
     # 1. Guss-Statistiken
     success_count, failed_count, total_volume = database.get_watering_stats_last_24h()
     skip_count = database.get_watering_skip_count_last_24h()
+    nebel_windows, nebel_minutes = database.get_nebel_stats_last_24h()
 
     # 2. Wetterdaten (Live-Abfrage)
     weather_result = None
@@ -328,11 +339,16 @@ def generate_daily_report(today_str: str) -> str:
     # 6b. Regensensor-Zeile
     rain_sensor_line = _format_rain_sensor_line(rain_sensor_stats, rain_sensor_last)
 
+    # 6c. Nebel-Intervall-Zeile (nur wenn genebelt wurde)
+    nebel_line = _format_nebel_morning(nebel_windows, nebel_minutes)
+
     # 7. Grün-Prüfung → Pfad wählen
     if _is_report_green(valves, services_ok):
         report = _format_morning_report_short(date_display, watering_line, weather_line, rain_extra)
         if rain_sensor_line:
             report += f"\n{rain_sensor_line}"
+        if nebel_line:
+            report += f"\n{nebel_line}"
         return report
 
     # Problem-Pfad: Issues nach Schwere aufsammeln
@@ -362,6 +378,8 @@ def generate_daily_report(today_str: str) -> str:
     report = _format_morning_report_problem(date_display, issues, watering_line, weather_line, rain_extra)
     if rain_sensor_line:
         report += f"\n{rain_sensor_line}"
+    if nebel_line:
+        report += f"\n{nebel_line}"
     return report
 
 

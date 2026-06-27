@@ -116,6 +116,24 @@ except ValueError:
 
 DAILY_REPORT_TIME = os.getenv("DAILY_REPORT_TIME", "08:00")
 
+# --- Nebel-Intervall (Terrassen-Kühlung, Feature 0032) ---
+try:
+    NEBEL_ON_SECONDS = int(os.getenv("NEBEL_ON_SECONDS", "20"))
+except ValueError:
+    NEBEL_ON_SECONDS = 20
+try:
+    NEBEL_PAUSE_MINUTES = int(os.getenv("NEBEL_PAUSE_MINUTES", "5"))
+except ValueError:
+    NEBEL_PAUSE_MINUTES = 5
+try:
+    NEBEL_MANUAL_MAX_MINUTES = int(os.getenv("NEBEL_MANUAL_MAX_MINUTES", "120"))
+except ValueError:
+    NEBEL_MANUAL_MAX_MINUTES = 120
+try:
+    NEBEL_VALVE_FAIL_SAFE_SECONDS = int(os.getenv("NEBEL_VALVE_FAIL_SAFE_SECONDS", "90"))
+except ValueError:
+    NEBEL_VALVE_FAIL_SAFE_SECONDS = 90
+
 # --- Unerwartete Ventilöffnung ---
 UNEXPECTED_VALVE_ALERT_ENABLED = os.getenv("UNEXPECTED_VALVE_ALERT_ENABLED", "true").lower() == "true"
 

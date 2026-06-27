@@ -327,6 +327,42 @@ Wähle die <b>Wochentage</b> aus, an denen bewässert werden soll:
   </div>
 
   <div class="phone">
+    <div class="cap">Zeitplan-Art-Auswahl &amp; Nebel-Assistent (wiz_mode_*, nb_*) — Feature 0032</div>
+    <div class="bubble">🆕 <b>Neuen Zeitplan anlegen</b>
+
+Welche Art von Zeitplan möchtest du anlegen?
+
+🚿 <b>Bewässerung</b> — einmaliger Guss mit Zeit-/Volumenlimit
+🌫️ <b>Nebel</b> — wiederkehrende Kühlung der Terrasse</div>
+    <div class="btnrow"><span class="btn">🚿 Bewässerung</span><span class="btn">🌫️ Nebel</span><span class="btn">❌ Abbrechen</span></div>
+    <div class="bubble">🌫️ <b>Nebel 'Terrassen-Nebel' ab 12:00</b>
+
+Bis zu welcher <b>Stunde</b> soll genebelt werden? (Fensterende)</div>
+    <div class="note">Nach Name → Start-Stunde/-Minute folgt: Endstunde (nb_ehour), Endminute (nb_emin). Endzeit ≤ Startzeit → Alert <code>⚠️ Ende muss nach dem Start liegen!</code> und Rücksprung zur Endstunde.</div>
+    <div class="bubble">🌫️ <b>Nebel 'Terrassen-Nebel' bis 18:00</b>
+
+Wie lange soll ein einzelner <b>Nebelstoß</b> dauern?</div>
+    <div class="btnrow"><span class="btn">10s</span><span class="btn">15s</span><span class="btn">20s</span><span class="btn">30s</span><span class="btn">45s</span><span class="btn">60s</span></div>
+    <div class="bubble">🌫️ <b>Nebel 'Terrassen-Nebel' — 20s pro Stoß</b>
+
+Wie lange soll die <b>Pause</b> zwischen zwei Nebelstößen sein?</div>
+    <div class="btnrow"><span class="btn">1min</span><span class="btn">2min</span><span class="btn">3min</span><span class="btn">5min</span><span class="btn">10min</span><span class="btn">15min</span></div>
+    <div class="note">Bei mehreren Ventilen folgt eine Ventil-Auswahl (nb_valve), dann die Wochentage. Speichern: <code>🌫️ Nebel-Intervall 'Terrassen-Nebel' erfolgreich angelegt!</code></div>
+  </div>
+
+  <div class="phone">
+    <div class="cap">Sofort-Nebel (nebel_now / nebel_dur_* / nebel_stop) — Feature 0032</div>
+    <div class="bubble">🌫️ <b>Sofort-Nebel</b>
+
+Wie lange soll die Terrasse gekühlt werden?</div>
+    <div class="btnrow"><span class="btn">30 Min</span><span class="btn">60 Min</span><span class="btn">120 Min</span></div>
+    <div class="btnrow"><span class="btn">🛑 Nebel stoppen</span><span class="btn">❌ Abbrechen</span></div>
+    <div class="bubble">🌫️ <b>Sofort-Nebel gestartet</b> für „Terrasse“ (60 Min).</div>
+    <div class="bubble">🛑 <b>Nebel gestoppt.</b></div>
+    <div class="note">Laufzeit hart gedeckelt durch <code>NEBEL_MANUAL_MAX_MINUTES</code>. Bei mehreren Ventilen folgt eine Ventil-Auswahl (nebel_pick).</div>
+  </div>
+
+  <div class="phone">
     <div class="cap">Kamera-Assistent — Schritte (camsetup_*)</div>
     <div class="bubble">📷 <b>Neue Kamera koppeln</b>
 
@@ -634,6 +670,20 @@ Warst das nicht du, prüf die Leitung — das Hardware-Sicherheits-Timeout schli
       <li>Nach Guss: <code>📷 Nach dem Guss um 06:00</code> (Guss-Startzeit aus Zeitplan)</li>
       <li>Absolut: <code>📷 Foto um 18:00</code> (konfigurierte Uhrzeit)</li>
     </ul>
+
+    <div class="src">_on_nebel_interval_started · NebelIntervalStarted</div>
+    <div class="bubble">🌫️ <b>Nebel-Intervall gestartet</b>
+„Terrasse“ kühlt bis 18:00 Uhr.
+Quelle: Zeitplan</div>
+    <ul class="variants">
+      <li>Quelle <code>Sofort</code> bei manuellem Sofort-Nebel (<code>source = nebel_manual</code>), sonst <code>Zeitplan</code></li>
+      <li>Ventilname aus DB (<code>wish_name</code>); Fallback: <code>mqtt_name</code></li>
+    </ul>
+    <div class="note">Feature 0032: Kühl-Nebelung der Terrasse. Einzelne Nebelstöße werden NICHT gemeldet, nur Fenster-Start und -Ende.</div>
+
+    <div class="src">_on_nebel_interval_ended · NebelIntervalEnded</div>
+    <div class="bubble">🌫️ <b>Nebel-Intervall beendet</b>
+„Terrasse“: 36 Nebelstöße in ca. 360 Min.</div>
   </div>
 
 </div>

@@ -69,6 +69,35 @@ class TestDatabaseMultiValveSchema(unittest.TestCase):
         conn.close()
         self.assertIn("execution_mode", columns)
 
+    def test_schedules_has_nebel_columns(self):
+        """Nebel-Intervall (Feature 0032): mode, end_time, on_seconds, pause_minutes."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(schedules)")
+        columns = {row[1] for row in cursor.fetchall()}
+        conn.close()
+        expected = {"mode", "end_time", "on_seconds", "pause_minutes"}
+        self.assertTrue(expected.issubset(columns), f"Fehlende Spalten: {expected - columns}")
+
+    def test_add_and_get_nebel_schedule(self):
+        """Ein Nebel-Zeitplan persistiert mode + Fenster-/Takt-Felder korrekt."""
+        sid = db.add_schedule(
+            "Terrassen-Nebel", "12:00", "everyday", duration_minutes=0,
+            mode="nebel", end_time="18:00", on_seconds=20, pause_minutes=5,
+        )
+        self.assertGreater(sid, 0)
+        sched = db.get_schedule_by_id(sid)
+        self.assertEqual(sched["mode"], "nebel")
+        self.assertEqual(sched["end_time"], "18:00")
+        self.assertEqual(sched["on_seconds"], 20)
+        self.assertEqual(sched["pause_minutes"], 5)
+
+    def test_existing_schedule_defaults_mode_watering(self):
+        """Ein normaler Zeitplan ohne Nebel-Felder ist implizit mode='watering'."""
+        sid = db.add_schedule("Rasen", "07:00", "Mon,Wed", duration_minutes=10)
+        sched = db.get_schedule_by_id(sid)
+        self.assertEqual(sched["mode"], "watering")
+
     def test_watering_history_has_valve_id_column(self):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()

@@ -45,9 +45,26 @@ class WateringController:
         # Episode-Flag pro Ventil — flankengesteuerte Erkennung ohne aktiven Zyklus.
         self._last_valve_state: Dict[str, Optional[str]] = {}
         self._unexpected_open: Dict[str, bool] = {}
+        # Ventile, die von der Nebel-Steuerung beansprucht werden (Feature 0032): ihre
+        # regulären Nebelstöße dürfen nicht als Unerwartete Ventilöffnung gelten.
+        self._claimed_valves: set = set()
 
         self.event_bus.subscribe(ValveStatusReported, self._on_valve_status_reported)
         self.event_bus.subscribe(RainSensorMeasured, self._on_rain_sensor_measured)
+
+    def claim_valve(self, mqtt_name: str) -> None:
+        """Markiert ein Ventil als von der Nebel-Steuerung beansprucht (Feature 0032).
+
+        Solange beansprucht, überspringt die Unerwartete-Ventilöffnung-Erkennung dieses
+        Ventil — die regulären Nebelstöße sind keine Fremdöffnung.
+        """
+        with self._lock:
+            self._claimed_valves.add(mqtt_name)
+
+    def release_valve(self, mqtt_name: str) -> None:
+        """Gibt ein zuvor beanspruchtes Ventil wieder frei (Feature 0032)."""
+        with self._lock:
+            self._claimed_valves.discard(mqtt_name)
 
     def get_active_volume(self, mqtt_name: str = None) -> float:
         """Gibt die aktuell geflossene Wassermenge zurück. Ohne mqtt_name: erstes aktives Ventil."""
@@ -251,7 +268,7 @@ class WateringController:
         # das Ereignis aber NACH dem Lock publizieren (EventBus ist synchron → Re-Entrancy meiden).
         alert_event = None
         with self._lock:
-            if config.UNEXPECTED_VALVE_ALERT_ENABLED:
+            if config.UNEXPECTED_VALVE_ALERT_ENABLED and mqtt_name not in self._claimed_valves:
                 has_cycle = mqtt_name in self._active_cycles
                 last_state = self._last_valve_state.get(mqtt_name)
                 if event.state == "ON" and not has_cycle:

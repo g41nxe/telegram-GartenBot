@@ -33,16 +33,44 @@ from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertReso
 from ..core.camera_events import CameraInactivityAlertTriggered, CameraInactivityAlertResolved, TimedPhotoCaptured
 from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
+from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
 
 logger = logging.getLogger("garden_telegram_ui")
 
 # Module-level controller reference — set once at daemon startup by main.py
 _watering_ctrl = None
+_nebel_ctrl = None
 
 def set_watering_controller(ctrl) -> None:
     """Verdrahtet die Guss-Steuerung für manuelle Bewässerungsbefehle. Einmalig von main.py aufrufen."""
     global _watering_ctrl
     _watering_ctrl = ctrl
+
+def set_nebel_controller(ctrl) -> None:
+    """Verdrahtet die Nebel-Steuerung für Sofort-Nebel (Feature 0032). Einmalig von main.py aufrufen."""
+    global _nebel_ctrl
+    _nebel_ctrl = ctrl
+
+def _resolve_valve_wish_name(mqtt_name: str) -> str:
+    """Löst den Wunschnamen eines Ventils auf; Fallback ist der mqtt_name."""
+    try:
+        for v in database.get_all_valves():
+            if v.get("mqtt_name") == mqtt_name:
+                return v.get("wish_name") or mqtt_name
+    except Exception:
+        pass
+    return mqtt_name
+
+def _start_sofort_nebel(valve: dict, minutes: int):
+    """Startet einen Sofort-Nebel auf einem Ventil; Laufzeit hart gedeckelt. (Feature 0032)"""
+    if _nebel_ctrl is None:
+        return False, "Nebel-Steuerung nicht initialisiert."
+    capped = min(minutes, config.NEBEL_MANUAL_MAX_MINUTES)
+    end = datetime.now() + timedelta(minutes=capped)
+    return _nebel_ctrl.start(
+        valve["mqtt_name"], config.NEBEL_ON_SECONDS, config.NEBEL_PAUSE_MINUTES,
+        end, "nebel_manual",
+    )
 
 # Zustandsbasierter Zeitplan-Assistent (Wizard) und manuelle Bewässerung
 wizard_states = {}  # { chat_id: { "step": int/str, "name": str, ..., "last_active": datetime } }
@@ -227,6 +255,7 @@ def get_schedules_inline_keyboard(schedules: list) -> dict:
             {"text": "✏️", "callback_data": f"sched_edit_{s['id']}"},
             {"text": "🗑️", "callback_data": f"sched_delete_ask_{s['id']}"}
         ])
+    rows.append([{"text": "🌫️ Sofort-Nebel", "callback_data": "nebel_now"}])
     rows.append([{"text": "➕ Neuer Zeitplan", "callback_data": "wiz_start"}])
     return {"inline_keyboard": rows}
 
@@ -270,6 +299,58 @@ def get_minute_keyboard() -> dict:
         rows.append(row)
     rows.append([{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}])
     return {"inline_keyboard": rows}
+
+def get_mode_wizard_keyboard() -> dict:
+    """Auswahl der Zeitplan-Art: Bewässerung oder Nebel-Intervall (Feature 0032)."""
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "🚿 Bewässerung", "callback_data": "wiz_mode_watering"},
+                {"text": "🌫️ Nebel", "callback_data": "wiz_mode_nebel"},
+            ],
+            [{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}],
+        ]
+    }
+
+def get_nebel_end_hour_keyboard() -> dict:
+    """Endstunde des Nebel-Fensters (6x4-Grid, eigene Callbacks)."""
+    rows = []
+    for r in range(4):
+        row = [{"text": f"{r * 6 + c:02d}", "callback_data": f"nb_ehour_{r * 6 + c}"} for c in range(6)]
+        rows.append(row)
+    rows.append([{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}])
+    return {"inline_keyboard": rows}
+
+def get_nebel_end_minute_keyboard() -> dict:
+    """Endminute des Nebel-Fensters (5-Minuten-Schritte, eigene Callbacks)."""
+    rows = []
+    for r in range(3):
+        row = [{"text": f"{(r * 4 + c) * 5:02d}", "callback_data": f"nb_emin_{(r * 4 + c) * 5}"} for c in range(4)]
+        rows.append(row)
+    rows.append([{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}])
+    return {"inline_keyboard": rows}
+
+def get_nebel_on_keyboard() -> dict:
+    """Dauer eines Nebelstoßes in Sekunden."""
+    presets = [10, 15, 20, 30, 45, 60]
+    row = [{"text": f"{s}s", "callback_data": f"nb_on_{s}"} for s in presets]
+    return {"inline_keyboard": [row, [{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
+
+def get_nebel_pause_keyboard() -> dict:
+    """Pause zwischen Nebelstößen in Minuten."""
+    presets = [1, 2, 3, 5, 10, 15]
+    row = [{"text": f"{m}min", "callback_data": f"nb_pause_{m}"} for m in presets]
+    return {"inline_keyboard": [row, [{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
+
+def get_nebel_now_keyboard() -> dict:
+    """Laufzeit-Auswahl für den Sofort-Nebel (gedeckelt durch NEBEL_MANUAL_MAX_MINUTES)."""
+    presets = [30, 60, 120]
+    row = [{"text": f"{m} Min", "callback_data": f"nebel_dur_{m}"} for m in presets]
+    return {"inline_keyboard": [
+        row,
+        [{"text": "🛑 Nebel stoppen", "callback_data": "nebel_stop"}],
+        [{"text": "❌ Abbrechen", "callback_data": "nebel_cancel"}],
+    ]}
 
 def get_duration_wizard_keyboard(prefix: str) -> dict:
     """Erstellt ein Inline-Keyboard für die Schnellauswahl der Dauer."""
@@ -1244,11 +1325,18 @@ def _process_message(msg_obj: dict):
                 state["name"] = text
                 state["step"] = 2
                 _state_touch(wizard_states, chat_id)
-                telegram_client.send_message(
-                    chat_id,
-                    f"🆕 *Neuen Zeitplan '{text}' (Schritt 2/6)*\n\nZu welcher *Stunde* soll die Bewässerung starten?",
-                    get_hour_keyboard()
-                )
+                if state.get("mode") == "nebel":
+                    telegram_client.send_message(
+                        chat_id,
+                        f"🌫️ *Nebel-Intervall '{text}'*\n\nZu welcher *Stunde* soll das Nebel-Fenster starten?",
+                        get_hour_keyboard()
+                    )
+                else:
+                    telegram_client.send_message(
+                        chat_id,
+                        f"🆕 *Neuen Zeitplan '{text}' (Schritt 2/6)*\n\nZu welcher *Stunde* soll die Bewässerung starten?",
+                        get_hour_keyboard()
+                    )
                 return
             elif step == "custom_duration":
                 try:
@@ -1435,10 +1523,23 @@ def _process_callback_query(cb_obj: dict):
 
     elif data == "wiz_start":
         telegram_client.answer_callback_query(cb_id, "Zeitplan-Assistent gestartet")
-        _state_set(wizard_states, chat_id, {"step": 1})
         telegram_client.send_message(
             chat_id,
-            "🆕 *Neuen Zeitplan anlegen (Schritt 1/6)*\n\nBitte gib einen *Namen* für den Zeitplan ein (z. B. *Rasen morgens* oder *Hochbeet*):",
+            "🆕 *Neuen Zeitplan anlegen*\n\nWelche Art von Zeitplan möchtest du anlegen?\n\n"
+            "🚿 *Bewässerung* — einmaliger Guss mit Zeit-/Volumenlimit\n"
+            "🌫️ *Nebel* — wiederkehrende Kühlung der Terrasse",
+            get_mode_wizard_keyboard()
+        )
+
+    elif data in ("wiz_mode_watering", "wiz_mode_nebel"):
+        mode = "nebel" if data == "wiz_mode_nebel" else "watering"
+        _state_set(wizard_states, chat_id, {"step": 1, "mode": mode})
+        telegram_client.answer_callback_query(cb_id)
+        art = "Nebel-Intervall" if mode == "nebel" else "Zeitplan"
+        telegram_client.edit_message_text(
+            chat_id, message_id,
+            f"🆕 *Neues {art} anlegen — Name*\n\nBitte gib einen *Namen* ein "
+            f"(z. B. *{'Terrassen-Nebel' if mode == 'nebel' else 'Rasen morgens'}*):",
             {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
         )
 
@@ -1461,13 +1562,126 @@ def _process_callback_query(cb_obj: dict):
         state = _state_get(wizard_states, chat_id)
         if state is not None:
             state["minute"] = minute
-            state["step"] = 4
             _state_touch(wizard_states, chat_id)
             telegram_client.answer_callback_query(cb_id, f"Minute: {minute:02d}")
+            if state.get("mode") == "nebel":
+                state["step"] = "nebel_endhour"
+                telegram_client.edit_message_text(
+                    chat_id, message_id,
+                    f"🌫️ *Nebel '{state['name']}' ab {state['hour']:02d}:{minute:02d}*\n\n"
+                    f"Bis zu welcher *Stunde* soll genebelt werden? (Fensterende)",
+                    get_nebel_end_hour_keyboard()
+                )
+            else:
+                state["step"] = 4
+                telegram_client.edit_message_text(
+                    chat_id, message_id,
+                    f"🆕 *Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{minute:02d} (Schritt 4/6)*\n\nWie lange soll *maximal* bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
+                    get_duration_wizard_keyboard("wiz")
+                )
+
+    elif data.startswith("nb_ehour_"):
+        state = _state_get(wizard_states, chat_id)
+        if state is not None:
+            state["end_hour"] = int(data.split("_")[2])
+            state["step"] = "nebel_endmin"
+            _state_touch(wizard_states, chat_id)
+            telegram_client.answer_callback_query(cb_id, f"Bis {state['end_hour']:02d}:??")
             telegram_client.edit_message_text(
                 chat_id, message_id,
-                f"🆕 *Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{minute:02d} (Schritt 4/6)*\n\nWie lange soll *maximal* bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
-                get_duration_wizard_keyboard("wiz")
+                f"🌫️ *Nebel '{state['name']}'*\n\nZu welcher *Minute* soll das Fenster enden?",
+                get_nebel_end_minute_keyboard()
+            )
+
+    elif data.startswith("nb_emin_"):
+        state = _state_get(wizard_states, chat_id)
+        if state is not None:
+            end_minute = int(data.split("_")[2])
+            # Endzeit muss nach der Startzeit liegen (kein Mitternachts-Fenster) — sonst
+            # würde das Fenster nie matchen (Scheduler prüft start <= jetzt < end).
+            if (state["end_hour"], end_minute) <= (state["hour"], state["minute"]):
+                state["step"] = "nebel_endhour"
+                _state_touch(wizard_states, chat_id)
+                telegram_client.answer_callback_query(
+                    cb_id, "⚠️ Ende muss nach dem Start liegen!", show_alert=True)
+                telegram_client.edit_message_text(
+                    chat_id, message_id,
+                    f"🌫️ *Nebel '{state['name']}' ab {state['hour']:02d}:{state['minute']:02d}*\n\n"
+                    f"Das Fensterende muss *nach* dem Start liegen. Bis zu welcher *Stunde* soll genebelt werden?",
+                    get_nebel_end_hour_keyboard()
+                )
+            else:
+                state["end_minute"] = end_minute
+                state["step"] = "nebel_on"
+                _state_touch(wizard_states, chat_id)
+                telegram_client.answer_callback_query(cb_id)
+                telegram_client.edit_message_text(
+                    chat_id, message_id,
+                    f"🌫️ *Nebel '{state['name']}' bis {state['end_hour']:02d}:{end_minute:02d}*\n\n"
+                    f"Wie lange soll ein einzelner *Nebelstoß* dauern?",
+                    get_nebel_on_keyboard()
+                )
+
+    elif data.startswith("nb_on_"):
+        state = _state_get(wizard_states, chat_id)
+        if state is not None:
+            state["on_seconds"] = int(data.split("_")[2])
+            state["step"] = "nebel_pause"
+            _state_touch(wizard_states, chat_id)
+            telegram_client.answer_callback_query(cb_id, f"{state['on_seconds']}s")
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                f"🌫️ *Nebel '{state['name']}' — {state['on_seconds']}s pro Stoß*\n\n"
+                f"Wie lange soll die *Pause* zwischen zwei Nebelstößen sein?",
+                get_nebel_pause_keyboard()
+            )
+
+    elif data.startswith("nb_pause_"):
+        state = _state_get(wizard_states, chat_id)
+        if state is not None:
+            state["pause_minutes"] = int(data.split("_")[2])
+            _state_touch(wizard_states, chat_id)
+            telegram_client.answer_callback_query(cb_id, f"{state['pause_minutes']}min")
+            valves = database.get_all_valves()
+            if not valves:
+                _state_del(wizard_states, chat_id)
+                telegram_client.edit_message_text(
+                    chat_id, message_id,
+                    "❌ Es ist noch kein Ventil gekoppelt. Koppel zuerst ein Nebel-Ventil über /setup."
+                )
+            elif len(valves) == 1:
+                state["valve_id"] = valves[0]["id"]
+                state["step"] = 6
+                state["days"] = []
+                _state_touch(wizard_states, chat_id)
+                telegram_client.edit_message_text(
+                    chat_id, message_id,
+                    f"🌫️ *Nebel '{state['name']}'*\n\nWähle die *Wochentage* aus, an denen genebelt werden soll:\n\n*Ausgewählt: Keine*",
+                    get_days_wizard_keyboard([])
+                )
+            else:
+                state["step"] = "nebel_valve"
+                _state_touch(wizard_states, chat_id)
+                rows = [[{"text": f"🚰 {v['wish_name']}", "callback_data": f"nb_valve_{v['id']}"}] for v in valves]
+                rows.append([{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}])
+                telegram_client.edit_message_text(
+                    chat_id, message_id,
+                    f"🌫️ *Nebel '{state['name']}'*\n\nWelches *Ventil* steuert die Nebeldüse?",
+                    {"inline_keyboard": rows}
+                )
+
+    elif data.startswith("nb_valve_"):
+        state = _state_get(wizard_states, chat_id)
+        if state is not None:
+            state["valve_id"] = int(data.split("_")[2])
+            state["step"] = 6
+            state["days"] = []
+            _state_touch(wizard_states, chat_id)
+            telegram_client.answer_callback_query(cb_id)
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                f"🌫️ *Nebel '{state['name']}'*\n\nWähle die *Wochentage* aus, an denen genebelt werden soll:\n\n*Ausgewählt: Keine*",
+                get_days_wizard_keyboard([])
             )
 
     elif data.startswith("wiz_dur_"):
@@ -1561,45 +1775,76 @@ def _process_callback_query(cb_obj: dict):
             _state_touch(wizard_states, chat_id)
             telegram_client.answer_callback_query(cb_id)
             days_str = format_days_german(days)
-            telegram_client.edit_message_text(
-                chat_id, message_id,
-                f"📝 *Zusammenfassung & Bestätigung*\n\n"
-                f"Bitte überprüfe die Angaben für den neuen Zeitplan:\n\n"
-                f"• *Name:* {state['name']}\n"
-                f"• *Startzeit:* {state['hour']:02d}:{state['minute']:02d} Uhr\n"
-                f"• *Dauer:* {state['duration']} Min\n"
-                f"• *Wassermenge:* {state['volume']} Liter\n"
-                f"• *Tage:* {days_str}\n\n"
-                f"Soll dieser Zeitplan gespeichert werden?",
-                {
-                    "inline_keyboard": [
-                        [
-                            {"text": "❌ Abbrechen", "callback_data": "wiz_cancel"},
-                            {"text": "✅ Speichern", "callback_data": "wiz_confirm_save"}
-                        ]
+            confirm_kb = {
+                "inline_keyboard": [
+                    [
+                        {"text": "❌ Abbrechen", "callback_data": "wiz_cancel"},
+                        {"text": "✅ Speichern", "callback_data": "wiz_confirm_save"}
                     ]
-                }
-            )
+                ]
+            }
+            if state.get("mode") == "nebel":
+                valve = database.get_valve_by_id(state.get("valve_id"))
+                valve_name = valve["wish_name"] if valve else "—"
+                telegram_client.edit_message_text(
+                    chat_id, message_id,
+                    f"📝 *Zusammenfassung & Bestätigung*\n\n"
+                    f"Bitte überprüfe das neue Nebel-Intervall:\n\n"
+                    f"• *Name:* {state['name']}\n"
+                    f"• *Fenster:* {state['hour']:02d}:{state['minute']:02d} – {state['end_hour']:02d}:{state['end_minute']:02d} Uhr\n"
+                    f"• *Nebelstoß:* {state['on_seconds']} s · *Pause:* {state['pause_minutes']} min\n"
+                    f"• *Ventil:* {valve_name}\n"
+                    f"• *Tage:* {days_str}\n\n"
+                    f"Soll dieses Nebel-Intervall gespeichert werden?",
+                    confirm_kb
+                )
+            else:
+                telegram_client.edit_message_text(
+                    chat_id, message_id,
+                    f"📝 *Zusammenfassung & Bestätigung*\n\n"
+                    f"Bitte überprüfe die Angaben für den neuen Zeitplan:\n\n"
+                    f"• *Name:* {state['name']}\n"
+                    f"• *Startzeit:* {state['hour']:02d}:{state['minute']:02d} Uhr\n"
+                    f"• *Dauer:* {state['duration']} Min\n"
+                    f"• *Wassermenge:* {state['volume']} Liter\n"
+                    f"• *Tage:* {days_str}\n\n"
+                    f"Soll dieser Zeitplan gespeichert werden?",
+                    confirm_kb
+                )
 
     elif data == "wiz_confirm_save":
         state = _state_get(wizard_states, chat_id)
         if state is not None:
-            telegram_client.answer_callback_query(cb_id, "Zeitplan erfolgreich gespeichert!")
-
             name = state["name"]
             time_str = f"{state['hour']:02d}:{state['minute']:02d}"
             days_str = ",".join(state["days"])
-            duration = state["duration"]
-            volume = state["volume"]
 
-            db_id = database.add_schedule(name, time_str, days_str, duration, volume)
-            _state_del(wizard_states, chat_id)
-
-            if db_id > 0:
-                telegram_client.send_message(chat_id, f"📅 Zeitplan *'{name}'* erfolgreich angelegt!", get_main_keyboard())
-                handle_schedules(chat_id)
+            if state.get("mode") == "nebel":
+                telegram_client.answer_callback_query(cb_id, "Nebel-Intervall gespeichert!")
+                end_str = f"{state['end_hour']:02d}:{state['end_minute']:02d}"
+                db_id = database.add_schedule(
+                    name, time_str, days_str, 0, mode="nebel", end_time=end_str,
+                    on_seconds=state["on_seconds"], pause_minutes=state["pause_minutes"],
+                )
+                if db_id > 0 and state.get("valve_id"):
+                    database.set_schedule_valves(db_id, [state["valve_id"]])
+                _state_del(wizard_states, chat_id)
+                if db_id > 0:
+                    telegram_client.send_message(chat_id, f"🌫️ Nebel-Intervall *'{name}'* erfolgreich angelegt!", get_main_keyboard())
+                    handle_schedules(chat_id)
+                else:
+                    telegram_client.send_message(chat_id, "❌ Fehler beim Speichern des Nebel-Intervalls in der Datenbank.", get_main_keyboard())
             else:
-                telegram_client.send_message(chat_id, "❌ Fehler beim Speichern des Zeitplans in der Datenbank.", get_main_keyboard())
+                telegram_client.answer_callback_query(cb_id, "Zeitplan erfolgreich gespeichert!")
+                duration = state["duration"]
+                volume = state["volume"]
+                db_id = database.add_schedule(name, time_str, days_str, duration, volume)
+                _state_del(wizard_states, chat_id)
+                if db_id > 0:
+                    telegram_client.send_message(chat_id, f"📅 Zeitplan *'{name}'* erfolgreich angelegt!", get_main_keyboard())
+                    handle_schedules(chat_id)
+                else:
+                    telegram_client.send_message(chat_id, "❌ Fehler beim Speichern des Zeitplans in der Datenbank.", get_main_keyboard())
 
     elif data == "wiz_cancel":
         _state_del(wizard_states, chat_id)
@@ -1654,6 +1899,65 @@ def _process_callback_query(cb_obj: dict):
 
     elif data == "man_cancel":
         _state_del(manual_states, chat_id)
+        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
+        telegram_client.send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
+
+    elif data == "nebel_now":
+        telegram_client.answer_callback_query(cb_id, "Sofort-Nebel")
+        telegram_client.send_message(
+            chat_id,
+            "🌫️ *Sofort-Nebel*\n\nWie lange soll die Terrasse gekühlt werden?",
+            get_nebel_now_keyboard()
+        )
+
+    elif data.startswith("nebel_dur_"):
+        minutes = int(data.split("_")[2])
+        telegram_client.answer_callback_query(cb_id)
+        valves = database.get_all_valves()
+        if not valves:
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                "❌ Es ist noch kein Ventil gekoppelt. Koppel zuerst ein Nebel-Ventil über /setup."
+            )
+        elif len(valves) == 1:
+            ok, msg = _start_sofort_nebel(valves[0], minutes)
+            if ok:
+                telegram_client.edit_message_text(chat_id, message_id, f"🌫️ *Sofort-Nebel gestartet* für „{valves[0]['wish_name']}“ ({min(minutes, config.NEBEL_MANUAL_MAX_MINUTES)} Min).")
+            else:
+                telegram_client.edit_message_text(chat_id, message_id, f"❌ Fehler: {msg}")
+        else:
+            rows = [[{"text": f"🚰 {v['wish_name']}", "callback_data": f"nebel_pick_{v['id']}_{minutes}"}] for v in valves]
+            rows.append([{"text": "❌ Abbrechen", "callback_data": "nebel_cancel"}])
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                "🌫️ *Sofort-Nebel*\n\nWelches *Ventil* steuert die Nebeldüse?",
+                {"inline_keyboard": rows}
+            )
+
+    elif data.startswith("nebel_pick_"):
+        parts = data.split("_")
+        vid, minutes = int(parts[2]), int(parts[3])
+        telegram_client.answer_callback_query(cb_id)
+        valve = database.get_valve_by_id(vid)
+        if valve is None:
+            telegram_client.edit_message_text(chat_id, message_id, "❌ Ventil nicht gefunden.")
+        else:
+            ok, msg = _start_sofort_nebel(valve, minutes)
+            if ok:
+                telegram_client.edit_message_text(chat_id, message_id, f"🌫️ *Sofort-Nebel gestartet* für „{valve['wish_name']}“ ({min(minutes, config.NEBEL_MANUAL_MAX_MINUTES)} Min).")
+            else:
+                telegram_client.edit_message_text(chat_id, message_id, f"❌ Fehler: {msg}")
+
+    elif data == "nebel_stop":
+        telegram_client.answer_callback_query(cb_id, "Nebel wird gestoppt")
+        if _nebel_ctrl is not None:
+            ok, msg = _nebel_ctrl.stop()
+            telegram_client.edit_message_text(chat_id, message_id,
+                                              "🛑 *Nebel gestoppt.*" if ok else f"ℹ️ {msg}")
+        else:
+            telegram_client.edit_message_text(chat_id, message_id, "❌ Nebel-Steuerung nicht initialisiert.")
+
+    elif data == "nebel_cancel":
         telegram_client.answer_callback_query(cb_id, "Abgebrochen")
         telegram_client.send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
 
@@ -2245,6 +2549,28 @@ def _on_watering_stopped(event: WateringCycleStopped):
     )
     telegram_client.broadcast_notification(msg)
 
+def _on_nebel_interval_started(event: NebelIntervalStarted):
+    wish = _resolve_valve_wish_name(event.mqtt_name)
+    end_str = ""
+    try:
+        end_str = datetime.fromisoformat(event.end_time).strftime("%H:%M")
+    except (ValueError, TypeError):
+        pass
+    quelle = "Sofort" if event.source == "nebel_manual" else "Zeitplan"
+    bis = f" bis {end_str} Uhr" if end_str else ""
+    telegram_client.broadcast_notification(
+        f"🌫️ *Nebel-Intervall gestartet*\n"
+        f"„{wish}“ kühlt{bis}.\n"
+        f"Quelle: {quelle}"
+    )
+
+def _on_nebel_interval_ended(event: NebelIntervalEnded):
+    wish = _resolve_valve_wish_name(event.mqtt_name)
+    telegram_client.broadcast_notification(
+        f"🌫️ *Nebel-Intervall beendet*\n"
+        f"„{wish}“: {event.burst_count} Nebelstöße in ca. {event.duration_run} Min."
+    )
+
 def _on_daily_report(event: DailyReportTriggered):
     from ..adapters import chart
     chart_result = chart.generate_weather_chart()
@@ -2376,3 +2702,5 @@ def subscribe_event_handlers():
     _global_bus.subscribe(UnexpectedValveOpened, _on_unexpected_valve_opened)
     _global_bus.subscribe(UnexpectedValveResolved, _on_unexpected_valve_resolved)
     _global_bus.subscribe(TimedPhotoCaptured, _on_timed_photo_captured)
+    _global_bus.subscribe(NebelIntervalStarted, _on_nebel_interval_started)
+    _global_bus.subscribe(NebelIntervalEnded, _on_nebel_interval_ended)

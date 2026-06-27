@@ -13,6 +13,7 @@ from .adapters.daily_report import send_daily_report
 logger = logging.getLogger("garden_scheduler")
 
 _controller = None
+_nebel_controller = None
 
 # Steuerung des Scheduler-Hintergrundthreads
 scheduler_running = False
@@ -24,6 +25,49 @@ def set_controller(ctrl) -> None:
     """Verdrahtet die Guss-Steuerung. Einmalig von main.py beim Daemon-Start aufrufen."""
     global _controller
     _controller = ctrl
+
+
+def set_nebel_controller(ctrl) -> None:
+    """Verdrahtet die Nebel-Steuerung (Feature 0032). Von main.py beim Daemon-Start aufrufen."""
+    global _nebel_controller
+    _nebel_controller = ctrl
+
+
+def _ensure_nebel_window(sched: dict, now: datetime) -> None:
+    """Stellt zustandslos sicher, dass ein Nebel-Intervall läuft, wenn `now` im Fenster liegt.
+
+    Wird je Minute aufgerufen. Liegt die Zeit im Fenster [time, end_time) und läuft für das
+    Ventil noch kein Nebel-Intervall, wird die Nebel-Steuerung gestartet. So nimmt ein Fenster
+    nach einem Daemon-Neustart von selbst wieder auf. Kein Wetter-Check, keine Skalierung.
+    """
+    if _nebel_controller is None:
+        return
+    start = sched.get("time")
+    end = sched.get("end_time")
+    if not start or not end:
+        return
+    current = now.strftime("%H:%M")
+    if not (start <= current < end):
+        return
+
+    on_seconds = sched.get("on_seconds") or config.NEBEL_ON_SECONDS
+    pause_minutes = sched.get("pause_minutes") or config.NEBEL_PAUSE_MINUTES
+    try:
+        end_dt = datetime.combine(now.date(), datetime.strptime(end, "%H:%M").time())
+    except ValueError:
+        logger.error(f"Nebel-Zeitplan '{sched.get('name')}': ungültige Endzeit '{end}'.")
+        return
+
+    sched_id = sched.get("id")
+    valve_ids = database.get_schedule_valves(sched_id) if sched_id else []
+    for vid in valve_ids:
+        valve = database.get_valve_by_id(vid)
+        if valve is None:
+            continue
+        mqtt_name = valve["mqtt_name"]
+        if not _nebel_controller.is_active(mqtt_name):
+            _nebel_controller.start(mqtt_name, on_seconds, pause_minutes, end_dt, "nebel",
+                                    valve_topic=f"zigbee2mqtt/{mqtt_name}")
 
 
 
@@ -194,16 +238,24 @@ def _scheduler_loop():
                 
             schedules = database.get_schedules()
             for sched in schedules:
-                if sched.get("is_active") == 1:
-                    sched_time = sched.get("time")
-                    if sched_time == current_time:
-                        sched_days = sched.get("days", "")
-                        days_list = [d.strip() for d in sched_days.split(",")]
-                        
-                        if "everyday" in days_list or current_weekday in days_list:
-                            logger.info(f"Zeitplan '{sched.get('name')}' ({sched_time}) ausgelöst.")
-                            t = threading.Thread(target=_trigger_scheduled_watering, args=(sched,), daemon=True)
-                            t.start()
+                if sched.get("is_active") != 1:
+                    continue
+
+                sched_days = sched.get("days", "")
+                days_list = [d.strip() for d in sched_days.split(",")]
+                if not ("everyday" in days_list or current_weekday in days_list):
+                    continue
+
+                if sched.get("mode") == "nebel":
+                    # Nebel-Intervall: fenster-basiert, zustandslos je Minute prüfen.
+                    _ensure_nebel_window(sched, now)
+                    continue
+
+                sched_time = sched.get("time")
+                if sched_time == current_time:
+                    logger.info(f"Zeitplan '{sched.get('name')}' ({sched_time}) ausgelöst.")
+                    t = threading.Thread(target=_trigger_scheduled_watering, args=(sched,), daemon=True)
+                    t.start()
                             
         except Exception as e:
             logger.error(f"Fehler im Scheduler-Thread: {e}")

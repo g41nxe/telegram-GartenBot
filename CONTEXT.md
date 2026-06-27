@@ -151,3 +151,23 @@ _Avoid_: Fremd-Öffnung, Ventil-Manipulation, Tamper.
 **Garten-Ampel**:
 Das dreistufige Gesundheitsmodell, das den Gesamtzustand des Systems in der `/status`-Anzeige als Farb-Status zusammenfasst: 🟢 grün (alles aktiv und unauffällig), 🟡 gelb (nicht-kritisch: niedrige Batterie oder kritisches Signal, Gerät meldet aber noch), 🔴 rot (kritisch: Dienst offline, aktiver Inaktivitäts-Watchdog-Alarm oder Ventil-Anomalie). Die Headline zeigt stets die schlimmste aktive Stufe; technische Details werden nur für nicht-grüne Geräte eingeblendet. Definiert in ADR 0029.
 _Avoid_: Statusampel, Health-Check, Traffic-Light.
+
+**Nebel-Intervall**:
+Eine wiederkehrende Kühlfunktion, die ein Ventil in regelmäßigen Abständen kurz öffnet, um über eine Nebeldüse die Terrasse abzukühlen — **kein** Bewässerungs-Vorgang. Definiert durch eine kurze ON-Dauer (Sekunden, der Nebelstoß) und eine Pause (Minuten) zwischen den Stößen, die innerhalb eines Nebel-Fensters wiederholt werden. Im Gegensatz zum Kombinierten Guss gibt es **kein Volumenlimit, keine Regen-Überspringlogik und keine Mindest-Flussrate-Defekterkennung** — die geflossene Wassermenge ist für die Kühlung bedeutungslos. Mechanisch ist es ein eigener Zeitplan-Modus (`mode = "nebel"`), läuft aber über eine eigene Engine (Nebel-Steuerung). Siehe ADR 0033.
+_Avoid_: Sprühzyklus, Misting, Vernebelung, Kühl-Guss, Nebel-Bewässerung.
+
+**Nebelstoß**:
+Ein einzelnes, sekundenkurzes Öffnen des Nebel-Ventils innerhalb eines Nebel-Intervalls. Wird **nicht** einzeln protokolliert (würde die Datenbank fluten); nur Beginn und Ende des umgebenden Nebel-Fensters werden festgehalten.
+_Avoid_: Sprühstoß, Puls, Burst, Schuss.
+
+**Nebel-Steuerung**:
+Die softwareseitige Kernkomponente des Bewässerungs-Daemons, die den ON/Pause-Burst-Zyklus eines Nebel-Intervalls mit sekundengenauem Timing fährt (eigener `threading.Timer`-Loop, injizierte `publish_fn`). Pendant zur Guss-Steuerung, aber für die Kühlung statt die Bewässerung. Solange sie ein Ventil bedient, „beansprucht" sie es, damit die Guss-Steuerung dessen reguläre Nebelstöße nicht als Unerwartete Ventilöffnung fehldeutet.
+_Avoid_: Nebel-Controller, Misting-Controller, Spray-Engine.
+
+**Nebel-Fenster**:
+Der durch Start- und Endzeit (an ausgewählten Wochentagen) definierte Tageszeitraum, in dem ein geplantes Nebel-Intervall aktiv ist. Wird zustandslos aus dem Zeitplan abgeleitet: nach einem Daemon-Neustart prüft der Scheduler, ob die aktuelle Zeit in einem Nebel-Fenster liegt, und nimmt den Takt wieder auf.
+_Avoid_: Nebel-Zeitraum, Kühlphase, Sprüh-Fenster.
+
+**Sofort-Nebel**:
+Ein manuell über den Telegram-Bot gestartetes Nebel-Intervall außerhalb jedes Zeitplans. Der Benutzer wählt beim Start eine Laufzeit; eine konfigurierte Maximaldauer begrenzt ihn zusätzlich als Backstop. Ein Sofort-Nebel wird **nicht** persistiert und verfällt bei einem Daemon-Neustart.
+_Avoid_: Manuell-Nebel, Ad-hoc-Nebel, Test-Nebel.

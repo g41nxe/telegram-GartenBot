@@ -30,7 +30,11 @@ def init_db():
                 days TEXT NOT NULL,              -- Kommagetrennt (z.B. "Mon,Wed,Fri" oder "everyday")
                 duration_minutes INTEGER NOT NULL, -- Gießdauer (Zeitlimit)
                 target_volume_liters INTEGER DEFAULT 0, -- Gießmenge (Volumenlimit)
-                is_active INTEGER DEFAULT 1      -- 1 = Aktiv, 0 = Inaktiv
+                is_active INTEGER DEFAULT 1,     -- 1 = Aktiv, 0 = Inaktiv
+                mode TEXT DEFAULT 'watering',    -- 'watering' | 'nebel' (Nebel-Intervall, Feature 0032)
+                end_time TEXT,                   -- Endzeit des Nebel-Fensters ("HH:MM"), nur mode='nebel'
+                on_seconds INTEGER,              -- Dauer eines Nebelstoßes (Sekunden), nur mode='nebel'
+                pause_minutes INTEGER            -- Pause zwischen Nebelstößen (Minuten), nur mode='nebel'
             )
         """)
         
@@ -165,6 +169,15 @@ def init_db():
             cursor.execute("ALTER TABLE schedules ADD COLUMN execution_mode TEXT DEFAULT 'sequential'")
 
         try:
+            cursor.execute("SELECT mode FROM schedules LIMIT 1")
+        except sqlite3.OperationalError:
+            logger.info("Migriere Datenbank: Füge Nebel-Intervall-Spalten zu schedules hinzu...")
+            cursor.execute("ALTER TABLE schedules ADD COLUMN mode TEXT DEFAULT 'watering'")
+            cursor.execute("ALTER TABLE schedules ADD COLUMN end_time TEXT")
+            cursor.execute("ALTER TABLE schedules ADD COLUMN on_seconds INTEGER")
+            cursor.execute("ALTER TABLE schedules ADD COLUMN pause_minutes INTEGER")
+
+        try:
             cursor.execute("SELECT valve_id FROM watering_history LIMIT 1")
         except sqlite3.OperationalError:
             logger.info("Migriere Datenbank: Füge valve_id Spalte zu watering_history hinzu...")
@@ -276,14 +289,21 @@ def get_schedule_by_id(schedule_id: int) -> dict | None:
     finally:
         conn.close()
 
-def add_schedule(name: str, time: str, days: str, duration_minutes: int, target_volume_liters: int = 0, is_active: int = 1) -> int:
-    """Fügt einen neuen Zeitplan hinzu und gibt dessen ID zurück."""
+def add_schedule(name: str, time: str, days: str, duration_minutes: int, target_volume_liters: int = 0, is_active: int = 1,
+                 mode: str = "watering", end_time: str = None, on_seconds: int = None, pause_minutes: int = None) -> int:
+    """Fügt einen neuen Zeitplan hinzu und gibt dessen ID zurück.
+
+    Für ein Nebel-Intervall (Feature 0032): mode='nebel', dazu end_time (Fenster-Ende),
+    on_seconds (Nebelstoß-Dauer) und pause_minutes (Pause). duration_minutes/Volumen
+    bleiben dann ungenutzt (0).
+    """
     conn = get_connection()
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "INSERT INTO schedules (name, time, days, duration_minutes, target_volume_liters, is_active) VALUES (?, ?, ?, ?, ?, ?)",
-            (name, time, days, duration_minutes, target_volume_liters, is_active)
+            "INSERT INTO schedules (name, time, days, duration_minutes, target_volume_liters, is_active, mode, end_time, on_seconds, pause_minutes) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (name, time, days, duration_minutes, target_volume_liters, is_active, mode, end_time, on_seconds, pause_minutes)
         )
         conn.commit()
         return cursor.lastrowid
@@ -293,14 +313,16 @@ def add_schedule(name: str, time: str, days: str, duration_minutes: int, target_
     finally:
         conn.close()
 
-def update_schedule(schedule_id: int, name: str, time: str, days: str, duration_minutes: int, target_volume_liters: int, is_active: int) -> bool:
-    """Aktualisiert einen bestehenden Zeitplan."""
+def update_schedule(schedule_id: int, name: str, time: str, days: str, duration_minutes: int, target_volume_liters: int, is_active: int,
+                    mode: str = "watering", end_time: str = None, on_seconds: int = None, pause_minutes: int = None) -> bool:
+    """Aktualisiert einen bestehenden Zeitplan (inkl. Nebel-Intervall-Felder, Feature 0032)."""
     conn = get_connection()
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE schedules SET name = ?, time = ?, days = ?, duration_minutes = ?, target_volume_liters = ?, is_active = ? WHERE id = ?",
-            (name, time, days, duration_minutes, target_volume_liters, is_active, schedule_id)
+            "UPDATE schedules SET name = ?, time = ?, days = ?, duration_minutes = ?, target_volume_liters = ?, is_active = ?, "
+            "mode = ?, end_time = ?, on_seconds = ?, pause_minutes = ? WHERE id = ?",
+            (name, time, days, duration_minutes, target_volume_liters, is_active, mode, end_time, on_seconds, pause_minutes, schedule_id)
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -494,22 +516,24 @@ def get_watering_stats_last_24h() -> tuple[int, int, float]:
         
         # 1. Erfolgreiche / gestoppte Läufe
         cursor.execute("""
-            SELECT COUNT(*), SUM(watered_volume) 
-            FROM watering_history 
-            WHERE timestamp >= ? 
+            SELECT COUNT(*), SUM(watered_volume)
+            FROM watering_history
+            WHERE timestamp >= ?
               AND status IN ('completed', 'stopped')
               AND details NOT LIKE 'Bewässerung gestartet%'
+              AND (source NOT LIKE 'nebel%' OR source IS NULL)
         """, (time_limit,))
         row = cursor.fetchone()
         success_count = row[0] or 0
         volume = row[1] or 0.0
-        
+
         # 2. Fehlgeschlagene Läufe
         cursor.execute("""
-            SELECT COUNT(*) 
-            FROM watering_history 
-            WHERE timestamp >= ? 
+            SELECT COUNT(*)
+            FROM watering_history
+            WHERE timestamp >= ?
               AND status = 'failed'
+              AND (source NOT LIKE 'nebel%' OR source IS NULL)
         """, (time_limit,))
         failed_count = cursor.fetchone()[0] or 0
         
@@ -519,6 +543,33 @@ def get_watering_stats_last_24h() -> tuple[int, int, float]:
         return 0, 0, 0.0
     finally:
         conn.close()
+
+def get_nebel_stats_last_24h() -> tuple[int, float]:
+    """Gibt (anzahl_fenster, gesamt_minuten) der abgeschlossenen Nebel-Intervalle der letzten 24h.
+
+    Quelle sind die je Fenster protokollierten Abschluss-Einträge (status='completed',
+    source LIKE 'nebel%'). Einzelne Nebelstöße werden nicht protokolliert (Feature 0032).
+    """
+    conn = get_connection()
+    try:
+        from datetime import timedelta
+        time_limit = (datetime.now() - timedelta(hours=24)).isoformat()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT COUNT(*), SUM(duration_minutes)
+            FROM watering_history
+            WHERE timestamp >= ?
+              AND status = 'completed'
+              AND source LIKE 'nebel%'
+        """, (time_limit,))
+        row = cursor.fetchone()
+        return (row[0] or 0), float(row[1] or 0.0)
+    except Exception as e:
+        logger.error(f"Fehler beim Laden der Nebel-Statistik: {e}")
+        return 0, 0.0
+    finally:
+        conn.close()
+
 
 def get_watering_skip_count_last_24h() -> int:
     """Gibt die Anzahl übersprungener Bewässerungszyklen in den letzten 24h zurück."""
