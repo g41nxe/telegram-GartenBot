@@ -34,6 +34,8 @@ Um diesen Bericht zuverlässig zu versenden, müssen wir:
 6. **Manueller Trigger für Testzwecke:**
    Wir fügen die Telegram-Befehle `/report` und `/statusbericht` hinzu. Damit kann der tägliche Statusbericht jederzeit manuell angefordert werden. Dies generiert den Bericht für den heutigen Tag und sendet ihn direkt an den anfragenden Chat zurück, ohne das persistente Datum des letzten automatischen Berichts in `system_metadata` zu überschreiben.
 
+   _Amendment (ADR 0033):_ `/report` und `/statusbericht` wurden im Zuge des Bot-UX-Redesigns zu `/tagesbericht` zusammengeführt und umbenannt — domain-konform zum definierten Term „Tagesbericht" (CONTEXT.md).
+
 7. **Aktive Abfrage (Status-Update) beim Abruf:**
    Da das Ventil batteriebetrieben ist und schläft, triggern wir bei jeder `/status`-Abfrage, bei manuellem `/report` und vor dem automatischen Statusbericht um 08:00 Uhr eine MQTT-Abfrage (`{"state": "", "battery": ""}`) auf dem Topic `garden_valve/get`. Um dem Ventil Zeit zu geben, die Anfrage bei seinem nächsten periodischen Aufwachen (Poll) zu verarbeiten, wartet der Telegram-Bot bei `/status` für 1,5 Sekunden vor der Generierung der Nachricht. Bei `/report` und dem automatischen Scheduler wartet der Daemon einheitlich 5 Sekunden, damit beide Varianten identisches Verhalten zeigen.
 
