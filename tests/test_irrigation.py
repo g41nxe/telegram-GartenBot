@@ -858,19 +858,19 @@ class TestNebelScheduling(unittest.TestCase):
     def test_window_active_starts_nebel(self):
         from datetime import datetime
         sched = self._nebel_sched()
-        self.scheduler._ensure_nebel_window(sched, datetime(2026, 6, 27, 14, 0, 0))
+        self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 14, 0, 0))
         self.assertTrue(self.nebel.is_active("terrace_mist"))
 
     def test_outside_window_does_not_start(self):
         from datetime import datetime
         sched = self._nebel_sched()
-        self.scheduler._ensure_nebel_window(sched, datetime(2026, 6, 27, 19, 0, 0))
+        self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 19, 0, 0))
         self.assertFalse(self.nebel.is_active("terrace_mist"))
 
     def test_idempotent_within_window(self):
         from datetime import datetime
         sched = self._nebel_sched()
-        now = datetime(2026, 6, 27, 14, 0, 0)
+        now = datetime(2099, 1, 1, 14, 0, 0)
         self.scheduler._ensure_nebel_window(sched, now)
         self.scheduler._ensure_nebel_window(sched, now)  # zweiter Tick
         self.assertTrue(self.nebel.is_active("terrace_mist"))
@@ -879,7 +879,7 @@ class TestNebelScheduling(unittest.TestCase):
         from datetime import datetime
         sched = self._nebel_sched()
         with patch.object(weather, "evaluate_watering_factor") as mock_weather:
-            self.scheduler._ensure_nebel_window(sched, datetime(2026, 6, 27, 14, 0, 0))
+            self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 14, 0, 0))
             mock_weather.assert_not_called()
 
     def test_nebelstoss_does_not_trigger_unexpected_open(self):
@@ -904,7 +904,7 @@ class TestNebelScheduling(unittest.TestCase):
         bus.subscribe(UnexpectedValveOpened, lambda e: opened.append(e))
         try:
             bus.publish(ValveStatusReported("terrace_mist", "OFF", 0.0, 95, 120))  # bekannter Vorzustand
-            self.scheduler._ensure_nebel_window(sched, datetime(2026, 6, 27, 14, 0, 0))
+            self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 14, 0, 0))
             self.assertTrue(nebel.is_active("terrace_mist"))
             bus.publish(ValveStatusReported("terrace_mist", "ON", 0.0, 95, 120))   # Nebelstoß-Flanke
             self.assertEqual(opened, [])
