@@ -47,10 +47,12 @@ def main():
         logger.error(f"Kritischer Fehler bei der Datenbankinitialisierung: {e}")
         sys.exit(1)
         
-    # 2. MQTT-Client starten
+    # 2. MQTT-Client starten und alle bekannten Ventile registrieren
     logger.info("Initialisiere MQTT-Dienst...")
     if not mqtt_client.start_client():
         logger.warning("MQTT-Dienst konnte nicht gestartet werden. Prüfen Sie Ihren Broker.")
+    for _v in database.get_all_valves():
+        mqtt_client.register_valve_topic(_v["mqtt_name"])
         
     # 3. Ereignis-Kanal & Guss-Steuerung initialisieren und verdrahten (IoC)
     logger.info("Initialisiere Ereignis-Kanal & Guss-Steuerung...")

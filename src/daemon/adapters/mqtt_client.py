@@ -174,7 +174,9 @@ class PahoMqttAdapter(MqttClient):
         if rc == 0:
             self._connected = True
             logger.info("PahoMqttAdapter: Erfolgreich mit Broker verbunden.")
-            self.subscribe(config.MQTT_VALVE_TOPIC)
+            # Wildcard — empfängt Status von allen Zigbee-Geräten (ein Level), nicht nur dem
+            # primären MQTT_VALVE_TOPIC. Damit werden auch Zweit-Ventile (z.B. valve_ffff) erfasst.
+            self.subscribe("zigbee2mqtt/+")
             self.subscribe("zigbee2mqtt/bridge/event")
             self.subscribe("zigbee2mqtt/bridge/response/device/rename")
             self.subscribe("zigbee2mqtt/bridge/state")
@@ -194,7 +196,17 @@ class PahoMqttAdapter(MqttClient):
             payload = msg.payload.decode("utf-8")
             data = json.loads(payload)
 
-            if msg.topic == config.MQTT_VALVE_TOPIC:
+            # Valve-Erkennung: jedes zweigliedrige zigbee2mqtt/-Topic mit linkquality gilt als
+            # Ventil-Status. Das schließt bridge/*, Rain-Sensor (anderer Namespace) und
+            # sonstige Nicht-Geräte-Topics aus.
+            topic_parts = msg.topic.split("/")
+            is_valve_topic = (
+                len(topic_parts) == 2
+                and topic_parts[0] == "zigbee2mqtt"
+                and msg.topic != config.RAIN_SENSOR_TOPIC
+                and "linkquality" in data
+            )
+            if is_valve_topic:
                 with _status_lock:
                     state = data.get("state", valve_status["state"])
                     flow_rate = float(data.get("flow_rate", valve_status["flow_rate"]))
@@ -208,7 +220,7 @@ class PahoMqttAdapter(MqttClient):
                 schedule_status = sched.get("schedule_status")
                 actual = sched.get("actual_irrigation_amount")
                 irrigation_volume = float(actual) if actual is not None else 0.0
-                mqtt_name = msg.topic.split("/")[-1]
+                mqtt_name = topic_parts[-1]
                 self.event_bus.publish(ValveStatusReported(
                     mqtt_name, state, flow_rate, battery, linkquality, valve_abnormal_state,
                     irrigation_volume=irrigation_volume, schedule_status=schedule_status
@@ -369,6 +381,7 @@ class SimulatedMqttAdapter(MqttClient):
 
 _global_bus = EventBus()
 client_instance = None
+_registered_valve_names: set = set()  # Zusätzliche Ventil-mqtt_names (befüllt von main.py)
 
 def _init_client():
     global client_instance
@@ -403,10 +416,21 @@ def is_broker_connected() -> bool:
     _init_client()
     return client_instance.is_connected()
 
+def register_valve_topic(mqtt_name: str) -> None:
+    """Registriert einen Ventil-mqtt_name für Status-Abfragen. Einmalig von main.py für jedes DB-Ventil."""
+    _registered_valve_names.add(mqtt_name)
+
+
 def request_valve_status() -> bool:
-    """Sendet eine get-Abfrage über MQTT, um aktuelle Werte (Zustand, Batterie) vom Ventil anzufordern."""
+    """Sendet get-Abfragen für alle bekannten Ventile (primäres + registrierte Zweit-Ventile)."""
     _init_client()
-    return client_instance.publish(f"{config.MQTT_VALVE_TOPIC}/get", json.dumps({"state": "", "battery": ""}))
+    primary_name = config.MQTT_VALVE_TOPIC.split("/")[-1]
+    get_payload = json.dumps({"state": "", "battery": ""})
+    results = [client_instance.publish(f"{config.MQTT_VALVE_TOPIC}/get", get_payload)]
+    for name in _registered_valve_names:
+        if name != primary_name:
+            results.append(client_instance.publish(f"zigbee2mqtt/{name}/get", get_payload))
+    return any(results)
 
 def get_bridge_status() -> str:
     _init_client()

@@ -115,9 +115,9 @@ class TestPahoMqttClient(unittest.TestCase):
         self.adapter._on_connect(mock_instance, None, None, 0)
         self.assertTrue(self.adapter.is_connected())
         
-        # In _on_connect it gets config topic
+        # Wildcard-Subscription statt spezifischem MQTT_VALVE_TOPIC (seit Multi-Ventil-Fix)
         from daemon import config
-        mock_instance.subscribe.assert_any_call(config.MQTT_VALVE_TOPIC)
+        mock_instance.subscribe.assert_any_call("zigbee2mqtt/+")
         mock_instance.publish.assert_any_call(f"{config.MQTT_VALVE_TOPIC}/get", '{"state": ""}', retain=False)
         
         self.adapter.publish("test/topic", "test")
@@ -217,6 +217,80 @@ class TestPahoMqttClient(unittest.TestCase):
         mock_handler.assert_called_once()
         event = mock_handler.call_args[0][0]
         self.assertEqual(event.ieee_address, "0x123")
+
+class TestPahoOnMessageRouting(unittest.TestCase):
+    """Testet PahoMqttAdapter._on_message direkt — kein echter Broker oder paho-Verbindung nötig."""
+
+    def setUp(self):
+        from daemon.core.event_bus import EventBus
+        from daemon.adapters.mqtt_client import PahoMqttAdapter
+        self.bus = EventBus()
+        self.adapter = PahoMqttAdapter(self.bus)
+
+    def _mock_msg(self, topic: str, payload: dict):
+        import json
+
+        class _Msg:
+            pass
+
+        m = _Msg()
+        m.topic = topic
+        m.payload = json.dumps(payload).encode()
+        return m
+
+    def test_secondary_valve_fires_valve_status_reported(self):
+        """ValveStatusReported muss für jedes zigbee2mqtt-Gerät feuern, nicht nur MQTT_VALVE_TOPIC.
+
+        Reproduziert: valve_ffff zeigt 🔴 obwohl LQI 212, weil _on_message den Topic-Check
+        `== config.MQTT_VALVE_TOPIC` verwendet → Nachrichten von Zweit-Ventilen verworfen →
+        DB-Eintrag bleibt last_update=NULL → Ampel Rot.
+        """
+        from unittest.mock import MagicMock
+        handler = MagicMock()
+        self.bus.subscribe(ValveStatusReported, handler)
+
+        msg = self._mock_msg("zigbee2mqtt/valve_ffff", {
+            "state": "OFF", "battery": 100, "linkquality": 212,
+            "valve_abnormal_state": "normal", "flow_rate": 0.0,
+        })
+        self.adapter._on_message(None, None, msg)
+
+        handler.assert_called_once()
+        event = handler.call_args[0][0]
+        self.assertEqual(event.mqtt_name, "valve_ffff")
+        self.assertEqual(event.linkquality, 212)
+        self.assertEqual(event.battery, 100)
+
+    def test_primary_valve_still_fires(self):
+        """Primär-Ventil (MQTT_VALVE_TOPIC) darf nach der Änderung weiter ValveStatusReported liefern."""
+        from unittest.mock import MagicMock
+        from daemon import config
+        handler = MagicMock()
+        self.bus.subscribe(ValveStatusReported, handler)
+
+        msg = self._mock_msg(config.MQTT_VALVE_TOPIC, {
+            "state": "ON", "battery": 90, "linkquality": 180,
+            "valve_abnormal_state": "normal", "flow_rate": 5.0,
+        })
+        self.adapter._on_message(None, None, msg)
+
+        handler.assert_called_once()
+        event = handler.call_args[0][0]
+        self.assertEqual(event.mqtt_name, config.MQTT_VALVE_TOPIC.split("/")[-1])
+
+    def test_bridge_health_does_not_fire_valve_status(self):
+        """zigbee2mqtt/bridge/... Nachrichten dürfen kein ValveStatusReported auslösen."""
+        from unittest.mock import MagicMock
+        handler = MagicMock()
+        self.bus.subscribe(ValveStatusReported, handler)
+
+        msg = self._mock_msg("zigbee2mqtt/bridge/health", {
+            "response_time": 1234, "devices": {}
+        })
+        self.adapter._on_message(None, None, msg)
+
+        handler.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
