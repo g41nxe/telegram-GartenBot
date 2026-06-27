@@ -1,3 +1,11 @@
+## v1.10.1 — 2026-06-27
+
+### Behoben
+- /status wurde bei einem nicht-grünen (z.B. offline) Ventil von Telegram abgelehnt (Markdown-400)
+- Ventil-, Kamera- und Zeitplan-Namen in /status gegen Markdown-Sonderzeichen abgesichert
+
+---
+
 ## v1.10.0 — 2026-06-27
 
 ### Neu
