@@ -218,6 +218,60 @@ def test_upload_innerhalb_toleranz_publiziert_timed_photo(running_server, event_
     assert "Foto um" in captured[0].caption
 
 
+def test_doppel_upload_im_selben_fenster_nur_ein_timed_photo(running_server, event_bus):
+    """Zwei Uploads derselben Kamera im selben Toleranzfenster → nur EIN TimedPhotoCaptured (Dedup)."""
+    from datetime import datetime
+    from src.daemon.core.camera_events import TimedPhotoCaptured
+
+    database.add_camera("DE:DU:PE:00:00:01", "DupCam")
+    now = datetime.now()
+    database.add_photo_time(now.strftime("%H:%M"))
+
+    captured = []
+    event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+    url = f"http://127.0.0.1:{running_server}/upload"
+    for _ in range(2):
+        req = urllib.request.Request(
+            url,
+            headers={"X-Camera-MAC": "DE:DU:PE:00:00:01"},
+            data=JPEG_PAYLOAD,
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+
+    assert len(captured) == 1, f"Erwartet genau 1 TimedPhotoCaptured (Dedup), war {len(captured)}"
+
+
+def test_zwei_kameras_im_selben_fenster_je_ein_timed_photo(running_server, event_bus):
+    """Zwei verschiedene Kameras im selben Fenster → je ein TimedPhotoCaptured (Dedup ist pro MAC)."""
+    from datetime import datetime
+    from src.daemon.core.camera_events import TimedPhotoCaptured
+
+    database.add_camera("CA:M1:00:00:00:01", "CamEins")
+    database.add_camera("CA:M2:00:00:00:02", "CamZwei")
+    now = datetime.now()
+    database.add_photo_time(now.strftime("%H:%M"))
+
+    captured = []
+    event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+    url = f"http://127.0.0.1:{running_server}/upload"
+    for mac in ("CA:M1:00:00:00:01", "CA:M2:00:00:00:02"):
+        req = urllib.request.Request(
+            url,
+            headers={"X-Camera-MAC": mac},
+            data=JPEG_PAYLOAD,
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+
+    assert len(captured) == 2, f"Erwartet ein Foto je Kamera, war {len(captured)}"
+    assert {e.wish_name for e in captured} == {"CamEins", "CamZwei"}
+
+
 def test_upload_ausserhalb_toleranz_kein_timed_photo(running_server, event_bus):
     """/upload weit außerhalb jedes Aufnahme-Zeitpunkts → kein TimedPhotoCaptured."""
     from src.daemon.core.camera_events import TimedPhotoCaptured

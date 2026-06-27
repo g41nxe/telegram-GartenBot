@@ -209,7 +209,15 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
                 config.TIMED_PHOTO_TOLERANCE_MINUTES,
             )
             if caption:
-                _global_bus.publish(TimedPhotoCaptured(wish_name, str(file_path), caption))
+                # Dedup: pro Kamera und Aufnahme-Zeitpunkt nur ein Telegram-Foto.
+                # Mehrere Uploads im selben Toleranzfenster (Kamera wacht auf Anflug
+                # UND auf das Ziel) sollen nicht mehrfach gebroadcastet werden. Der
+                # Schluessel enthaelt die MAC, damit mehrere Kameras je eins senden.
+                target_key = f"{now.date().isoformat()}|{caption}"
+                dedup_key = f"last_timed_photo:{mac}"
+                if database.get_metadata(dedup_key) != target_key:
+                    database.set_metadata(dedup_key, target_key)
+                    _global_bus.publish(TimedPhotoCaptured(wish_name, str(file_path), caption))
 
         self.send_response(200)
         self.end_headers()
