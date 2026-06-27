@@ -548,13 +548,25 @@ def _get_lqi_label(lqi_val) -> str:
     return "keine Verbindung"
 
 
+def _md_escape(text) -> str:
+    """Neutralisiert die Sonderzeichen der Telegram-Legacy-Markdown (_ * ` [) in Freitext.
+
+    Ohne Escaping bricht z.B. ein Ventilname „Beet_1" die Markdown-Analyse und Telegram
+    verwirft die ganze Nachricht mit HTTP 400. Backslash-Escaping entspricht dem üblichen
+    escape_markdown(v1) und wird von der Legacy-Markdown korrekt als literal gerendert.
+    """
+    if not text:
+        return ""
+    return re.sub(r"([_*`\[])", r"\\\1", str(text))
+
+
 def _format_valve_compact(valve: dict) -> str:
     """Einzeilige Ventil-Darstellung für grüne Geräte (keine technischen IDs)."""
     battery = valve.get("battery")
     lqi = valve.get("linkquality")
     battery_label = _get_battery_description(battery if battery is not None else 100)
     lqi_label = _get_lqi_label(lqi if lqi is not None else 100)
-    return f"{valve['wish_name']} · 🟢 aktiv · {battery_label} · 📶 {lqi_label}"
+    return f"{_md_escape(valve['wish_name'])} · 🟢 aktiv · {battery_label} · 📶 {lqi_label}"
 
 
 def _format_valve_expanded(valve: dict, level: str) -> str:
@@ -574,10 +586,12 @@ def _format_valve_expanded(valve: dict, level: str) -> str:
         except Exception:
             pass
     return (
-        f"{icon} {valve['wish_name']}\n"
+        f"{icon} {_md_escape(valve['wish_name'])}\n"
         f"   🔋 {battery_val} % · 📶 {lqi_desc}"
         f"{last_signal_line}\n"
-        f"   ID: {valve['mqtt_name']}"
+        # Code-Span: der mqtt_name (z.B. valve_ffff) enthält Unterstriche; ohne Backticks
+        # bricht das die Telegram-Markdown-Analyse und die ganze Nachricht wird 400-verworfen.
+        f"   ID: `{valve['mqtt_name']}`"
     )
 
 
@@ -947,7 +961,7 @@ def handle_status(chat_id: int):
 
         battery = cam.get("battery")
         battery_label = f" · {_get_battery_description(battery)}" if battery is not None else ""
-        camera_sections.append(f"{wish_name} · {cam_status}{battery_label}")
+        camera_sections.append(f"{_md_escape(wish_name)} · {cam_status}{battery_label}")
 
     cameras_text = "\n".join(camera_sections) if camera_sections else ""
 
@@ -1019,7 +1033,7 @@ def handle_status(chat_id: int):
         day_label = "heute" if nxt_dt.date() == now.date() else "morgen"
         next_sched_text = (
             f"\n⏰ *Nächster Guss:* {day_label} {nxt_dt.strftime('%H:%M')} Uhr"
-            f" · {nxt['name']} · {nxt['duration_minutes']} Min\n"
+            f" · {_md_escape(nxt['name'])} · {nxt['duration_minutes']} Min\n"
         )
 
     services_block = f"🔌 Dienste: {services_status}\n" if level != "green" else ""

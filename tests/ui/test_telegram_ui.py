@@ -28,6 +28,44 @@ from daemon.ui.telegram_ui import (
 )
 
 
+class TestValveFormattingMarkdownSafety(unittest.TestCase):
+    """Regression: ein mqtt_name mit Unterstrich (z.B. valve_ffff) darf parse_mode=Markdown
+    nicht brechen — sonst lehnt Telegram die ganze /status-Nachricht mit HTTP 400 ab."""
+
+    def test_expanded_valve_id_is_markdown_safe(self):
+        from daemon.ui import telegram_ui
+        valve = {"wish_name": "Rechts Nebelregen", "mqtt_name": "valve_ffff",
+                 "battery": 100, "linkquality": 0, "last_update": None,
+                 "valve_abnormal_state": "normal"}
+        out = telegram_ui._format_valve_expanded(valve, "red")
+        # Technische ID muss in einem Code-Span stehen → Unterstrich wird literal.
+        self.assertIn("`valve_ffff`", out)
+        # Außerhalb von Code-Spans dürfen keine ungeraden Unterstriche stehen.
+        outside = out.replace("`valve_ffff`", "")
+        self.assertEqual(outside.count("_") % 2, 0)
+
+    def test_md_escape_escapes_legacy_specials(self):
+        from daemon.ui import telegram_ui
+        self.assertEqual(telegram_ui._md_escape("a_b*c`d[e"), "a\\_b\\*c\\`d\\[e")
+
+    def test_md_escape_handles_none(self):
+        from daemon.ui import telegram_ui
+        self.assertEqual(telegram_ui._md_escape(None), "")
+
+    def test_compact_valve_escapes_wish_name(self):
+        from daemon.ui import telegram_ui
+        valve = {"wish_name": "Beet_1", "battery": 100, "linkquality": 200}
+        out = telegram_ui._format_valve_compact(valve)
+        self.assertIn("Beet\\_1", out)
+
+    def test_expanded_valve_escapes_wish_name(self):
+        from daemon.ui import telegram_ui
+        valve = {"wish_name": "A_B", "mqtt_name": "valve_ffff", "battery": 100,
+                 "linkquality": 0, "last_update": None, "valve_abnormal_state": "normal"}
+        out = telegram_ui._format_valve_expanded(valve, "red")
+        self.assertIn("A\\_B", out)
+
+
 class TestWeatherCodes(unittest.TestCase):
 
     def test_known_code_returns_description(self):
