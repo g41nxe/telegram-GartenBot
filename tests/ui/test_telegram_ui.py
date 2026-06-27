@@ -640,6 +640,110 @@ class TestNebelUI(unittest.TestCase):
         mock_db.set_schedule_valves.assert_called_once_with(42, [3])
 
 
+class TestWateringValveSelection(unittest.TestCase):
+    """Ventil-Auswahl für Bewässerungs-Zeitpläne (Feature 0006 UI-Teil): Wizard + Edit."""
+
+    def setUp(self):
+        wizard_states.clear()
+        edit_states.clear()
+
+    def tearDown(self):
+        wizard_states.clear()
+        edit_states.clear()
+
+    def _cb(self, data, chat_id=100, msg_id=1):
+        return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
+
+    def _wiz(self, **extra):
+        base = {"step": 5, "mode": "watering", "name": "X", "hour": 6, "minute": 0, "duration": 10}
+        base.update(extra)
+        _state_set(wizard_states, 100, base)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_volume_with_multiple_valves_shows_valve_choice(self, mc, mdb):
+        mdb.get_all_valves.return_value = [{"id": 1, "wish_name": "Links Sprenger"},
+                                           {"id": 2, "wish_name": "Rechts Nebelregen"}]
+        self._wiz()
+        _process_callback_query(self._cb("wiz_vol_10"))
+        st = _state_get(wizard_states, 100)
+        self.assertEqual(st["step"], "wiz_valve")
+        kb = mc.edit_message_text.call_args[0][3]
+        cbs = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
+        self.assertIn("wv_valve_2", cbs)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_volume_with_single_valve_autoassigns_and_goes_to_days(self, mc, mdb):
+        mdb.get_all_valves.return_value = [{"id": 1, "wish_name": "Links Sprenger"}]
+        self._wiz()
+        _process_callback_query(self._cb("wiz_vol_10"))
+        st = _state_get(wizard_states, 100)
+        self.assertEqual(st["step"], 6)
+        self.assertEqual(st["valve_id"], 1)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_wv_valve_pick_sets_valve_and_days_step(self, mc, mdb):
+        self._wiz(step="wiz_valve", volume=0)
+        _process_callback_query(self._cb("wv_valve_2"))
+        st = _state_get(wizard_states, 100)
+        self.assertEqual(st["valve_id"], 2)
+        self.assertEqual(st["step"], 6)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_confirm_save_watering_assigns_valve(self, mc, mdb):
+        mdb.add_schedule.return_value = 50
+        self._wiz(step=7, volume=5, days=["everyday"], valve_id=2)
+        _process_callback_query(self._cb("wiz_confirm_save"))
+        mdb.set_schedule_valves.assert_called_once_with(50, [2])
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_confirm_save_watering_without_valve_does_not_assign(self, mc, mdb):
+        mdb.add_schedule.return_value = 51
+        self._wiz(step=7, volume=5, days=["everyday"])  # kein valve_id (0 Ventile / Default)
+        _process_callback_query(self._cb("wiz_confirm_save"))
+        mdb.set_schedule_valves.assert_not_called()
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_edit_menu_has_valve_field(self, mc, mdb):
+        mdb.get_schedule_by_id.return_value = {"id": 19, "name": "Abends", "time": "22:00",
+                                               "days": "everyday", "duration_minutes": 20,
+                                               "target_volume_liters": 0, "is_active": 1}
+        mdb.get_schedule_valves.return_value = [1]
+        mdb.get_valve_by_id.return_value = {"id": 1, "wish_name": "Links Sprenger"}
+        _process_callback_query(self._cb("sched_edit_19"))
+        kb = mc.edit_message_text.call_args[0][3]
+        cbs = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
+        self.assertIn("sched_editfield_valve_19", cbs)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_edit_valve_field_shows_valve_buttons(self, mc, mdb):
+        mdb.get_schedule_by_id.return_value = {"id": 19, "name": "Abends", "time": "22:00",
+                                               "days": "everyday", "duration_minutes": 20,
+                                               "target_volume_liters": 0, "is_active": 1}
+        mdb.get_all_valves.return_value = [{"id": 1, "wish_name": "Links Sprenger"},
+                                           {"id": 2, "wish_name": "Rechts Nebelregen"}]
+        mdb.get_schedule_valves.return_value = [1]
+        _process_callback_query(self._cb("sched_editfield_valve_19"))
+        kb = mc.edit_message_text.call_args[0][3]
+        cbs = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
+        self.assertIn("sched_setvalve_19_2", cbs)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_set_valve_updates_assignment(self, mc, mdb):
+        mdb.get_schedule_by_id.return_value = {"id": 19, "name": "Abends", "time": "22:00",
+                                               "days": "everyday", "duration_minutes": 20,
+                                               "target_volume_liters": 0, "is_active": 1}
+        _process_callback_query(self._cb("sched_setvalve_19_2"))
+        mdb.set_schedule_valves.assert_called_once_with(19, [2])
+
+
 class TestTelegramWiringSmoke(unittest.TestCase):
     """Wiring smoke test (ARCHITECTURE.md Rule 6): verifies that the Telegram startup
     wiring in main.py calls the correct functions by name. A renamed or removed

@@ -352,6 +352,43 @@ def get_nebel_now_keyboard() -> dict:
         [{"text": "❌ Abbrechen", "callback_data": "nebel_cancel"}],
     ]}
 
+def _schedule_valve_name(sched_id) -> str:
+    """Wunschname des dem Zeitplan zugewiesenen Ventils; Fallback wenn keines zugewiesen."""
+    try:
+        vids = database.get_schedule_valves(sched_id)
+        if vids:
+            v = database.get_valve_by_id(vids[0])
+            if v:
+                return v["wish_name"]
+    except Exception:
+        pass
+    return "Standard"
+
+
+def _wizard_valve_or_days(state: dict) -> tuple:
+    """Nächster Bewässerungs-Wizard-Schritt nach der Mengen-Auswahl.
+
+    Wie beim Nebel-Wizard: bei mehreren Ventilen eine Ventil-Auswahl (genau eines),
+    bei höchstens einem Ventil automatisch zuweisen und direkt zu den Wochentagen.
+    Mutiert `state` und liefert (text, keyboard) für den Aufrufer (edit/send).
+    """
+    valves = database.get_all_valves()
+    if len(valves) > 1:
+        state["step"] = "wiz_valve"
+        rows = [[{"text": f"🚰 {_md_escape(v['wish_name'])}", "callback_data": f"wv_valve_{v['id']}"}]
+                for v in valves]
+        rows.append([{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}])
+        return (f"🆕 *Zeitplan '{state['name']}'*\n\nWelches *Ventil* soll dieser Zeitplan steuern?",
+                {"inline_keyboard": rows})
+    if valves:
+        state["valve_id"] = valves[0]["id"]
+    state["step"] = 6
+    state["days"] = []
+    return (f"🆕 *Neuen Zeitplan '{state['name']}' (Schritt 6/6)*\n\n"
+            f"Wähle die *Wochentage* aus, an denen bewässert werden soll:\n\n*Ausgewählt: Keine*",
+            get_days_wizard_keyboard([]))
+
+
 def get_duration_wizard_keyboard(prefix: str) -> dict:
     """Erstellt ein Inline-Keyboard für die Schnellauswahl der Dauer."""
     return {
@@ -1374,14 +1411,9 @@ def _process_message(msg_obj: dict):
                     if vol <= 0:
                         raise ValueError
                     state["volume"] = vol
-                    state["step"] = 6
-                    state["days"] = []
                     _state_touch(wizard_states, chat_id)
-                    telegram_client.send_message(
-                        chat_id,
-                        f"🆕 *Neuen Zeitplan '{state['name']}' (Schritt 6/6)*\n\nWähle die *Wochentage* aus, an denen bewässert werden soll:\n\n*Ausgewählt: Keine*",
-                        get_days_wizard_keyboard([])
-                    )
+                    text, kb = _wizard_valve_or_days(state)
+                    telegram_client.send_message(chat_id, text, kb)
                 except ValueError:
                     telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl größer als 0 Liter ein:")
                 return
@@ -1738,14 +1770,24 @@ def _process_callback_query(cb_obj: dict):
             else:
                 vol = int(vol_str)
                 state["volume"] = vol
-                state["step"] = 6
-                state["days"] = []
                 _state_touch(wizard_states, chat_id)
-                telegram_client.edit_message_text(
-                    chat_id, message_id,
-                    f"🆕 *Neuen Zeitplan '{state['name']}' um {state['hour']:02d}:{state['minute']:02d} (Schritt 6/6)*\n\nWähle die *Wochentage* aus, an denen bewässert werden soll:\n\n*Ausgewählt: Keine*",
-                    get_days_wizard_keyboard([])
-                )
+                text, kb = _wizard_valve_or_days(state)
+                telegram_client.edit_message_text(chat_id, message_id, text, kb)
+
+    elif data.startswith("wv_valve_"):
+        state = _state_get(wizard_states, chat_id)
+        if state is not None:
+            state["valve_id"] = int(data.split("_")[2])
+            state["step"] = 6
+            state["days"] = []
+            _state_touch(wizard_states, chat_id)
+            telegram_client.answer_callback_query(cb_id)
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                f"🆕 *Neuen Zeitplan '{state['name']}' (Schritt 6/6)*\n\n"
+                f"Wähle die *Wochentage* aus, an denen bewässert werden soll:\n\n*Ausgewählt: Keine*",
+                get_days_wizard_keyboard([])
+            )
 
     elif data.startswith("wiz_day_"):
         day = data.split("_")[2]
@@ -1799,7 +1841,7 @@ def _process_callback_query(cb_obj: dict):
             }
             if state.get("mode") == "nebel":
                 valve = database.get_valve_by_id(state.get("valve_id"))
-                valve_name = valve["wish_name"] if valve else "—"
+                valve_name = _md_escape(valve["wish_name"]) if valve else "—"
                 telegram_client.edit_message_text(
                     chat_id, message_id,
                     f"📝 *Zusammenfassung & Bestätigung*\n\n"
@@ -1813,6 +1855,11 @@ def _process_callback_query(cb_obj: dict):
                     confirm_kb
                 )
             else:
+                valve_line = ""
+                if state.get("valve_id"):
+                    v = database.get_valve_by_id(state["valve_id"])
+                    if v:
+                        valve_line = f"• *Ventil:* {_md_escape(v['wish_name'])}\n"
                 telegram_client.edit_message_text(
                     chat_id, message_id,
                     f"📝 *Zusammenfassung & Bestätigung*\n\n"
@@ -1821,6 +1868,7 @@ def _process_callback_query(cb_obj: dict):
                     f"• *Startzeit:* {state['hour']:02d}:{state['minute']:02d} Uhr\n"
                     f"• *Dauer:* {state['duration']} Min\n"
                     f"• *Wassermenge:* {state['volume']} Liter\n"
+                    f"{valve_line}"
                     f"• *Tage:* {days_str}\n\n"
                     f"Soll dieser Zeitplan gespeichert werden?",
                     confirm_kb
@@ -1853,6 +1901,8 @@ def _process_callback_query(cb_obj: dict):
                 duration = state["duration"]
                 volume = state["volume"]
                 db_id = database.add_schedule(name, time_str, days_str, duration, volume)
+                if db_id > 0 and state.get("valve_id"):
+                    database.set_schedule_valves(db_id, [state["valve_id"]])
                 _state_del(wizard_states, chat_id)
                 if db_id > 0:
                     telegram_client.send_message(chat_id, f"📅 Zeitplan *'{name}'* erfolgreich angelegt!", get_main_keyboard())
@@ -2233,20 +2283,23 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.answer_callback_query(cb_id)
             days_str = format_days_german(schedule["days"].split(",") if schedule["days"] else [])
             vol = schedule.get("target_volume_liters") or 0
+            valve_name = _schedule_valve_name(sched_id)
             telegram_client.edit_message_text(
                 chat_id, message_id,
                 f"*✏️ Zeitplan bearbeiten — \"{schedule['name']}\"*\n\n"
                 f"• Zeit: {schedule['time']} Uhr\n"
                 f"• Tage: {days_str}\n"
                 f"• Dauer: {schedule['duration_minutes']} Min\n"
-                f"• Menge: {'∞' if vol == 0 else str(vol) + ' L'}\n\n"
+                f"• Menge: {'∞' if vol == 0 else str(vol) + ' L'}\n"
+                f"• Ventil: {_md_escape(valve_name)}\n\n"
                 "Was möchtest du ändern?",
                 {"inline_keyboard": [
                     [{"text": "⏰ Zeit",   "callback_data": f"sched_editfield_time_{sched_id}"},
                      {"text": "📅 Tage",  "callback_data": f"sched_editfield_days_{sched_id}"}],
                     [{"text": "⏳ Dauer",  "callback_data": f"sched_editfield_duration_{sched_id}"},
                      {"text": "💧 Menge", "callback_data": f"sched_editfield_volume_{sched_id}"}],
-                    [{"text": "✏️ Name",  "callback_data": f"sched_editfield_name_{sched_id}"}],
+                    [{"text": "✏️ Name",  "callback_data": f"sched_editfield_name_{sched_id}"},
+                     {"text": "🚰 Ventil", "callback_data": f"sched_editfield_valve_{sched_id}"}],
                     [{"text": "❌ Abbrechen", "callback_data": "sched_edit_cancel"}],
                 ]},
             )
@@ -2285,6 +2338,19 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.edit_message_text(
                 chat_id, message_id,
                 f"*✏️ Menge — \"{schedule['name']}\"*\n\nAktuell: *{'∞ (kein Limit)' if cur_vol == 0 else str(cur_vol) + ' L'}*\n\nNeue Menge wählen:",
+                {"inline_keyboard": rows}
+            )
+
+        elif field == "valve":
+            valves = database.get_all_valves()
+            current_ids = database.get_schedule_valves(sched_id)
+            cur = current_ids[0] if current_ids else None
+            rows = [[{"text": ("✅ " if v["id"] == cur else "🚰 ") + _md_escape(v["wish_name"]),
+                      "callback_data": f"sched_setvalve_{sched_id}_{v['id']}"}] for v in valves]
+            rows.append([{"text": "❌ Abbrechen", "callback_data": "sched_edit_cancel"}])
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                f"*✏️ Ventil — \"{schedule['name']}\"*\n\nAktuell: *{_md_escape(_schedule_valve_name(sched_id))}*\n\nWelches Ventil soll dieser Zeitplan steuern?",
                 {"inline_keyboard": rows}
             )
 
@@ -2374,6 +2440,18 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.answer_callback_query(cb_id, f"Menge auf {label} gesetzt.")
             _state_del(edit_states, chat_id)
             handle_schedules(chat_id)
+
+    elif data.startswith("sched_setvalve_"):
+        parts = data.split("_")
+        sched_id, valve_id = int(parts[2]), int(parts[3])
+        valve = database.get_valve_by_id(valve_id)
+        if valve is None:
+            telegram_client.answer_callback_query(cb_id, "Ventil nicht mehr vorhanden.", show_alert=True)
+            return
+        database.set_schedule_valves(sched_id, [valve_id])
+        telegram_client.answer_callback_query(cb_id, f"Ventil auf {valve['wish_name']} gesetzt.")
+        _state_del(edit_states, chat_id)
+        handle_schedules(chat_id)
 
     elif data.startswith("sched_editday_save_"):
         sched_id = int(data.split("_")[3])
