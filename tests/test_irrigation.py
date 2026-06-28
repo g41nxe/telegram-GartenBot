@@ -218,45 +218,47 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertIn("Keine Wetterdaten verfügbar", details)
 
     def test_08_first_to_hit_time_limit_with_unreached_volume(self):
-        """Testet, ob das Zeitlimit bei nicht erreichtem Volumenlimit eine Notfall-Abschaltung auslöst."""
+        """Zeitlimit bei nicht erreichtem Volumenlimit → regulärer Abschluss (kein Notfall)."""
         from daemon import scheduler
-        
+
         # Sicherstellen, dass kein Zyklus aktiv ist
         self.watering_ctrl.stop_watering()
-        
+
         # Starte eine Bewässerung mit 10 Minuten Zeitlimit und 5 Litern Volumenlimit
         success, msg = self.watering_ctrl.start_watering(duration_minutes=10, target_volume_liters=5, source="test")
         self.assertTrue(success)
         self.assertEqual(mqtt_client.get_valve_status()["state"], "ON")
-        
-        from daemon.core.watering_controller import WateringCycleFailed
-        
-        # Mocking des Event-Busses
-        mock_event_handler = MagicMock()
-        mqtt_client._global_bus.subscribe(WateringCycleFailed, mock_event_handler)
-        
+
+        from daemon.core.watering_controller import WateringCycleCompleted, WateringCycleFailed
+
+        # Mocking des Event-Busses: Abschluss wird erwartet, KEIN Fehler
+        completed_handler = MagicMock()
+        failed_handler = MagicMock()
+        mqtt_client._global_bus.subscribe(WateringCycleCompleted, completed_handler)
+        mqtt_client._global_bus.subscribe(WateringCycleFailed, failed_handler)
+
         # Simuliere, dass das Volumenlimit vor Ablauf der Zeit nicht erreicht wurde (z.B. nur 3 Liter)
         scheduler._controller._active_cycles["garden_valve"]["current_volume"] = 3.0
-        
+
         # Manuelles Auslösen des Timeouts
         self.watering_ctrl._time_limit_callback()
-        
+
         # Überprüfen, ob das Ventil geschlossen wurde
         self.assertEqual(mqtt_client.get_valve_status()["state"], "OFF")
         self.assertIsNone(self.watering_ctrl.get_active_cycle())
-        
-        # Überprüfen, ob die Historie als "failed" weggeschrieben wurde
+
+        # Überprüfen, ob die Historie als "completed" (mit Fehlmengen-Hinweis) weggeschrieben wurde
         history = database.get_recent_history(1)
         self.assertGreater(len(history), 0)
-        self.assertEqual(history[0]["status"], "failed")
-        self.assertIn("Notfall-Abschaltung", history[0]["details"])
+        self.assertEqual(history[0]["status"], "completed")
+        self.assertNotIn("Notfall", history[0]["details"])
+        self.assertIn("Zielmenge", history[0]["details"])
         self.assertIn("3.0l geflossen", history[0]["details"])
-        
-        # Benachrichtigung auf Notfall-Text prüfen
-        mock_event_handler.assert_called_once()
-        event = mock_event_handler.call_args[0][0]
-        self.assertIn("Notfall-Abschaltung", event.details)
-        self.assertIn("Zielwassermenge", event.details)
+
+        # Abschluss-Event ausgelöst, Fehler-Event NICHT
+        completed_handler.assert_called_once()
+        failed_handler.assert_not_called()
+        self.assertNotIn("Notfall", completed_handler.call_args[0][0].details)
 
     def test_09_mqtt_time_gap_capping(self):
         """Testet, ob ein Zeit-Gap von >= 60 Sek in der Durchfluss-Integration auf 60 Sek gedeckelt wird."""

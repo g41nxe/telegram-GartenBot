@@ -592,14 +592,18 @@ Quelle: Manuell</div>
     <div class="bubble">🏁 <b>Zeitlimit erreicht</b>
 ⏱️ 15 Min · 💧 18.5 l</div>
 
+    <div class="src">_on_watering_completed · WateringCycleCompleted (Zeitlimit, Zielmenge nicht ganz geschafft)</div>
+    <div class="bubble">🏁 <b>Zeitlimit erreicht</b>
+⏱️ 10 Min · 💧 15.0 l
+ℹ️ Zielmenge nicht ganz geschafft.</div>
+
     <div class="src">_on_watering_stopped · WateringCycleStopped</div>
     <div class="bubble">🛑 <b>Guss gestoppt</b>
 ⏱️ Laufzeit: ca. 4 Min · 💧 8.2 l</div>
 
-    <div class="src">_on_watering_failed · WateringCycleFailed</div>
-    <div class="bubble">⚠️ <b>Notfall-Abschaltung</b>
-Sicherheits-Timer nach 25 Min ausgelöst.
-💧 12.0 l geflossen.</div>
+    <div class="src">_on_watering_failed · WateringCycleFailed (echter Fehler, z. B. Hardware/MQTT — derzeit nicht aktiv ausgelöst)</div>
+    <div class="bubble">⚠️ <b>Guss fehlgeschlagen</b>
+Abbruch nach 10 Min · 💧 12.0 l geflossen.</div>
   </div>
 
   <div class="phone">
