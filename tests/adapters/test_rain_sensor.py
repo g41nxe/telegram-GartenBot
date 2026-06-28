@@ -32,86 +32,68 @@ def _make_temp_db() -> Path:
 # ---------------------------------------------------------------------------
 
 class TestRainSensorPayloadParsing(unittest.TestCase):
-    """Prüft, dass der PahoMqttAdapter Regensensor-Payloads korrekt parsed."""
+    """Prüft das Parsen des echten RANWIE01-Payloads (AQS/<id>/stat).
 
-    def test_normal_payload_fires_event(self):
-        bus = EventBus()
+    Format laut Doku: {"uptime","temperature"(1/10 °C),"rainlevel","battery"(mAs verbraucht),"raintotal"}
+    rainlevel/raintotal in 0,5-mm-Einheiten (Wert × 0,5 = mm).
+    """
+
+    def _adapter(self):
         from daemon.adapters.mqtt_client import PahoMqttAdapter
+        bus = EventBus()
         adapter = PahoMqttAdapter.__new__(PahoMqttAdapter)
         adapter.event_bus = bus
-
         captured = []
         bus.subscribe(RainSensorMeasured, captured.append)
+        return adapter, captured
 
-        adapter._handle_rain_sensor({
-            "rainlevel_mm": 1.4,
-            "raintotal_mm": 18.2,
-            "temperature": 218,    # 21.8 °C in 1/10 °C
-            "battery_level": 95,
-        })
-
+    def test_real_payload_maps_fields_and_units(self):
+        adapter, captured = self._adapter()
+        with patch("daemon.adapters.mqtt_client.config.RAIN_SENSOR_MM_PER_TICK", 0.5), \
+             patch("daemon.adapters.mqtt_client.config.RAIN_SENSOR_BATTERY_CAPACITY_MAH", 1200.0):
+            adapter._handle_rain_sensor({
+                "uptime": "1", "temperature": "200",   # 20,0 °C
+                "rainlevel": "2", "raintotal": "10",   # × 0,5 → 1,0 mm / 5,0 mm
+                "battery": "0",                         # nichts verbraucht → voll
+            })
         self.assertEqual(len(captured), 1)
         ev = captured[0]
-        self.assertAlmostEqual(ev.rainlevel_mm, 1.4)
-        self.assertAlmostEqual(ev.raintotal_mm, 18.2)
-        self.assertAlmostEqual(ev.temperature_c, 21.8)
-        self.assertEqual(ev.battery_pct, 95)
+        self.assertAlmostEqual(ev.rainlevel_mm, 1.0)
+        self.assertAlmostEqual(ev.raintotal_mm, 5.0)
+        self.assertAlmostEqual(ev.temperature_c, 20.0)
+        self.assertEqual(ev.battery_pct, 100)
 
-    def test_temperature_conversion_from_tenth_degrees(self):
-        bus = EventBus()
-        from daemon.adapters.mqtt_client import PahoMqttAdapter
-        adapter = PahoMqttAdapter.__new__(PahoMqttAdapter)
-        adapter.event_bus = bus
+    def test_is_raining_on_single_tick(self):
+        adapter, captured = self._adapter()
+        with patch("daemon.adapters.mqtt_client.config.RAIN_SENSOR_THRESHOLD_MM", 0.1), \
+             patch("daemon.adapters.mqtt_client.config.RAIN_SENSOR_MM_PER_TICK", 0.5):
+            adapter._handle_rain_sensor({"rainlevel": "1", "raintotal": "5", "temperature": "180", "battery": "0"})
+        self.assertTrue(captured[0].is_raining)          # 1 × 0,5 = 0,5 mm ≥ 0,1
 
-        captured = []
-        bus.subscribe(RainSensorMeasured, captured.append)
+    def test_zero_message_not_raining(self):
+        adapter, captured = self._adapter()
+        with patch("daemon.adapters.mqtt_client.config.RAIN_SENSOR_THRESHOLD_MM", 0.1), \
+             patch("daemon.adapters.mqtt_client.config.RAIN_SENSOR_MM_PER_TICK", 0.5):
+            adapter._handle_rain_sensor({"rainlevel": "0", "raintotal": "5", "temperature": "200", "battery": "0"})
+        self.assertFalse(captured[0].is_raining)         # Null-Heartbeat → kein Regen
 
-        adapter._handle_rain_sensor({
-            "rainlevel_mm": 0.0,
-            "raintotal_mm": 0.0,
-            "temperature": 200,    # 20.0 °C
-            "battery_level": 100,
-        })
+    def test_battery_consumed_mas_to_percent(self):
+        adapter, captured = self._adapter()
+        # 1200 mAh = 4.320.000 mAs; halb verbraucht = 2.160.000 → 50 %
+        with patch("daemon.adapters.mqtt_client.config.RAIN_SENSOR_BATTERY_CAPACITY_MAH", 1200.0):
+            adapter._handle_rain_sensor({"rainlevel": "0", "raintotal": "0", "temperature": "200", "battery": "2160000"})
+        self.assertEqual(captured[0].battery_pct, 50)
 
-        self.assertAlmostEqual(captured[0].temperature_c, 20.0)
 
-    def test_is_raining_flag_set_when_above_threshold(self):
-        bus = EventBus()
-        from daemon.adapters.mqtt_client import PahoMqttAdapter
-        adapter = PahoMqttAdapter.__new__(PahoMqttAdapter)
-        adapter.event_bus = bus
+class TestRainTopicMatching(unittest.TestCase):
+    """Wildcard-Topic-Matching, damit AQS/<id>/stat geräteunabhängig erkannt wird."""
 
-        captured = []
-        bus.subscribe(RainSensorMeasured, captured.append)
-
-        with patch("daemon.adapters.mqtt_client.config.RAIN_SENSOR_THRESHOLD_MM", 0.1):
-            adapter._handle_rain_sensor({
-                "rainlevel_mm": 0.5,
-                "raintotal_mm": 5.0,
-                "temperature": 180,
-                "battery_level": 80,
-            })
-
-        self.assertTrue(captured[0].is_raining)
-
-    def test_is_raining_false_when_below_threshold(self):
-        bus = EventBus()
-        from daemon.adapters.mqtt_client import PahoMqttAdapter
-        adapter = PahoMqttAdapter.__new__(PahoMqttAdapter)
-        adapter.event_bus = bus
-
-        captured = []
-        bus.subscribe(RainSensorMeasured, captured.append)
-
-        with patch("daemon.adapters.mqtt_client.config.RAIN_SENSOR_THRESHOLD_MM", 0.5):
-            adapter._handle_rain_sensor({
-                "rainlevel_mm": 0.0,
-                "raintotal_mm": 3.0,
-                "temperature": 200,
-                "battery_level": 75,
-            })
-
-        self.assertFalse(captured[0].is_raining)
+    def test_wildcard_and_exact(self):
+        from daemon.adapters.mqtt_client import _topic_matches
+        self.assertTrue(_topic_matches("AQS/+/stat", "AQS/1d00010f/stat"))
+        self.assertTrue(_topic_matches("sensor/rain", "sensor/rain"))
+        self.assertFalse(_topic_matches("AQS/+/stat", "AQS/1d00010f/cmd"))
+        self.assertFalse(_topic_matches("AQS/+/stat", "zigbee2mqtt/garden_valve"))
 
 
 # ---------------------------------------------------------------------------

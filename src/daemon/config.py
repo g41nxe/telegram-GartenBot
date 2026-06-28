@@ -147,8 +147,9 @@ except ValueError:
 GITHUB_PAT = os.getenv("GITHUB_PAT", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")
 
-# --- Regensensor-Einstellungen ---
-RAIN_SENSOR_TOPIC = os.getenv("RAIN_SENSOR_TOPIC", "sensor/rain")
+# --- Regensensor-Einstellungen (Aqua Scope RANWIE01) ---
+# Topic-Filter mit Wildcard, da der Sensor auf AQS/<geräte-id>/stat publisht.
+RAIN_SENSOR_TOPIC = os.getenv("RAIN_SENSOR_TOPIC", "AQS/+/stat")
 try:
     RAIN_SENSOR_THRESHOLD_MM = float(os.getenv("RAIN_SENSOR_THRESHOLD_MM", "0.1"))
 except ValueError:
@@ -157,6 +158,18 @@ try:
     RAIN_SENSOR_OFFLINE_HOURS = float(os.getenv("RAIN_SENSOR_OFFLINE_HOURS", "18"))
 except ValueError:
     RAIN_SENSOR_OFFLINE_HOURS = 18.0
+# Auflösung der Kippwaage: ein rainlevel/raintotal-Tick = 0,5 mm Wassersäule.
+try:
+    RAIN_SENSOR_MM_PER_TICK = float(os.getenv("RAIN_SENSOR_MM_PER_TICK", "0.5"))
+except ValueError:
+    RAIN_SENSOR_MM_PER_TICK = 0.5
+# `battery` ist verbrauchte Kapazität in mAs. Rest-% = 100·(1 − verbraucht/Kapazität).
+# Standard: 2× AAA LiFeS2 (Energizer L92), nutzbare Kapazität bis zur Geräte-Abschaltung
+# (2,9 V Pack = 1,45 V/Zelle) ≈ 1200 mAh laut Hersteller-Batteriereport (~2,3 Jahre Laufzeit).
+try:
+    RAIN_SENSOR_BATTERY_CAPACITY_MAH = float(os.getenv("RAIN_SENSOR_BATTERY_CAPACITY_MAH", "1200"))
+except ValueError:
+    RAIN_SENSOR_BATTERY_CAPACITY_MAH = 1200.0
 
 # --- Kamera-Einstellungen ---
 try:

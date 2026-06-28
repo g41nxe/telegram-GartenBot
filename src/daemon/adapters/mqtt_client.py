@@ -14,6 +14,40 @@ logger = logging.getLogger("garden_mqtt")
 from ..core.valve_events import ValveStatusReported, DeviceJoinedEvent  # noqa: F401
 from ..core.sensor_events import RainSensorMeasured  # noqa: F401
 
+
+def _topic_matches(pattern: str, topic: str) -> bool:
+    """Einfaches MQTT-Topic-Matching mit '+' (eine Ebene) und '#' (Rest).
+
+    Nötig, weil der Regensensor auf AQS/<geräte-id>/stat publisht und der Filter
+    geräteunabhängig (AQS/+/stat) sein soll.
+    """
+    p, t = pattern.split("/"), topic.split("/")
+    for i, seg in enumerate(p):
+        if seg == "#":
+            return True
+        if i >= len(t):
+            return False
+        if seg != "+" and seg != t[i]:
+            return False
+    return len(p) == len(t)
+
+
+def _rain_battery_pct(consumed_mas) -> int:
+    """Rechnet die verbrauchte Kapazität (mAs) des RANWIE01 in Rest-Prozent um.
+
+    Rest-% = 100·(1 − verbraucht / Gesamtkapazität), geklemmt auf 0–100. Ohne
+    konfigurierte Kapazität → 100 % (keine sinnvolle Aussage möglich).
+    """
+    cap_mah = config.RAIN_SENSOR_BATTERY_CAPACITY_MAH
+    if not cap_mah:
+        return 100
+    try:
+        consumed = float(consumed_mas or 0)
+    except (TypeError, ValueError):
+        return 100
+    remaining = 100.0 * (1.0 - consumed / (cap_mah * 3600.0))
+    return int(max(0, min(100, round(remaining))))
+
 # --- Globale abwärtskompatible Zustände ---
 
 valve_status = {
@@ -203,7 +237,7 @@ class PahoMqttAdapter(MqttClient):
             is_valve_topic = (
                 len(topic_parts) == 2
                 and topic_parts[0] == "zigbee2mqtt"
-                and msg.topic != config.RAIN_SENSOR_TOPIC
+                and not _topic_matches(config.RAIN_SENSOR_TOPIC, msg.topic)
                 and "linkquality" in data
             )
             if is_valve_topic:
@@ -233,18 +267,20 @@ class PahoMqttAdapter(MqttClient):
                         logger.info(f"PahoMqttAdapter: Gerät beigetreten – {ieee}")
                         self.event_bus.publish(DeviceJoinedEvent(ieee))
 
-            elif msg.topic == config.RAIN_SENSOR_TOPIC:
+            elif _topic_matches(config.RAIN_SENSOR_TOPIC, msg.topic):
                 self._handle_rain_sensor(data)
         except Exception as e:
             logger.error(f"PahoMqttAdapter: Fehler beim Weiterleiten an EventBus auf {msg.topic}: {e}")
 
     def _handle_rain_sensor(self, data: dict):
         try:
-            rainlevel_mm = round(float(data.get("rainlevel_mm", 0.0)), 2)
-            raintotal_mm = round(float(data.get("raintotal_mm", 0.0)), 2)
-            temp_raw = data.get("temperature", 0)
-            temperature_c = round(float(temp_raw) / 10.0, 1)
-            battery_pct = int(data.get("battery_level", 100))
+            # RANWIE01: rainlevel/raintotal in 0,5-mm-Ticks, temperature in 1/10 °C,
+            # battery = verbrauchte Kapazität in mAs.
+            mm_per_tick = config.RAIN_SENSOR_MM_PER_TICK
+            rainlevel_mm = round(float(data.get("rainlevel", 0.0)) * mm_per_tick, 2)
+            raintotal_mm = round(float(data.get("raintotal", 0.0)) * mm_per_tick, 2)
+            temperature_c = round(float(data.get("temperature", 0)) / 10.0, 1)
+            battery_pct = _rain_battery_pct(data.get("battery"))
             is_raining = rainlevel_mm >= config.RAIN_SENSOR_THRESHOLD_MM
             self.event_bus.publish(RainSensorMeasured(
                 rainlevel_mm, raintotal_mm, temperature_c, battery_pct, is_raining
