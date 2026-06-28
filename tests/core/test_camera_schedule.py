@@ -1,5 +1,5 @@
 """Tests für src/daemon/core/camera_schedule.py — reine Core-Funktionen, keine I/O."""
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytest
 from src.daemon.core import camera_schedule
 
@@ -8,8 +8,8 @@ from src.daemon.core import camera_schedule
 # Hilfsfunktionen
 # ---------------------------------------------------------------------------
 
-def _schedule(time_str, duration_minutes, is_active=1):
-    return {"time": time_str, "duration_minutes": duration_minutes, "is_active": is_active}
+def _schedule(time_str, duration_minutes, is_active=1, name="Test-Zeitplan"):
+    return {"time": time_str, "duration_minutes": duration_minutes, "is_active": is_active, "name": name}
 
 
 def _photo_time(time_str):
@@ -148,12 +148,22 @@ class TestFindMatchingPhotoTarget:
         assert result is None
 
     def test_guss_ziel_beschriftung(self):
-        """Treffer durch Zeitplan → Beschriftung enthält Guss-Startzeit."""
-        # Zeitplan 10:00, 8 min Dauer → Ziel 10:10 → now = 10:10
+        """Treffer durch Zeitplan → Beschriftung nennt den Zeitplan-Namen."""
         result = camera_schedule.find_matching_photo_target(
-            _now(10, 10), [_schedule("10:00", 8)], [], OFFSET, TOLERANCE
+            _now(10, 10), [_schedule("10:00", 8, name="Rasen")], [], OFFSET, TOLERANCE
         )
-        assert result == "📷 Nach dem Guss um 10:00"
+        assert result == "📷 Nach dem Guss „Rasen“"
+
+    def test_guss_ziel_beschriftung_escaped_markdown(self):
+        """Zeitplan-Name mit Markdown-Sonderzeichen wird in der Caption escapt.
+
+        Sonst bricht der Name (z.B. 'Beet_1') die Legacy-Markdown der Foto-Caption
+        und Telegram verwirft das Foto mit HTTP 400.
+        """
+        result = camera_schedule.find_matching_photo_target(
+            _now(10, 10), [_schedule("10:00", 8, name="Beet_1")], [], OFFSET, TOLERANCE
+        )
+        assert result == "📷 Nach dem Guss „Beet\\_1“"
 
     def test_mehrere_treffer_naechster_gewinnt(self):
         """Mehrere Aufnahme-Zeitpunkte im Toleranzfenster → nächstgelegener gewinnt."""
@@ -167,15 +177,14 @@ class TestFindMatchingPhotoTarget:
         assert result == "📷 Foto um 10:00"
 
     def test_absolut_und_guss_beide_im_fenster(self):
-        """Absolutes Ziel und Guss-Ziel im Fenster → nächstgelegener gewinnt."""
-        # now = 10:10; Guss-Ziel = 10:10 (Δ=0); Absolut 10:08 (Δ=2 min)
+        """Absolutes Ziel und Guss-Ziel im Fenster → nächstgelegener gewinnt (Guss, Δ=0)."""
         result = camera_schedule.find_matching_photo_target(
             _now(10, 10),
-            [_schedule("10:00", 8)],   # Ziel 10:10
-            [_photo_time("10:08")],    # Ziel 10:08 (Δ=2 min)
+            [_schedule("10:00", 8, name="Rasen")],   # Ziel 10:10, Δ=0
+            [_photo_time("10:08")],                   # Ziel 10:08, Δ=2 min
             OFFSET, TOLERANCE
         )
-        assert result == "📷 Nach dem Guss um 10:00"
+        assert result == "📷 Nach dem Guss „Rasen“"
 
     def test_inaktiver_zeitplan_kein_treffer(self):
         """Inaktiver Zeitplan darf kein Matching erzeugen."""
@@ -183,3 +192,72 @@ class TestFindMatchingPhotoTarget:
             _now(10, 10), [_schedule("10:00", 8, is_active=0)], [], OFFSET, TOLERANCE
         )
         assert result is None
+
+
+# ===========================================================================
+# next_photo_target
+# ===========================================================================
+
+class TestNextPhotoTarget:
+    def test_kein_ziel_gibt_none(self):
+        """Keine Zeitpläne, keine festen Zeiten → None."""
+        result = camera_schedule.next_photo_target(_now(10, 0), [], [], OFFSET)
+        assert result is None
+
+    def test_guss_ziel_korrekte_aufnahmezeit(self):
+        """Zeitplan 10:00, 8 min Dauer, Offset 2 → Aufnahmezeit 10:10."""
+        result = camera_schedule.next_photo_target(
+            _now(9, 50), [_schedule("10:00", 8, name="Rasen")], [], OFFSET
+        )
+        assert result is not None
+        target_dt, label = result
+        assert target_dt.hour == 10 and target_dt.minute == 10
+
+    def test_guss_ziel_label_typ_und_name(self):
+        """Guss-Ziel → label['type'] == 'guss', label['name'] == Zeitplan-Name."""
+        result = camera_schedule.next_photo_target(
+            _now(9, 50), [_schedule("10:00", 8, name="Rasen")], [], OFFSET
+        )
+        assert result is not None
+        _, label = result
+        assert label["type"] == "guss"
+        assert label["name"] == "Rasen"
+
+    def test_fixes_ziel_label_typ(self):
+        """Feste Fotozeit → label['type'] == 'fix'."""
+        result = camera_schedule.next_photo_target(
+            _now(10, 0), [], [_photo_time("10:30")], OFFSET
+        )
+        assert result is not None
+        target_dt, label = result
+        assert label["type"] == "fix"
+        assert target_dt.hour == 10 and target_dt.minute == 30
+
+    def test_fruehere_von_mehreren_gewinnt(self):
+        """Guss-Ziel (10:10) vs. feste Zeit (10:05) → feste Zeit (früher) gewinnt."""
+        result = camera_schedule.next_photo_target(
+            _now(10, 0),
+            [_schedule("10:00", 8, name="Rasen")],   # target 10:10
+            [_photo_time("10:05")],                   # target 10:05
+            OFFSET,
+        )
+        assert result is not None
+        target_dt, label = result
+        assert label["type"] == "fix"
+        assert target_dt.minute == 5
+
+    def test_inaktiver_zeitplan_kein_guss_ziel(self):
+        """Inaktiver Zeitplan erzeugt kein Guss-Ziel."""
+        result = camera_schedule.next_photo_target(
+            _now(9, 50), [_schedule("10:00", 8, is_active=0)], [], OFFSET
+        )
+        assert result is None
+
+    def test_vergangenes_ziel_heute_nimmt_morgen(self):
+        """Vergangene feste Zeit heute → morgen gleiche Zeit wird zurückgegeben."""
+        result = camera_schedule.next_photo_target(
+            _now(10, 0), [], [_photo_time("09:00")], OFFSET
+        )
+        assert result is not None
+        target_dt, _ = result
+        assert target_dt.date() == (_now(10, 0) + timedelta(days=1)).date()

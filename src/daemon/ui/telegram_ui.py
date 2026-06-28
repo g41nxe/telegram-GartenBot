@@ -15,6 +15,7 @@ _VERSION_FILE = Path(__file__).resolve().parent.parent.parent.parent / "VERSION"
 from ..adapters.daily_report import generate_daily_report as _generate_daily_report
 from ..adapters.mqtt_client import _global_bus
 from ..core.weather_codes import get_wmo_description as _get_wmo_description
+from ..core.camera_schedule import next_photo_target as _next_photo_target
 from ..core.watering_controller import (
     WateringCycleStarted,
     WateringCycleCompleted,
@@ -867,20 +868,43 @@ def _get_photo_time_minute_keyboard() -> dict:
 
 
 def handle_aufnahmen(chat_id: int):
-    """Zeigt die Liste der Foto-Uhrzeiten und einen Button zum Hinzufügen."""
-    times = database.get_photo_times()
+    """Zeigt Foto-Uhrzeiten in zwei Abschnitten: feste Zeiten + Guss-Fotos."""
+    fixed_times = database.get_photo_times()
+    active_schedules = [s for s in database.get_schedules() if s.get("is_active")]
     add_button = [{"text": "➕ Uhrzeit hinzufügen", "callback_data": "phtadd_start"}]
-    if not times:
+
+    if not fixed_times and not active_schedules:
         telegram_client.send_message(
             chat_id,
             "📷 *Foto-Uhrzeiten*\n\nKeine Aufnahme-Uhrzeiten konfiguriert.",
             {"inline_keyboard": [add_button]}
         )
         return
-    lines = [f"📷 *Foto-Uhrzeiten*\n"]
-    for t in times:
-        lines.append(f"• {t['time']}")
-    rows = [[{"text": f"🗑️ {t['time']}", "callback_data": f"phtime_del_ask_{t['id']}"}] for t in times]
+
+    lines = ["📷 *Foto-Uhrzeiten*"]
+    rows = []
+
+    if fixed_times:
+        lines.append("\n⏰ *Feste Zeiten*")
+        for t in fixed_times:
+            lines.append(f"• {t['time']} Uhr")
+        for t in fixed_times:
+            rows.append([{"text": f"🗑️ {t['time']}", "callback_data": f"phtime_del_ask_{t['id']}"}])
+
+    if active_schedules:
+        lines.append("\n🌿 *Nach Güssen*")
+        offset = config.CAMERA_AFTER_GUSS_OFFSET_MINUTES
+        for s in active_schedules:
+            try:
+                h, m = map(int, s["time"].split(":"))
+                capture_min = h * 60 + m + s["duration_minutes"] + offset
+                cap_h, cap_m = divmod(capture_min % (24 * 60), 60)
+                lines.append(
+                    f"• {cap_h:02d}:{cap_m:02d} Uhr · {_md_escape(s['name'])}"
+                )
+            except (ValueError, KeyError):
+                lines.append(f"• {_md_escape(s.get('name', '?'))}")
+
     rows.append(add_button)
     telegram_client.send_message(chat_id, "\n".join(lines), {"inline_keyboard": rows})
 
@@ -1117,6 +1141,23 @@ def handle_status(chat_id: int):
             f" · {_md_escape(nxt['name'])} · {nxt['duration_minutes']} Min\n"
         )
 
+    next_photo_text = ""
+    if cameras:
+        photo_times = database.get_photo_times()
+        photo_target = _next_photo_target(
+            now, all_schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES
+        )
+        if photo_target:
+            pt_dt, pt_label = photo_target
+            pt_day = "heute" if pt_dt.date() == now.date() else "morgen"
+            if pt_label["type"] == "guss":
+                pt_anlass = f"nach Guss „{_md_escape(pt_label['name'])}“"
+            else:
+                pt_anlass = "feste Fotozeit"
+            next_photo_text = (
+                f"📷 *Nächstes Foto:* {pt_day} {pt_dt.strftime('%H:%M')} Uhr · {pt_anlass}\n"
+            )
+
     services_block = f"🔌 Dienste: {services_status}\n" if level != "green" else ""
     cameras_block = f"\n📷 *Kameras*\n{cameras_text}\n" if cameras_text else ""
 
@@ -1128,6 +1169,7 @@ def handle_status(chat_id: int):
         f"{active_text}"
         f"\n📡 *Ventile*\n{valves_text}\n"
         f"{next_sched_text}"
+        f"{next_photo_text}"
         f"{cameras_block}"
         f"{rain_sensor_block}"
         f"\n🌡 *Wetter*\n{weather_text}\n\n"

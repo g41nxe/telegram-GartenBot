@@ -2071,5 +2071,158 @@ class TestRainOverride(unittest.TestCase):
             mock_client.edit_message_text.called or mock_client.answer_callback_query.called)
 
 
+class TestStatusNaechstesPhoto(unittest.TestCase):
+    """Feature 0035: 'Nächstes Foto' Zeile in /status."""
+
+    def _make_schedule(self, time="06:00", duration=10, is_active=1, name="Rasen"):
+        return {
+            "id": 1, "name": name, "time": time, "duration_minutes": duration,
+            "is_active": is_active, "days": "everyday", "target_volume_liters": 0,
+        }
+
+    def _status_with(self, mock_client, mock_db, mock_ctrl,
+                     cameras=None, schedules=None, photo_times=None):
+        from daemon.adapters import mqtt_client as mc
+        if cameras is None:
+            cameras = [_make_camera()]
+        if schedules is None:
+            schedules = [self._make_schedule()]
+        if photo_times is None:
+            photo_times = []
+        mock_db.get_all_cameras.return_value = cameras
+        mock_db.get_schedules.return_value = schedules
+        mock_db.get_photo_times.return_value = photo_times
+        mock_db.get_all_valves.return_value = []
+        mock_db.get_last_weather.return_value = None
+        mock_db.get_recent_history.return_value = []
+        mock_ctrl.get_active_cycle.return_value = None
+        with patch.object(mc, "HAS_PAHO", False), \
+             patch.object(mc, "request_valve_status"), \
+             patch.object(mc, "is_broker_connected", return_value=True), \
+             patch.object(mc, "get_bridge_status", return_value="online"):
+            _process_message({"chat": {"id": 100}, "text": "/status"})
+        return mock_client.send_message.call_args[0][1]
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_zeigt_naechstes_foto_wenn_kamera_und_schedule(self, mock_client, mock_db, mock_ctrl):
+        """Kamera + aktiver Zeitplan → 'Nächstes Foto' Zeile im Status."""
+        text = self._status_with(mock_client, mock_db, mock_ctrl)
+        self.assertIn("Nächstes Foto", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_kein_naechstes_foto_ohne_kamera(self, mock_client, mock_db, mock_ctrl):
+        """Keine Kamera → keine 'Nächstes Foto' Zeile."""
+        text = self._status_with(mock_client, mock_db, mock_ctrl, cameras=[])
+        self.assertNotIn("Nächstes Foto", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_kein_naechstes_foto_ohne_ziele(self, mock_client, mock_db, mock_ctrl):
+        """Kamera, aber keine Zeitpläne und keine festen Zeiten → keine 'Nächstes Foto' Zeile."""
+        text = self._status_with(mock_client, mock_db, mock_ctrl, schedules=[], photo_times=[])
+        self.assertNotIn("Nächstes Foto", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_offline_kamera_zeigt_foto_linie(self, mock_client, mock_db, mock_ctrl):
+        """Offline-Kamera unterdrückt 'Nächstes Foto' nicht — der Zeitplan gilt."""
+        offline_cam = _make_camera(last_seen="2020-01-01T00:00:00")
+        text = self._status_with(mock_client, mock_db, mock_ctrl, cameras=[offline_cam])
+        self.assertIn("Nächstes Foto", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_foto_anlass_im_text(self, mock_client, mock_db, mock_ctrl):
+        """'Nächstes Foto' Zeile enthält den Anlass (Zeitplan-Name oder 'feste Fotozeit')."""
+        text = self._status_with(mock_client, mock_db, mock_ctrl,
+                                 schedules=[self._make_schedule(name="Rasen")])
+        self.assertIn("Rasen", text)
+
+
+class TestHandleAufnahmen(unittest.TestCase):
+    """Feature 0035: Zwei-Abschnitt-Ansicht in handle_aufnahmen."""
+
+    def _make_schedule(self, time="06:00", duration=10, is_active=1, name="Rasen", sid=1):
+        return {
+            "id": sid, "name": name, "time": time, "duration_minutes": duration,
+            "is_active": is_active, "days": "everyday",
+        }
+
+    def _call(self, mock_client, mock_db, photo_times=None, schedules=None):
+        from daemon.ui.telegram_ui import handle_aufnahmen
+        mock_db.get_photo_times.return_value = [] if photo_times is None else photo_times
+        mock_db.get_schedules.return_value = [] if schedules is None else schedules
+        handle_aufnahmen(100)
+        return mock_client.send_message.call_args
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_aufnahmen_zeigt_guss_abschnitt_bei_aktivem_zeitplan(self, mock_client, mock_db):
+        """Aktiver Zeitplan → 'Nach Güssen' Abschnitt erscheint."""
+        call = self._call(mock_client, mock_db, schedules=[self._make_schedule()])
+        text = call[0][1]
+        self.assertIn("Güssen", text)
+        self.assertIn("Rasen", text)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_aufnahmen_guss_foto_ohne_loeschen_button(self, mock_client, mock_db):
+        """Guss-Fotos haben keinen 🗑️ Löschen-Button."""
+        call = self._call(mock_client, mock_db, schedules=[self._make_schedule()])
+        markup = call[0][2]
+        callbacks = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
+        self.assertFalse(any("phtime_del" in cb for cb in callbacks))
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_aufnahmen_feste_zeiten_haben_loeschen_button(self, mock_client, mock_db):
+        """Feste Fotozeiten haben 🗑️ Löschen-Button."""
+        call = self._call(mock_client, mock_db,
+                          photo_times=[{"id": 1, "time": "18:00"}])
+        markup = call[0][2]
+        callbacks = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
+        self.assertTrue(any("phtime_del" in cb for cb in callbacks))
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_aufnahmen_beide_leer_zeigt_leermeldung(self, mock_client, mock_db):
+        """Keine festen Zeiten und keine aktiven Zeitpläne → bisherige Leer-Meldung."""
+        call = self._call(mock_client, mock_db)
+        text = call[0][1]
+        self.assertIn("Keine", text)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_aufnahmen_hinzufuegen_button_immer_sichtbar(self, mock_client, mock_db):
+        """➕ Button ist immer vorhanden — auch ohne Einträge."""
+        call = self._call(mock_client, mock_db)
+        markup = call[0][2]
+        texts = [b["text"] for row in markup["inline_keyboard"] for b in row]
+        self.assertTrue(any("➕" in t for t in texts))
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_aufnahmen_inaktiver_zeitplan_kein_guss_abschnitt(self, mock_client, mock_db):
+        """Inaktiver Zeitplan → kein 'Nach Güssen' Abschnitt."""
+        call = self._call(mock_client, mock_db, schedules=[self._make_schedule(is_active=0)])
+        text = call[0][1]
+        self.assertNotIn("Güssen", text)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_aufnahmen_feste_zeiten_abschnitt_header(self, mock_client, mock_db):
+        """Feste Fotozeiten → Abschnitt-Überschrift ⏰ Feste Zeiten erscheint."""
+        call = self._call(mock_client, mock_db, photo_times=[{"id": 1, "time": "18:00"}])
+        text = call[0][1]
+        self.assertIn("Feste", text)
+
+
 if __name__ == "__main__":
     unittest.main()

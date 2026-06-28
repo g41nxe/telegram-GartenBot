@@ -3,36 +3,61 @@
 Keine I/O. Eingaben kommen vom camera_receiver-Adapter (DB-Abfragen),
 Ausgaben sind skalare Werte oder Optional[str].
 """
+import re
 from datetime import datetime, timedelta
 
 
+def _md_escape(text) -> str:
+    """Neutralisiert die Markdown-Sonderzeichen (_ * ` [) der Telegram-Legacy-Markdown.
+
+    Die Foto-Caption wird mit parse_mode=Markdown gesendet; ein Zeitplan-Name wie
+    „Beet_1" würde sonst die Analyse brechen und das Foto mit HTTP 400 verwerfen.
+    Spiegelt ui._md_escape — hier dupliziert, weil core/ nicht aus ui/ importieren darf.
+    """
+    if not text:
+        return ""
+    return re.sub(r"([_*`\[])", r"\\\1", str(text))
+
+
 def _guss_targets(now: datetime, schedules: list, after_offset_minutes: int):
-    """Liefert (target_dt, caption) für alle aktiven Zeitpläne heute und morgen."""
+    """Liefert (target_dt, caption, label) für alle aktiven Zeitpläne heute und morgen.
+
+    label = {"type": "guss", "name": <Zeitplan-Name>}
+    """
     targets = []
     for s in schedules:
         if not s.get("is_active", 1):
             continue
         h, m = map(int, s["time"].split(":"))
         duration = s["duration_minutes"]
+        name = s.get("name") or ""
+        caption = (
+            f"\U0001f4f7 Nach dem Guss „{_md_escape(name)}“"
+            if name else "\U0001f4f7 Nach dem Guss"
+        )
+        label = {"type": "guss", "name": name}
         for day_offset in (0, 1):
             base = now.replace(hour=h, minute=m, second=0, microsecond=0)
             base += timedelta(days=day_offset)
             target = base + timedelta(minutes=duration + after_offset_minutes)
-            caption = f"📷 Nach dem Guss um {h:02d}:{m:02d}"
-            targets.append((target, caption))
+            targets.append((target, caption, label))
     return targets
 
 
 def _absolute_targets(now: datetime, photo_times: list):
-    """Liefert (target_dt, caption) für alle absoluten Foto-Uhrzeiten heute und morgen."""
+    """Liefert (target_dt, caption, label) für alle absoluten Foto-Uhrzeiten heute und morgen.
+
+    label = {"type": "fix"}
+    """
     targets = []
     for pt in photo_times:
         h, m = map(int, pt["time"].split(":"))
+        caption = f"📷 Foto um {h:02d}:{m:02d}"
+        label = {"type": "fix"}
         for day_offset in (0, 1):
             base = now.replace(hour=h, minute=m, second=0, microsecond=0)
             base += timedelta(days=day_offset)
-            caption = f"📷 Foto um {h:02d}:{m:02d}"
-            targets.append((base, caption))
+            targets.append((base, caption, label))
     return targets
 
 
@@ -56,7 +81,7 @@ def compute_next_sleep_seconds(
         + _absolute_targets(now, photo_times)
     )
 
-    for target_dt, _ in all_targets:
+    for target_dt, _, _label in all_targets:
         if now <= target_dt <= deadline:
             secs = int((target_dt - now).total_seconds())
             if secs < best_seconds:
@@ -85,7 +110,7 @@ def find_matching_photo_target(
         + _absolute_targets(now, photo_times)
     )
 
-    for target_dt, caption in all_targets:
+    for target_dt, caption, _label in all_targets:
         delta = abs((now - target_dt).total_seconds())
         if delta <= window.total_seconds():
             if best_delta is None or delta < best_delta:
@@ -93,3 +118,33 @@ def find_matching_photo_target(
                 best_caption = caption
 
     return best_caption
+
+
+def next_photo_target(
+    now: datetime,
+    schedules: list,
+    photo_times: list,
+    after_offset_minutes: int,
+) -> tuple | None:
+    """Gibt den nächsten zukünftigen Aufnahme-Zeitpunkt zurück: (target_dt, label) oder None.
+
+    label = {"type": "guss", "name": str} | {"type": "fix"}
+    """
+    all_targets = (
+        _guss_targets(now, schedules, after_offset_minutes)
+        + _absolute_targets(now, photo_times)
+    )
+
+    best_dt = None
+    best_label = None
+
+    for target_dt, _caption, label in all_targets:
+        if target_dt <= now:
+            continue
+        if best_dt is None or target_dt < best_dt:
+            best_dt = target_dt
+            best_label = label
+
+    if best_dt is None:
+        return None
+    return best_dt, best_label
