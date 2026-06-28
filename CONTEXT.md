@@ -81,6 +81,11 @@ Die vom Bewässerungs-Daemon berechnete Einschätzung, ob eine manuelle oder gep
 _Avoid_: Gieß-Ratschlag, Bewässerungs-Hinweis, Watering-Advice
 _Status_: 🚧 In Umsetzung — geplant in Feature 0009 (`docs/features/0009-giesscheck-bewasserungsempfehlung.md`, ADR 0021). Im Code noch nicht aktiv; aktuell existiert nur die Teil-Funktion `evaluate_rain_window` (Regen-Fenster).
 
+**Guss-Vorwarnung**:
+Eine Benachrichtigung ~5 Minuten vor dem geplanten Start eines Gusses, die **nur dann** gesendet wird, wenn die Gieß-Empfehlung den Guss wegen Regen **überspringen oder reduzieren** würde. Sie nennt die Details des anstehenden Gusses (Zeitplan, Ventil, Original-Dauer/-Menge, Regen-Begründung) und bietet die Regen-Übersteuerung an. Reagiert der Nutzer nicht, bleibt das automatische Verhalten (Skip/Reduzierung) bestehen.
+_Avoid_: Guss-Erinnerung, Skip-Warnung, Pre-Notification
+_Status_: 🚧 Geplant — Feature 0034 (ADR 0035). Noch nicht implementiert.
+
 **Hitzestrecke**:
 Die Anzahl aufeinanderfolgender abgeschlossener Vortage, an denen die maximale Tagestemperatur einen konfigurierten Schwellenwert (Standard: 25°C) erreicht oder überschritten hat. Eine Lücke (fehlende Wetterdaten, z.B. Steuerzentrale offline) bricht die Hitzestrecke ab.
 _Avoid_: Hitzeperiode, Hitzewelle, Hot-Streak
@@ -89,6 +94,11 @@ _Status_: 🚧 In Umsetzung — geplant in Feature 0009 (`docs/features/0009-gie
 **Regen-Fenster**:
 Die Summe des gefallenen Niederschlags der letzten 24 Stunden (aus gemessenen Archiv-/Reanalyse-Daten des Wetter-Dienstes) und der vorhergesagten Niederschlagsmenge der nächsten 24 Stunden (aus dem Forecast-Modell). Entspricht dem bestehenden Schwellenwert `RAIN_THRESHOLD_MM` und wird sowohl für die Gieß-Empfehlung als auch für die automatische Überspringlogik des Schedulers verwendet.
 _Avoid_: Regen-Periode, Niederschlags-Fenster, Rain-Window
+
+**Regen-Übersteuerung**:
+Der bewusste, einmalige Eingriff des Nutzers, der die automatische regenbedingte Überspringung oder Reduzierung eines geplanten Gusses für **genau diesen Lauf** aufhebt — der Guss läuft dann mit seinen Original-Werten (Dauer, Menge, Ventil), als gäbe es keinen Regen. Wird über die Guss-Vorwarnung angeboten und beim Guss-Start verbraucht; der nächste Lauf wird wieder regulär bewertet. Ein zu spät ausgelöster Eingriff hat keine Wirkung (nur Hinweis).
+_Avoid_: Regen-Override, Force-Watering, Skip-Bypass
+_Status_: 🚧 Geplant — Feature 0034 (ADR 0035). Noch nicht implementiert.
 
 **Inaktivitäts-Watchdog**:
 Die Überwachungslogik im Bewässerungs-Daemon, die das Ausbleiben regelmäßiger Lebenszeichen von batteriebetriebenen Geräten (z. B. mehr als 18 Stunden beim Füllstandssensor oder mehr als 24 Stunden bei einem Ventil) erkennt und proaktiv über den Telegram-Bot warnt.
