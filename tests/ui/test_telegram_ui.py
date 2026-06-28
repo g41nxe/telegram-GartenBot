@@ -1497,6 +1497,22 @@ class TestEreignisBenachrichtigungen(unittest.TestCase):
         self.assertIn("28", msg)
 
     @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_watering_completed_zeitlimit_mit_fehlmenge(self, mock_client):
+        """Zeitlimit erreicht, Zielmenge nicht ganz geschafft → 🏁-Abschluss mit Hinweis,
+        KEINE Notfall-/Sicherheits-Wortwahl."""
+        from daemon.ui.telegram_ui import _on_watering_completed
+        from daemon.core.watering_controller import WateringCycleCompleted
+        event = WateringCycleCompleted(
+            duration_run=10, volume_run=15.0, source="manual",
+            details="Zeitlimit von 10 Min erreicht — Zielmenge 20l nicht ganz geschafft (15.0l geflossen).")
+        _on_watering_completed(event)
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("🏁", msg)
+        self.assertIn("Zielmenge nicht ganz geschafft", msg)
+        self.assertNotIn("Notfall", msg)
+        self.assertNotIn("Sicherheits-Timer", msg)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
     def test_watering_stopped_zeigt_stopp_emoji(self, mock_client):
         """Guss-gestoppt-Benachrichtigung enthält 🛑, nicht 🔴."""
         from daemon.ui.telegram_ui import _on_watering_stopped
@@ -1537,7 +1553,7 @@ class TestEreignisBenachrichtigungen(unittest.TestCase):
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_watering_failed_keine_ausrufezeichen_kette(self, mock_client):
-        """Notfall-Abschaltung ist sachlich, kein '!!' oder '!*'."""
+        """Echte Guss-Fehler-Meldung ist sachlich, kein '!!' oder '!*'."""
         from daemon.ui.telegram_ui import _on_watering_failed
         from daemon.core.watering_controller import WateringCycleFailed
         event = WateringCycleFailed(duration_run=10, volume_run=3.0,

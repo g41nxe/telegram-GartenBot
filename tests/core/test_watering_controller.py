@@ -76,27 +76,32 @@ class TestWateringController(unittest.TestCase):
         self.controller.stop_watering("garden_valve")
         self.assertEqual(self.controller.get_active_valve_names(), ["beet_valve"])
 
-    def test_emergency_shutdown_on_time_limit(self):
-        """Verifies that if the time limit expires before the volume is reached, it triggers emergency shutdown."""
-        events = []
-        self.bus.subscribe(WateringCycleFailed, lambda e: events.append(e))
-        
+    def test_time_limit_with_volume_shortfall_completes_normally(self):
+        """Zeitlimit erreicht, Zielmenge nicht ganz geschafft → regulärer Abschluss,
+        KEINE Notfall-Abschaltung (das vom Nutzer gesetzte Zeitlimit ist der normale Deckel)."""
+        completed = []
+        failed = []
+        self.bus.subscribe(WateringCycleCompleted, lambda e: completed.append(e))
+        self.bus.subscribe(WateringCycleFailed, lambda e: failed.append(e))
+
         success, msg = self.controller.start_watering(duration_minutes=10, target_volume_liters=5, source="manual")
         self.assertTrue(success, f"Failed to start: {msg}")
-        
+
         # Simulate some flow (3.0 Liters out of 5.0)
         self.controller._integrate_flow(flow_rate=5.0, elapsed_seconds=36.0)
         self.assertEqual(self.controller.get_active_volume(), 3.0)
-        
+
         # Force expiration of the time-limit callback
         self.controller._time_limit_callback()
-        
-        # Should close valve and trigger Failure event
+
+        # Ventil schließt, aber als regulärer Abschluss — nicht als Notfall
         self.assertEqual(self.client.get_valve_status()["state"], "OFF")
-        self.assertEqual(len(events), 1)
-        self.assertIsInstance(events[0], WateringCycleFailed)
-        self.assertEqual(events[0].volume_run, 3.0)
-        self.assertIn("Notfall-Abschaltung", events[0].details)
+        self.assertEqual(len(failed), 0, "Zeitlimit ist kein Notfall — kein WateringCycleFailed")
+        self.assertEqual(len(completed), 1)
+        self.assertIsInstance(completed[0], WateringCycleCompleted)
+        self.assertEqual(completed[0].volume_run, 3.0)
+        self.assertNotIn("Notfall", completed[0].details)
+        self.assertIn("Zielmenge", completed[0].details)  # Hinweis auf die Fehlmenge
 
     def test_time_gap_capping(self):
         """Verifies that time gaps between status reports are capped at 60 seconds."""

@@ -2721,6 +2721,14 @@ def _on_watering_completed(event: WateringCycleCompleted):
             f"🏁 *Fertig — {event.volume_run:.1f} l sind durch!*\n"
             f"⏱️ Laufzeit: ca. {event.duration_run} Min"
         )
+    elif "Zielmenge" in event.details:
+        # Zeitlimit erreicht, bevor das Volumenziel ganz geschafft war — regulärer
+        # Abschluss mit Hinweis (kein Notfall).
+        msg = (
+            f"🏁 *Zeitlimit erreicht*\n"
+            f"⏱️ {event.duration_run} Min · 💧 {event.volume_run:.1f} l\n"
+            f"ℹ️ Zielmenge nicht ganz geschafft."
+        )
     else:
         msg = (
             f"🏁 *Zeitlimit erreicht*\n"
@@ -2729,10 +2737,11 @@ def _on_watering_completed(event: WateringCycleCompleted):
     telegram_client.broadcast_notification(msg)
 
 def _on_watering_failed(event: WateringCycleFailed):
+    # Reserviert für echte Guss-Fehler (Hardware-/MQTT-Störung). Das normale Erreichen
+    # des Zeitlimits ist KEIN Fehler mehr — das meldet WateringCycleCompleted.
     msg = (
-        f"⚠️ *Notfall-Abschaltung*\n"
-        f"Sicherheits-Timer nach {event.duration_run} Min ausgelöst.\n"
-        f"💧 {event.volume_run:.1f} l geflossen."
+        f"⚠️ *Guss fehlgeschlagen*\n"
+        f"Abbruch nach {event.duration_run} Min · 💧 {event.volume_run:.1f} l geflossen."
     )
     telegram_client.broadcast_notification(msg)
 

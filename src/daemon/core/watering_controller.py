@@ -349,11 +349,13 @@ class WateringController:
             del self._active_cycles[mqtt_name]
             self._last_flow_update_time.pop(mqtt_name, None)
 
+        # Das Erreichen des vom Nutzer gesetzten Zeitlimits ist der normale Guss-Deckel —
+        # kein Notfall. Auch wenn ein Volumenziel nicht ganz erreicht wurde, ist das ein
+        # regulärer Abschluss (mit Hinweis auf die Fehlmenge). Die "Notfall"-Wortwahl bleibt
+        # echten Fehlern (WateringCycleFailed) vorbehalten.
         if target_vol > 0 and vol_run < target_vol:
-            details = f"Notfall-Abschaltung nach {duration} Min: Zielwassermenge von {target_vol}l nicht erreicht ({vol_run}l geflossen)."
-            self.event_bus.publish(WateringCycleFailed(duration, vol_run, source, details))
-            logger.warning(details)
+            details = f"Zeitlimit von {duration} Min erreicht — Zielmenge {target_vol}l nicht ganz geschafft ({vol_run}l geflossen)."
         else:
             details = f"Zeitlimit von {duration} Min erreicht ({vol_run}l geflossen)."
-            self.event_bus.publish(WateringCycleCompleted(duration, vol_run, source, details))
-            logger.info(details)
+        self.event_bus.publish(WateringCycleCompleted(duration, vol_run, source, details))
+        logger.info(details)
