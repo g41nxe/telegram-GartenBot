@@ -689,11 +689,17 @@ def handle_bewaessern_start(chat_id: int):
 
 
 def _active_stop_sources() -> list:
-    """Sammelt alle aktiven Aktuierungen als (kind, mqtt_name): Güsse + laufendes Nebel-Fenster."""
+    """Sammelt alle aktiven Aktuierungen als (kind, mqtt_name).
+
+    Güsse + extern geöffnete Ventile (ADR 0032) + laufendes Nebel-Fenster. Auch ein
+    manuell/extern geöffnetes Ventil ist über Stopp schließbar (nutzer-initiiert).
+    """
     sources = []
     if _watering_ctrl:
         for name in _watering_ctrl.get_active_valve_names():
             sources.append(("guss", name))
+        for name in _watering_ctrl.get_unexpected_open_valves():
+            sources.append(("extern", name))
     if _nebel_ctrl:
         nebel_name = _nebel_ctrl.get_active_window()
         if nebel_name:
@@ -702,11 +708,14 @@ def _active_stop_sources() -> list:
 
 
 def _stop_source(kind: str, mqtt_name: str):
-    """Stoppt eine einzelne Quelle (Guss oder Nebel) und liefert (ok, label)."""
+    """Stoppt eine einzelne Quelle (Guss, extern offen oder Nebel) und liefert das Label."""
     valve = database.get_valve_by_mqtt_name(mqtt_name)
     label = valve["wish_name"] if valve else mqtt_name
     if kind == "guss":
         _watering_ctrl.stop_watering(mqtt_name)
+    elif kind == "extern":
+        _watering_ctrl.force_close(mqtt_name)
+        label = f"{label} (extern geöffnet)"
     else:
         _nebel_ctrl.stop(mqtt_name)
         label = f"{label} (Nebel)"
@@ -735,6 +744,8 @@ def handle_stopp(chat_id: int):
         wish = valve["wish_name"] if valve else name
         if kind == "guss":
             rows.append([{"text": f"🛑 {wish}", "callback_data": f"stop_valve_{name}"}])
+        elif kind == "extern":
+            rows.append([{"text": f"🛑 {wish} (extern)", "callback_data": f"stop_extern_{name}"}])
         else:
             rows.append([{"text": f"🛑 {wish} (Nebel)", "callback_data": f"stop_nebel_{name}"}])
     rows.append([{"text": "🛑 Alle stoppen", "callback_data": "stop_valve_all"}])
@@ -2079,9 +2090,11 @@ def _process_callback_query(cb_obj: dict):
         telegram_client.answer_callback_query(cb_id, "Alles wird gestoppt")
         if _watering_ctrl:
             _watering_ctrl.stop_watering()
+            for name in _watering_ctrl.get_unexpected_open_valves():
+                _watering_ctrl.force_close(name)
         if _nebel_ctrl:
             _nebel_ctrl.stop()
-        telegram_client.edit_message_text(chat_id, message_id, "🛑 *Alles gestoppt* (Güsse und Nebel).")
+        telegram_client.edit_message_text(chat_id, message_id, "🛑 *Alles gestoppt* (Güsse, extern offene Ventile und Nebel).")
 
     elif data.startswith("stop_nebel_"):
         name = data[len("stop_nebel_"):]
@@ -2091,6 +2104,15 @@ def _process_callback_query(cb_obj: dict):
         valve = database.get_valve_by_mqtt_name(name)
         label = valve["wish_name"] if valve else name
         telegram_client.edit_message_text(chat_id, message_id, f"🛑 *Nebel gestoppt:* {label}")
+
+    elif data.startswith("stop_extern_"):
+        name = data[len("stop_extern_"):]
+        telegram_client.answer_callback_query(cb_id, "Ventil wird geschlossen")
+        if _watering_ctrl:
+            _watering_ctrl.force_close(name)
+        valve = database.get_valve_by_mqtt_name(name)
+        label = valve["wish_name"] if valve else name
+        telegram_client.edit_message_text(chat_id, message_id, f"🛑 *Ventil geschlossen:* {label} (extern geöffnet)")
 
     elif data.startswith("stop_valve_"):
         name = data[len("stop_valve_"):]

@@ -51,6 +51,13 @@ Laufzeitfall zu übertragen. Dagegen sprechen drei Punkte:
 - **Abschaltbar.** Ein Schalter `UNEXPECTED_VALVE_ALERT_ENABLED` (garden.conf, Default an)
   erlaubt das Deaktivieren für Nutzer, die regelmäßig von Hand gießen.
 
+_Amendment (Feature 0031):_ Das „melden statt schließen" gilt für die **automatische**
+Erkennung. Ein **ausdrücklicher, nutzer-initiierter** 🛑 Stopp **darf** ein extern geöffnetes
+Ventil schließen — der Benutzer fordert das Schließen hier explizit an. Dafür stellt die
+Guss-Steuerung `get_unexpected_open_valves()` (Lese-Schnittstelle) und `force_close(mqtt_name)`
+(gezieltes OFF ohne aktiven Zyklus) bereit; das Stopp-Menü (ADR 0034) listet extern offene
+Ventile als eigene Quelle. Das automatische Verhalten bleibt unverändert „nur melden".
+
 ## Konsequenzen
 
 - Flutschutz bleibt durch die Hardware gewährleistet; die Software informiert nur, damit der

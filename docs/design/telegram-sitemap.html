@@ -130,13 +130,14 @@
 
   <div class="card">
     <h3>🛑 Stopp</h3>
-    <div class="sub">handle_stopp() — querschnittlich (Güsse + Nebel)</div>
+    <div class="sub">handle_stopp() — querschnittlich (Güsse + extern + Nebel)</div>
     <ul class="tree">
       <li><span class="pill">0 aktiv</span> „Es läuft gerade nichts."</li>
       <li><span class="pill">1 aktiv</span> sofort stoppen (kein Extra-Klick)</li>
       <li><span class="pill">&gt;1 aktiv</span> Auswahl:
         <ul>
           <li><span class="btn">🛑 {Guss}</span> <span class="cb">stop_valve_{mqtt}</span></li>
+          <li><span class="btn">🛑 {extern}</span> <span class="cb">stop_extern_{mqtt}</span> <span class="note">(manuell geöffnet, ADR 0032)</span></li>
           <li><span class="btn">🛑 {Nebel}</span> <span class="cb">stop_nebel_{mqtt}</span></li>
           <li><span class="btn">🛑 Alle stoppen</span> <span class="cb">stop_valve_all</span></li>
         </ul>

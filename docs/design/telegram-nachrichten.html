@@ -490,11 +490,11 @@ Wie viel Wasser soll <b>maximal</b> fließen? (Volumenlimit)
     <div class="bubble">🛑 <b>Stopp</b>
 
 Mehrere Quellen aktiv — was soll gestoppt werden?</div>
-    <div class="btnrow"><span class="btn">🛑 Rasen</span><span class="btn">🛑 Beet</span></div>
+    <div class="btnrow"><span class="btn">🛑 Rasen</span><span class="btn">🛑 Beet (extern)</span></div>
     <div class="btnrow"><span class="btn">🛑 Terrasse (Nebel)</span></div>
     <div class="btnrow"><span class="btn">🛑 Alle stoppen</span></div>
     <div class="bubble">🛑 <b>Gestoppt:</b> Rasen</div>
-    <div class="note">Listet alle aktiven Aktuierungen — laufende Güsse (<code>stop_valve_{mqtt}</code>) <b>und</b> ein laufendes Nebel-Fenster (<code>stop_nebel_{mqtt}</code>, Suffix „(Nebel)") — plus „Alle stoppen" (<code>stop_valve_all</code>). 0 aktiv: <code>ℹ️ Es läuft gerade nichts.</code> · genau 1 aktiv: sofort stoppen (kein Extra-Klick). Ein manuell gestopptes geplantes Nebel-Fenster wird bis zu seiner Endzeit gegen den Scheduler-Neustart unterdrückt (ADR 0033 Amendment, C1).</div>
+    <div class="note">Listet alle aktiven Aktuierungen — laufende Güsse (<code>stop_valve_{mqtt}</code>), <b>extern/manuell geöffnete Ventile</b> (<code>stop_extern_{mqtt}</code>, Suffix „(extern)") <b>und</b> ein laufendes Nebel-Fenster (<code>stop_nebel_{mqtt}</code>, Suffix „(Nebel)") — plus „Alle stoppen" (<code>stop_valve_all</code>). 0 aktiv: <code>ℹ️ Es läuft gerade nichts.</code> · genau 1 aktiv: sofort stoppen (kein Extra-Klick). Ein extern geöffnetes Ventil wird per <code>force_close</code> geschlossen (nutzer-initiiert, ADR 0032 Amendment). Ein manuell gestopptes geplantes Nebel-Fenster bleibt bis Fensterende gegen Scheduler-Neustart unterdrückt (ADR 0033 Amendment, C1).</div>
   </div>
 
   <div class="phone">

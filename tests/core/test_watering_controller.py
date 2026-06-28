@@ -320,6 +320,24 @@ class TestUnexpectedValveOpen(unittest.TestCase):
         self.assertEqual(len(self.opened), 1)
         self.assertEqual(self.opened[0].mqtt_name, "garden_valve")
 
+    def test_get_unexpected_open_valves(self):
+        """Liste der aktuell extern offenen Ventile (fürs Stopp-Menü, Bug-Fix)."""
+        self.assertEqual(self.controller.get_unexpected_open_valves(), [])
+        self._report("OFF", "beet_valve")
+        self._report("ON", "beet_valve")          # externe Öffnung
+        self.assertIn("beet_valve", self.controller.get_unexpected_open_valves())
+        self._report("OFF", "beet_valve")         # wieder zu
+        self.assertNotIn("beet_valve", self.controller.get_unexpected_open_valves())
+
+    def test_force_close_publishes_off_to_named_valve(self):
+        """force_close schickt OFF gezielt an das genannte Ventil (auch ohne aktiven Zyklus)."""
+        from unittest.mock import Mock
+        pub = Mock(return_value=True)
+        ctrl = WateringController(self.bus, pub)
+        ok = ctrl.force_close("beet_valve")
+        self.assertTrue(ok)
+        pub.assert_called_once_with("zigbee2mqtt/beet_valve/set", '{"state": "OFF"}')
+
     def test_cold_start_on_does_not_emit(self):
         """Allererster Report ist ON (unbekannter Vorzustand) → kein Ereignis (Doppelfeuer-Schutz)."""
         self._report("ON")

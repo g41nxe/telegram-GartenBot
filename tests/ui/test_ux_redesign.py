@@ -348,6 +348,57 @@ class TestStoppSelection(unittest.TestCase):
         _process_callback_query(_cb("stop_valve_garden_valve"))
         mock_water.stop_watering.assert_called_once_with("garden_valve")
 
+    # --- Extern/manuell geöffnete Ventile (Bug-Fix) ---
+
+    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_extern_open_valve_alone_is_force_closed(self, mock_db, mock_tc, mock_water, mock_nebel):
+        from daemon.ui.telegram_ui import handle_stopp
+        mock_water.get_active_valve_names.return_value = []
+        mock_water.get_unexpected_open_valves.return_value = ["beet_valve"]
+        mock_nebel.get_active_window.return_value = None
+        mock_db.get_valve_by_mqtt_name.side_effect = lambda n: _valve(0, n, n)
+        handle_stopp(100)
+        mock_water.force_close.assert_called_once_with("beet_valve")
+
+    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_selection_includes_extern_valve(self, mock_db, mock_tc, mock_water, mock_nebel):
+        from daemon.ui.telegram_ui import handle_stopp
+        mock_water.get_active_valve_names.return_value = ["garden_valve"]
+        mock_water.get_unexpected_open_valves.return_value = ["beet_valve"]
+        mock_nebel.get_active_window.return_value = None
+        mock_db.get_valve_by_mqtt_name.side_effect = lambda n: _valve(0, n, n)
+        handle_stopp(100)
+        cb_data = _cb_data(_markup(mock_tc.send_message.call_args))
+        self.assertIn("stop_valve_garden_valve", cb_data)
+        self.assertIn("stop_extern_beet_valve", cb_data)
+        self.assertIn("stop_valve_all", cb_data)
+
+    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_stop_extern_callback_force_closes(self, mock_db, mock_tc, mock_water, mock_nebel):
+        mock_db.get_valve_by_mqtt_name.return_value = _valve(0, "Beet", "beet_valve")
+        _process_callback_query(_cb("stop_extern_beet_valve"))
+        mock_water.force_close.assert_called_once_with("beet_valve")
+
+    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_stop_all_also_closes_extern(self, mock_db, mock_tc, mock_water, mock_nebel):
+        mock_water.get_unexpected_open_valves.return_value = ["beet_valve"]
+        _process_callback_query(_cb("stop_valve_all"))
+        mock_water.stop_watering.assert_called_once_with()
+        mock_nebel.stop.assert_called_once_with()
+        mock_water.force_close.assert_called_once_with("beet_valve")
+
 
 if __name__ == "__main__":
     unittest.main()

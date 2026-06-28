@@ -94,6 +94,27 @@ class WateringController:
         with self._lock:
             return list(self._active_cycles.keys())
 
+    def get_unexpected_open_valves(self) -> list:
+        """Gibt die mqtt_names der aktuell extern (ohne Guss) offenen Ventile zurück (ADR 0032).
+
+        Fürs Stopp-Menü: ein manuell/extern geöffnetes Ventil soll auf ausdrücklichen
+        Nutzer-Stopp hin geschlossen werden können.
+        """
+        with self._lock:
+            return [name for name, is_open in self._unexpected_open.items() if is_open]
+
+    def force_close(self, mqtt_name: str, valve_topic: str = None) -> bool:
+        """Schließt ein Ventil physisch (OFF) — auch ohne aktiven Zyklus.
+
+        Für den nutzer-initiierten Stopp extern geöffneter Ventile. Verletzt ADR 0032 nicht
+        (das verbietet nur das *automatische* Schließen bei Erkennung, nicht einen
+        ausdrücklichen Stopp-Befehl). Der `_unexpected_open`-Zustand löst sich auf, sobald
+        das Ventil OFF meldet (→ UnexpectedValveResolved).
+        """
+        if valve_topic is None:
+            valve_topic = f"zigbee2mqtt/{mqtt_name}"
+        return bool(self.publish_fn(f"{valve_topic}/set", '{"state": "OFF"}'))
+
     def start_watering(self, duration_minutes: int, target_volume_liters: int, source: str,
                        mqtt_name: str = "garden_valve", valve_topic: str = None) -> Tuple[bool, str]:
         """Startet einen bewachten Guss für ein bestimmtes Ventil."""
