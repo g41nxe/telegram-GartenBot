@@ -142,6 +142,14 @@ Ein von der Steuerzentrale berechneter Zeitpunkt, zu dem die Garten-Kamera gezie
 _Avoid_: Foto-Termin, Trigger-Zeit, Schnappschuss-Zeit.
 _UI-Ausnahme_: Im Telegram-Button „Fotozeiten" (Kamera-Untermenü) — Platzmangel rechtfertigt die kürzere Form.
 
+**Guss-Foto**:
+Ein Aufnahme-Zeitpunkt, der sich automatisch aus einem aktiven Bewässerungs-Zeitplan ergibt: Startzeit + Dauer + Nach-Offset. Das daraus entstehende Foto wird mit dem Namen des auslösenden Zeitplans beschriftet („Nach dem Guss „Rasen""). Erscheint im Telegram-Bot read-only unter „Nach Güssen" (folgt dem Zeitplan, nicht einzeln editierbar).
+_Avoid_: Bewässerungs-Foto, Post-Guss-Bild.
+
+**Feste Fotozeit**:
+Ein Aufnahme-Zeitpunkt zu einer global konfigurierten, vom Guss unabhängigen Uhrzeit. Wird im Telegram-Bot direkt angelegt und gelöscht und mit der Uhrzeit beschriftet („Foto um 18:00"). Abzugrenzen vom Guss-Foto, das an einen Zeitplan gebunden ist.
+_Avoid_: Absolute Fotozeit, Fix-Uhrzeit.
+
 **Regensensor**:
 Der batteriebetriebene, WLAN-basierte Niederschlagsmesser (Aqua Scope RANWIE01), der Regenmengen und Temperatur lokal im Garten erfasst und per MQTT an die Steuerzentrale sendet. Er ist die primäre Quelle für gemessene Niederschlagsmengen; die ERA5-Reanalyse des Wetter-Dienstes dient als automatischer Fallback bei Ausfall.
 _Avoid_: Wetterstation, Regenmesser, Sensor-Modul.
