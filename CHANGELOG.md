@@ -1,3 +1,18 @@
+## v1.13.0 — 2026-06-29
+
+### Neu
+- Regen-Vorwarnung: Kurz bevor ein Guss wegen Regen entfällt oder reduziert wird,
+  meldet sich der Bot mit „🚿 Regen ignorieren" — ein Tipp erzwingt den vollen Guss
+- „📷 Nächstes Foto" im /status: zeigt, wann das nächste Kamera-Foto aufgenommen wird
+- Fotozeiten-Ansicht listet jetzt auch die Guss-Fotos (nach jedem Guss), nicht nur feste Zeiten
+- Guss-Foto-Bildunterschrift nennt den Zeitplan-Namen statt einer irreführenden Uhrzeit
+
+### Behoben
+- Erreichen des Zeitlimits bei nicht ganz geschaffter Zielmenge ist kein „Notfall"
+  mehr, sondern ein regulärer Abschluss mit Hinweis
+
+---
+
 ## v1.12.2 — 2026-06-28
 
 ### Behoben
