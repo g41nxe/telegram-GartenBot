@@ -20,9 +20,28 @@ class WeatherDataFetched(Event):
         self.rain_last_source = rain_last_source
 
 class WateringSkipped(Event):
-    def __init__(self, schedule_name: str, details: str):
+    def __init__(self, schedule_name: str, details: str, schedule_id: int = None):
         self.schedule_name = schedule_name
         self.details = details
+        self.schedule_id = schedule_id
+
+
+class WateringRainWarning(Event):
+    """Guss-Vorwarnung (Feature 0034): ~5 Min vor einem geplanten Guss, der regenbedingt
+    übersprungen oder reduziert würde. Trägt die Originalwerte und das Datum des geplanten
+    Laufs, damit der Nutzer die Reduzierung/das Überspringen für genau diesen Lauf
+    übersteuern kann (Regen-Übersteuerung)."""
+
+    def __init__(self, schedule_id: int, schedule_name: str, time: str, run_date: str,
+                 valve_names: list, duration_original: int, volume_original: int, reasons: list):
+        self.schedule_id = schedule_id
+        self.schedule_name = schedule_name
+        self.time = time
+        self.run_date = run_date
+        self.valve_names = valve_names
+        self.duration_original = duration_original
+        self.volume_original = volume_original
+        self.reasons = reasons
 
 class ScheduleFailed(Event):
     def __init__(self, schedule_name: str, details: str):
@@ -39,6 +58,7 @@ class WateringScaled(Event):
         volume_original: int,
         volume_scaled: int,
         reasons: list[str],
+        schedule_id: int = None,
     ):
         self.schedule_name = schedule_name
         self.factor = factor
@@ -47,3 +67,4 @@ class WateringScaled(Event):
         self.volume_original = volume_original
         self.volume_scaled = volume_scaled
         self.reasons = reasons
+        self.schedule_id = schedule_id

@@ -612,6 +612,20 @@ Zeitplan 'Rasen morgens' übersprungen -- Regen 48h-Fenster: 6.8 mm (gefallen 5.
 Zeitplan 'Rasen morgens': 5 min / 11 L (statt 10 min / 20 L).
 Regen 48h-Fenster: 2.8 mm (gefallen 1.8 mm [ERA5-Reanalyse], erwartet 1.0 mm), Schwelle 4.5 mm.</div>
 
+    <div class="src">_on_watering_rain_warning · WateringRainWarning (Guss-Vorwarnung, Feature 0034)</div>
+    <div class="bubble">🌧 <b>Regen voraus — Guss in 5 Min betroffen</b>
+Zeitplan „Rasen morgens“ um 06:00 (Rasen-Düse) würde regenbedingt angepasst.
+Geplant ohne Regen: 10 Min / 20 L.
+Regen 48h-Fenster: 6.0 mm (gefallen 5.0 mm [ERA5-Reanalyse], erwartet 1.0 mm), Schwelle 3.0 mm.
+
+Soll trotzdem voll gegossen werden?
+      <div class="btnrow"><span class="btn">🚿 Regen ignorieren</span></div></div>
+    <div class="src">→ Antwort auf „🚿 Regen ignorieren" (rainoverride_ID_Datum)</div>
+    <div class="bubble">🚿 <b>Regen-Übersteuerung aktiv</b>
+Der Guss läuft zu seiner geplanten Zeit mit den vollen Werten.</div>
+    <div class="src">→ Antwort, wenn der Lauf schon vorbei ist (Alert)</div>
+    <div class="bubble">Zu spät — der Guss ist bereits durch.</div>
+
     <div class="src">_on_schedule_failed · ScheduleFailed</div>
     <div class="bubble">⚠️ <b>Fehler bei Zeitplan 'Hochbeet abends'!</b>
 Fehler beim Ansteuern des Ventils über MQTT.</div>

@@ -27,6 +27,7 @@ from ..core.scheduler_events import (
     WateringSkipped,
     ScheduleFailed,
     WateringScaled,
+    WateringRainWarning,
 )
 from ..adapters import weather as _weather_adapter
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
@@ -1516,6 +1517,25 @@ def _process_callback_query(cb_obj: dict):
     if data == "cancel":
         telegram_client.answer_callback_query(cb_id, "Abgebrochen")
         telegram_client.send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
+    elif data.startswith("rainoverride_"):
+        # Regen-Übersteuerung (Feature 0034): Flag für genau diesen Lauf setzen.
+        rest = data[len("rainoverride_"):]
+        sid_str, _, datum = rest.partition("_")
+        try:
+            run_date = datetime.strptime(datum, "%Y-%m-%d").date()
+        except ValueError:
+            run_date = None
+        if run_date is not None and run_date < datetime.now().date():
+            # Lauf liegt in der Vergangenheit — wirkungslos (ADR 0035).
+            telegram_client.answer_callback_query(
+                cb_id, "Zu spät — der Guss ist bereits durch.", show_alert=True)
+        else:
+            database.set_metadata(f"rain_override:{sid_str}:{datum}", "1")
+            telegram_client.answer_callback_query(cb_id, "🚿 Regen wird ignoriert")
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                "🚿 *Regen-Übersteuerung aktiv*\n"
+                "Der Guss läuft zu seiner geplanten Zeit mit den vollen Werten.")
     elif data == "wiz_start":
         telegram_client.answer_callback_query(cb_id, "Zeitplan-Assistent gestartet")
         telegram_client.send_message(
@@ -2772,6 +2792,25 @@ def _on_watering_scaled(event: WateringScaled):
         msg += f"\n{event.reasons[0]}"
     telegram_client.broadcast_notification(msg)
 
+def _on_watering_rain_warning(event: WateringRainWarning):
+    """Guss-Vorwarnung (Feature 0034): ~5 Min vor einem geplanten Guss, den der Regen
+    überspringen oder reduzieren würde — mit Möglichkeit zur Regen-Übersteuerung."""
+    name = _md_escape(event.schedule_name)
+    valves = ", ".join(_md_escape(v) for v in event.valve_names)
+    menge = f" / {event.volume_original} L" if event.volume_original > 0 else ""
+    begruendung = f"\n{event.reasons[0]}" if event.reasons else ""
+    msg = (
+        f"🌧 *Regen voraus — Guss in {config.RAIN_WARNING_LEAD_MINUTES} Min betroffen*\n"
+        f"Zeitplan „{name}“ um {event.time} ({valves}) würde regenbedingt angepasst.\n"
+        f"Geplant ohne Regen: {event.duration_original} Min{menge}.{begruendung}\n\n"
+        f"Soll trotzdem voll gegossen werden?"
+    )
+    markup = {"inline_keyboard": [[
+        {"text": "🚿 Regen ignorieren",
+         "callback_data": f"rainoverride_{event.schedule_id}_{event.run_date}"}
+    ]]}
+    telegram_client.broadcast_notification(msg, reply_markup=markup)
+
 def _on_inactivity_alert(event: InactivityAlertTriggered):
     msg = (
         f"⚠️ *Verbindung verloren:* Ventil \"{_md_escape(event.device_name)}\" "
@@ -2864,6 +2903,7 @@ def subscribe_event_handlers():
     _global_bus.subscribe(DailyReportTriggered, _on_daily_report)
     _global_bus.subscribe(WateringSkipped, _on_watering_skipped)
     _global_bus.subscribe(WateringScaled, _on_watering_scaled)
+    _global_bus.subscribe(WateringRainWarning, _on_watering_rain_warning)
     _global_bus.subscribe(ScheduleFailed, _on_schedule_failed)
     _global_bus.subscribe(InactivityAlertTriggered, _on_inactivity_alert)
     _global_bus.subscribe(InactivityAlertResolved, _on_inactivity_resolved)

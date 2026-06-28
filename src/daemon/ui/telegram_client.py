@@ -277,12 +277,14 @@ def set_my_commands(commands: list) -> None:
         logger.error(f"set_my_commands fehlgeschlagen: {e}")
 
 
-def broadcast_notification(message: str):
-    """Sendet eine Push-Meldung an alle bekannten autorisierten Benutzer."""
+def broadcast_notification(message: str, reply_markup: dict = None):
+    """Sendet eine Push-Meldung an alle bekannten autorisierten Benutzer.
+
+    Optionales reply_markup hängt ein Inline-Keyboard an (z. B. Guss-Vorwarnung)."""
     for user_id in config.TELEGRAM_ALLOWED_USER_IDS:
         active_chats.add(user_id)
     for chat_id in active_chats:
-        send_message(chat_id, message)
+        send_message(chat_id, message, reply_markup)
 
 def broadcast_photo(image_bytes: bytes, caption: str = None):
     """Sendet ein PNG-Bild an alle bekannten autorisierten Benutzer."""

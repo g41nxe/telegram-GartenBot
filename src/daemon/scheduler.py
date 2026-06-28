@@ -6,7 +6,7 @@ from pathlib import Path
 from . import config
 from .adapters import database, weather, watchdog, mqtt_client
 from .adapters.mqtt_client import _global_bus
-from .core.scheduler_events import WateringSkipped, ScheduleFailed, WateringScaled
+from .core.scheduler_events import WateringSkipped, ScheduleFailed, WateringScaled, WateringRainWarning
 from .core.watering_advice import plan_scheduled_run
 from .adapters.daily_report import send_daily_report
 
@@ -74,24 +74,95 @@ def _ensure_nebel_window(sched: dict, now: datetime) -> None:
 
 # --- Scheduler-Schleife (Hintergrund-Thread) ---
 
+def _rain_override_key(schedule_id, date_iso=None):
+    """Schlüssel des Regen-Übersteuerungs-Flags für einen Zeitplan-Lauf an einem Datum."""
+    d = date_iso or datetime.now().date().isoformat()
+    return f"rain_override:{schedule_id}:{d}"
+
+
+def _resolve_schedule_valve_names(sched: dict) -> list:
+    """Wunschnamen der einem Zeitplan zugeordneten Ventile (Fallback: ['Ventil'])."""
+    names = []
+    sched_id = sched.get("id")
+    if sched_id:
+        for vid in database.get_schedule_valves(sched_id):
+            v = database.get_valve_by_id(vid)
+            if v is not None:
+                names.append(v.get("wish_name") or v.get("mqtt_name") or "Ventil")
+    return names or ["Ventil"]
+
+
+def _check_rain_warning(sched: dict, now: datetime):
+    """Guss-Vorwarnung (Feature 0034, ADR 0035): prüft bei now == Start − Lead, ob der geplante
+    Guss regenbedingt übersprungen oder reduziert würde, und publiziert dann WateringRainWarning.
+
+    Rein informativ — maßgeblich bleibt die Bewertung zur tatsächlichen Guss-Zeit."""
+    time_str = sched.get("time")
+    if not time_str:
+        return
+    try:
+        start_time = datetime.strptime(time_str, "%H:%M").time()
+    except (ValueError, TypeError):
+        return
+
+    run_dt = datetime.combine(now.date(), start_time)
+    if run_dt < now:
+        run_dt += timedelta(days=1)  # Startzeit heute schon vorbei → nächster Lauf morgen
+    warning_dt = run_dt - timedelta(minutes=config.RAIN_WARNING_LEAD_MINUTES)
+    if now.strftime("%H:%M") != warning_dt.strftime("%H:%M"):
+        return
+
+    duration = sched.get("duration_minutes", 10)
+    volume = sched.get("target_volume_liters", 0) or 0
+    try:
+        decision = weather.evaluate_watering_factor()
+    except Exception as e:
+        logger.error(f"Fehler beim Wetter-Check (Vorwarnung) für Zeitplan '{sched.get('name')}': {e}")
+        return
+
+    plan = plan_scheduled_run(duration, volume, decision)
+    if not (plan.skip or plan.scaled):
+        return  # voller Guss — kein Eingriff, keine Vorwarnung
+
+    _global_bus.publish(WateringRainWarning(
+        schedule_id=sched.get("id"),
+        schedule_name=sched.get("name", "Zeitplan"),
+        time=time_str,
+        run_date=run_dt.date().isoformat(),
+        valve_names=_resolve_schedule_valve_names(sched),
+        duration_original=plan.duration_original,
+        volume_original=plan.volume_original,
+        reasons=list(plan.reasons),
+    ))
+
+
 def _trigger_scheduled_watering(sched: dict):
     """Führt einen Zeitplan aus, inklusive Wetter-Check und Multi-Ventil-Unterstützung."""
     duration = sched.get("duration_minutes", 10)
     volume = sched.get("target_volume_liters", 0) or 0
     name = sched.get("name", "Zeitplan")
     execution_mode = sched.get("execution_mode", "sequential")
+    schedule_id = sched.get("id")
 
-    try:
-        decision = weather.evaluate_watering_factor()
-    except Exception as e:
-        logger.error(f"Fehler beim Wetter-Check für Zeitplan '{name}': {e}. Führe Bewässerung trotzdem durch.")
+    override_key = _rain_override_key(schedule_id) if schedule_id else None
+    if override_key and database.get_metadata(override_key) == "1":
+        # Regen-Übersteuerung (ADR 0035): voller Original-Guss, Wetter-Bewertung komplett
+        # umgangen; das Flag gilt nur für diesen einen Lauf und wird verbraucht.
+        database.delete_metadata(override_key)
+        logger.info(f"Regen-Übersteuerung aktiv für Zeitplan '{name}' — voller Guss.")
         decision = None
+    else:
+        try:
+            decision = weather.evaluate_watering_factor()
+        except Exception as e:
+            logger.error(f"Fehler beim Wetter-Check für Zeitplan '{name}': {e}. Führe Bewässerung trotzdem durch.")
+            decision = None
 
     plan = plan_scheduled_run(duration, volume, decision)
 
     if plan.skip:
         database.log_watering(duration, "schedule", "skipped", f"Zeitplan '{name}': {plan.skip_reason}")
-        _global_bus.publish(WateringSkipped(name, plan.skip_reason))
+        _global_bus.publish(WateringSkipped(name, plan.skip_reason, schedule_id=schedule_id))
         return
 
     # Skalierter Guss: Zeitplan-Kopie mit reduzierten Werten erstellen
@@ -104,6 +175,7 @@ def _trigger_scheduled_watering(sched: dict):
             volume_original=plan.volume_original,
             volume_scaled=plan.volume,
             reasons=list(plan.reasons),
+            schedule_id=schedule_id,
         ))
         scaled_sched = dict(sched)
         scaled_sched["duration_minutes"] = plan.duration
@@ -257,6 +329,9 @@ def _scheduler_loop():
                     logger.info(f"Zeitplan '{sched.get('name')}' ({sched_time}) ausgelöst.")
                     t = threading.Thread(target=_trigger_scheduled_watering, args=(sched,), daemon=True)
                     t.start()
+                else:
+                    # Guss-Vorwarnung ~5 Min vor dem geplanten Start (Feature 0034)
+                    _check_rain_warning(sched, now)
                             
         except Exception as e:
             logger.error(f"Fehler im Scheduler-Thread: {e}")

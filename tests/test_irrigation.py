@@ -565,6 +565,118 @@ class TestGardenIrrigation(unittest.TestCase):
         finally:
             scheduler._controller.start_watering = original_start
 
+    def test_15d_rain_warning_published_on_skip(self):
+        """T−5: Würde der Guss übersprungen, publiziert der Scheduler eine Guss-Vorwarnung."""
+        from daemon import scheduler
+        from daemon.core.scheduler_events import WateringRainWarning
+        from daemon.core.watering_advice import WateringDecision
+        from datetime import datetime
+
+        skip_decision = WateringDecision(
+            factor=0.0, verdict="🌧 Kein Gießen nötig", reasons=["Regen 48h-Fenster: 6.0 mm."], skip=True)
+        warnings = []
+        mqtt_client._global_bus.subscribe(WateringRainWarning, lambda e: warnings.append(e))
+        sched = {"id": 4242, "name": "Rasen", "time": "20:00", "duration_minutes": 10,
+                 "target_volume_liters": 20, "execution_mode": "sequential"}
+
+        with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=skip_decision):
+            scheduler._check_rain_warning(sched, datetime(2099, 1, 1, 19, 55, 0))  # 5 Min vor 20:00
+
+        self.assertEqual(len(warnings), 1, "Genau eine Guss-Vorwarnung erwartet")
+        w = warnings[0]
+        self.assertEqual(w.schedule_id, 4242)
+        self.assertEqual(w.schedule_name, "Rasen")
+        self.assertEqual(w.duration_original, 10)
+        self.assertEqual(w.volume_original, 20)
+        self.assertTrue(any("mm" in r for r in w.reasons), "Begründung mit mm-Wert erwartet")
+
+    def test_15e_rain_warning_published_on_scaled(self):
+        """T−5: Auch eine regenbedingte Reduzierung löst eine Guss-Vorwarnung aus."""
+        from daemon import scheduler
+        from daemon.core.scheduler_events import WateringRainWarning
+        from daemon.core.watering_advice import WateringDecision
+        from datetime import datetime
+
+        scaled_decision = WateringDecision(
+            factor=0.5, verdict="💧 Reduzierter Guss (50 %)", reasons=["1.5 mm Regen."], skip=False)
+        warnings = []
+        mqtt_client._global_bus.subscribe(WateringRainWarning, lambda e: warnings.append(e))
+        sched = {"id": 4243, "name": "Beet", "time": "06:30", "duration_minutes": 10,
+                 "target_volume_liters": 0, "execution_mode": "sequential"}
+
+        with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=scaled_decision):
+            scheduler._check_rain_warning(sched, datetime(2099, 1, 1, 6, 25, 0))
+
+        self.assertEqual(len(warnings), 1)
+        self.assertEqual(warnings[0].schedule_id, 4243)
+
+    def test_15f_no_warning_on_full_watering(self):
+        """T−5: Bei vollem Guss (kein Eingriff) wird keine Vorwarnung publiziert."""
+        from daemon import scheduler
+        from daemon.core.scheduler_events import WateringRainWarning
+        from datetime import datetime
+
+        warnings = []
+        mqtt_client._global_bus.subscribe(WateringRainWarning, lambda e: warnings.append(e))
+        sched = {"id": 4244, "name": "Voll", "time": "20:00", "duration_minutes": 10,
+                 "target_volume_liters": 20, "execution_mode": "sequential"}
+
+        with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=_FULL_WATERING):
+            scheduler._check_rain_warning(sched, datetime(2099, 1, 1, 19, 55, 0))
+
+        self.assertEqual(len(warnings), 0)
+
+    def test_15g_no_warning_outside_lead_window(self):
+        """Außerhalb des T−5-Zeitpunkts wird die Wetter-Bewertung nicht ausgeführt."""
+        from daemon import scheduler
+        from daemon.core.scheduler_events import WateringRainWarning
+        from datetime import datetime
+
+        warnings = []
+        mqtt_client._global_bus.subscribe(WateringRainWarning, lambda e: warnings.append(e))
+        sched = {"id": 4245, "name": "Rasen", "time": "20:00", "duration_minutes": 10,
+                 "target_volume_liters": 20, "execution_mode": "sequential"}
+
+        with patch("daemon.adapters.weather.evaluate_watering_factor") as mock_weather:
+            scheduler._check_rain_warning(sched, datetime(2099, 1, 1, 19, 50, 0))  # 10 Min vorher
+            mock_weather.assert_not_called()
+        self.assertEqual(len(warnings), 0)
+
+    def test_15h_rain_override_runs_full_original(self):
+        """Gesetztes Override-Flag → voller Original-Guss, Wetter-Check umgangen, Flag verbraucht."""
+        from daemon import scheduler
+        from datetime import datetime
+
+        sid = database.add_schedule("Override-Test", "20:00", "everyday", 10, target_volume_liters=20)
+        existing = database.get_valve_by_mqtt_name("ueberventil")
+        vid = existing["id"] if existing else database.add_valve("Ü-Ventil", "ueberventil")
+        database.set_schedule_valves(sid, [vid])
+        today = datetime.now().date().isoformat()
+        flag_key = f"rain_override:{sid}:{today}"
+        database.set_metadata(flag_key, "1")
+        sched = database.get_schedule_by_id(sid)
+
+        calls = []
+        original_start = scheduler._controller.start_watering
+
+        def mock_start(duration, volume, source, mqtt_name="garden_valve", valve_topic=None):
+            calls.append((duration, volume, mqtt_name))
+            return True, "OK"
+
+        scheduler._controller.start_watering = mock_start
+        try:
+            with patch("daemon.adapters.weather.evaluate_watering_factor",
+                       side_effect=AssertionError("Wetter-Check darf bei Override nicht laufen")):
+                scheduler._trigger_scheduled_watering(sched)
+
+            self.assertEqual(len(calls), 1, "Genau ein Ventil-Start erwartet")
+            self.assertEqual(calls[0][0], 10, "Original-Dauer")
+            self.assertEqual(calls[0][1], 20, "Original-Volumen")
+            self.assertEqual(calls[0][2], "ueberventil", "Zugeordnetes Ventil")
+            self.assertIsNone(database.get_metadata(flag_key), "Flag muss verbraucht sein")
+        finally:
+            scheduler._controller.start_watering = original_start
+
     def test_16_scheduler_loop_and_daily_report(self):
         """Testet den main _scheduler_loop auf weather updates und daily reports."""
         from daemon import scheduler

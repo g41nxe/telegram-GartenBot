@@ -104,6 +104,12 @@ try:
 except ValueError:
     BATTERY_WARNING_THRESHOLD = 20
 
+# Vorlaufzeit der Guss-Vorwarnung vor einem geplanten Guss (Feature 0034, ADR 0035).
+try:
+    RAIN_WARNING_LEAD_MINUTES = int(os.getenv("RAIN_WARNING_LEAD_MINUTES", "5"))
+except ValueError:
+    RAIN_WARNING_LEAD_MINUTES = 5
+
 try:
     FLOW_TIME_GAP_CAP_SECONDS = int(os.getenv("FLOW_TIME_GAP_CAP_SECONDS", "60"))
 except ValueError:

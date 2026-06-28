@@ -2001,5 +2001,59 @@ class TestWateringScaledNotification(unittest.TestCase):
         self.assertNotIn(" L", text)
 
 
+class TestRainOverride(unittest.TestCase):
+    """Feature 0034: Guss-Vorwarnung mit Regen-Übersteuerung."""
+
+    def _cb(self, data, chat_id=100, msg_id=1):
+        return {"id": "cb1", "data": data,
+                "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
+
+    def _warning(self, sid=7, name="Rasen", run_date="2099-01-01"):
+        from daemon.core.scheduler_events import WateringRainWarning
+        return WateringRainWarning(
+            schedule_id=sid, schedule_name=name, time="20:00", run_date=run_date,
+            valve_names=["Rasen-Düse"], duration_original=10, volume_original=20,
+            reasons=["Regen 48h-Fenster: 6.0 mm, Schwelle 3.0 mm."])
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_rain_warning_sends_override_button(self, mock_client):
+        from daemon.ui.telegram_ui import _on_watering_rain_warning
+        _on_watering_rain_warning(self._warning())
+        mock_client.broadcast_notification.assert_called_once()
+        text = mock_client.broadcast_notification.call_args[0][0]
+        markup = mock_client.broadcast_notification.call_args.kwargs.get("reply_markup")
+        # Details im Text
+        self.assertIn("Rasen", text)
+        self.assertIn("20:00", text)
+        self.assertIn("mm", text)
+        # Inline-Button mit dem richtigen Callback
+        callbacks = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
+        self.assertIn("rainoverride_7_2099-01-01", callbacks)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_rainoverride_callback_sets_flag(self, mock_client, mock_db):
+        _process_callback_query(self._cb("rainoverride_7_2099-01-01"))
+        mock_db.set_metadata.assert_called_once_with("rain_override:7:2099-01-01", "1")
+        mock_client.answer_callback_query.assert_called()
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_rainoverride_callback_too_late_sets_no_flag(self, mock_client, mock_db):
+        """Vergangener Lauf (ADR 0035): kein Flag, nur sachlicher Hinweis."""
+        _process_callback_query(self._cb("rainoverride_7_2000-01-01"))
+        mock_db.set_metadata.assert_not_called()
+        mock_client.answer_callback_query.assert_called_once()
+        self.assertIn("Zu spät", mock_client.answer_callback_query.call_args[0][1])
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_rainoverride_callback_acknowledges_user(self, mock_client, mock_db):
+        """Der Nutzer erhält eine sichtbare Quittung (Nachricht aktualisiert oder Antwort)."""
+        _process_callback_query(self._cb("rainoverride_3_2099-06-30"))
+        self.assertTrue(
+            mock_client.edit_message_text.called or mock_client.answer_callback_query.called)
+
+
 if __name__ == "__main__":
     unittest.main()
