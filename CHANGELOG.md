@@ -1,3 +1,20 @@
+## v1.12.0 — 2026-06-28
+
+### Neu
+- Bot-Bedienung neu strukturiert: alle Befehle auf Deutsch, nach Domäne gruppiert
+- „📷 Kamera"- und erweitertes „⚙️ Einstellungen"-Untermenü bündeln die Funktionen
+- „Bewässern" als gemeinsamer Einstieg: Art (Guss/Nebel) → Ventil → Details
+- Sofort-Nebel: Stoß-Dauer und Pause pro Lauf wählbar
+- „Stopp" stoppt Güsse und Nebel gemeinsam (Auswahl bei mehreren aktiven Quellen)
+- Aufgeräumtes Befehlsmenü; Foto-Anzeige zog ins Kamera-Untermenü
+
+### Behoben
+- Manuell gestopptes Nebel-Fenster läuft nicht mehr von selbst wieder an
+- Nachrichten mit Sonderzeichen im Namen (z. B. „_") wurden von Telegram verworfen
+- Lange Zeitplan-Listen werden automatisch aufgeteilt statt abzubrechen
+
+---
+
 ## v1.11.2 — 2026-06-28
 
 ### Behoben
