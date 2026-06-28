@@ -1,3 +1,11 @@
+## v1.12.2 — 2026-06-28
+
+### Behoben
+- Regensensor (Aqua Scope RANWIE01): Daten werden jetzt im echten Geräteformat eingelesen
+  (Topic AQS/…, Regen in 0,5-mm-Schritten, Batterie aus Verbrauch berechnet)
+
+---
+
 ## v1.12.1 — 2026-06-28
 
 ### Behoben
