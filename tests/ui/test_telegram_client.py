@@ -142,5 +142,111 @@ class TestSetMyCommands(unittest.TestCase):
         mock_urlopen.assert_not_called()
 
 
+class TestSendMessageMarkdownFallback(unittest.TestCase):
+    """Ein Markdown-Parse-Fehler (HTTP 400) darf die Nachricht nicht verschlucken."""
+
+    def _ok_resp(self):
+        resp = MagicMock()
+        resp.status = 200
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        return resp
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_markdown_400_falls_back_to_plaintext(self, mock_urlopen):
+        sent = []
+
+        def side_effect(req, *a, **k):
+            sent.append(json.loads(req.data.decode("utf-8")))
+            if len(sent) == 1:
+                raise urllib.error.HTTPError("url", 400, "Bad Request", {}, None)
+            return self._ok_resp()
+
+        mock_urlopen.side_effect = side_effect
+        result = telegram_client.send_message(123, "Zeitplan valve_report_test *")
+
+        self.assertTrue(result)                              # Nachricht ist durchgekommen
+        self.assertEqual(len(sent), 2)                       # genau ein Fallback-Versuch
+        self.assertEqual(sent[0].get("parse_mode"), "Markdown")
+        self.assertNotIn("parse_mode", sent[1])              # Fallback ohne Formatierung
+        self.assertEqual(sent[1]["text"], "Zeitplan valve_report_test *")
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_non_400_error_does_not_retry(self, mock_urlopen):
+        mock_urlopen.side_effect = urllib.error.HTTPError("url", 403, "Forbidden", {}, None)
+        result = telegram_client.send_message(123, "x")
+        self.assertFalse(result)
+        self.assertEqual(mock_urlopen.call_count, 1)         # kein Fallback bei 403
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_400_logs_telegram_description_and_preview(self, mock_urlopen):
+        """Der 400-Log enthält die Telegram-'description' und eine Text-Vorschau (Anhaltspunkt)."""
+        import io
+        body = json.dumps({
+            "ok": False, "error_code": 400,
+            "description": "Bad Request: can't parse entities: Character '_' is reserved",
+        }).encode("utf-8")
+        state = {"n": 0}
+
+        def side_effect(req, *a, **k):
+            state["n"] += 1
+            if state["n"] == 1:
+                raise urllib.error.HTTPError("url", 400, "Bad Request", {}, io.BytesIO(body))
+            return self._ok_resp()
+
+        mock_urlopen.side_effect = side_effect
+        with self.assertLogs("garden_telegram_client", level="WARNING") as cm:
+            telegram_client.send_message(123, "Zeitplan valve_report_test geöffnet")
+
+        joined = " ".join(cm.output)
+        self.assertIn("can't parse entities", joined)            # echte Telegram-Begründung
+        self.assertIn("valve_report_test", joined)               # Text-Vorschau der Nachricht
+
+
+class TestSendMessageSplitting(unittest.TestCase):
+    """Nachrichten über dem Telegram-Limit werden aufgeteilt statt verworfen (HTTP 400 'too long')."""
+
+    def _ok_resp(self):
+        resp = MagicMock()
+        resp.status = 200
+        resp.__enter__ = lambda s: s
+        resp.__exit__ = MagicMock(return_value=False)
+        return resp
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_long_message_is_split_into_multiple_sends(self, mock_urlopen):
+        sent = []
+
+        def side_effect(req, *a, **k):
+            sent.append(json.loads(req.data.decode("utf-8")))
+            return self._ok_resp()
+
+        mock_urlopen.side_effect = side_effect
+        long_text = "\n".join(f"🆔 Zeile Nummer {i} mit etwas Text" for i in range(400))
+        markup = {"inline_keyboard": [[{"text": "x", "callback_data": "y"}]]}
+
+        result = telegram_client.send_message(123, long_text, markup)
+
+        self.assertTrue(result)
+        self.assertGreater(len(sent), 1)                                  # mehrfach gesendet
+        for part in sent:
+            self.assertLessEqual(telegram_client._utf16_len(part["text"]), 4096)
+        # Tastatur nur an der letzten Teilnachricht
+        self.assertNotIn("reply_markup", sent[0])
+        self.assertIn("reply_markup", sent[-1])
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_short_message_is_single_send(self, mock_urlopen):
+        sent = []
+        mock_urlopen.side_effect = lambda req, *a, **k: (sent.append(1), self._ok_resp())[1]
+        telegram_client.send_message(123, "kurz")
+        self.assertEqual(len(sent), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

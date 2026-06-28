@@ -1274,7 +1274,7 @@ class TestUnexpectedValveUiHandlers(unittest.TestCase):
         mock_db.get_valve_by_mqtt_name.return_value = None
         _on_unexpected_valve_opened(UnexpectedValveOpened("valve_xyz"))
         msg = mock_client.broadcast_notification.call_args[0][0]
-        self.assertIn("valve_xyz", msg)
+        self.assertIn(r"valve\_xyz", msg)  # Fallback auf mqtt_name, Markdown-escaped
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
@@ -1518,6 +1518,22 @@ class TestEreignisBenachrichtigungen(unittest.TestCase):
         msg = mock_client.broadcast_notification.call_args[0][0]
         self.assertIn("🌧", msg)
         self.assertNotIn("🌤️", msg)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_broadcast_schedule_name_with_underscore_is_escaped(self, mock_client):
+        """Zeitplan-Name mit '_' in Skip-/Fehler-Broadcast wird escaped (sonst HTTP 400)."""
+        from daemon.ui.telegram_ui import _on_watering_skipped, _on_schedule_failed
+        from daemon.core.scheduler_events import WateringSkipped, ScheduleFailed
+
+        _on_watering_skipped(WateringSkipped(schedule_name="valve_report_test", details="4 mm Regen"))
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn(r"valve\_report\_test", msg)
+        self.assertNotIn("valve_report_test", msg)
+
+        _on_schedule_failed(ScheduleFailed(schedule_name="valve_report_test", details="MQTT-Fehler"))
+        msg = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn(r"valve\_report\_test", msg)
+        self.assertNotIn("valve_report_test", msg)
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_watering_failed_keine_ausrufezeichen_kette(self, mock_client):

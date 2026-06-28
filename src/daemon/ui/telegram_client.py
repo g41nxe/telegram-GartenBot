@@ -16,12 +16,87 @@ def register_update_callback(callback_fn):
     global on_update_callback
     on_update_callback = callback_fn
 
+def _post_send_message(url: str, payload: dict) -> bool:
+    """Sendet ein sendMessage-Payload; True bei HTTP 200. Wirft bei HTTP-/Netzfehler."""
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=10) as response:
+        return response.status == 200
+
+
+def _telegram_error_detail(e: "urllib.error.HTTPError") -> str:
+    """Liest die genaue Telegram-Fehlerbeschreibung aus dem Antwort-Body.
+
+    Telegram liefert bei 400 ein JSON wie {"description": "Bad Request: can't parse
+    entities: ..."} — diese Beschreibung ist der eigentliche Anhaltspunkt und geht
+    sonst hinter dem nichtssagenden „HTTP Error 400: Bad Request" verloren.
+    """
+    try:
+        body = e.read().decode("utf-8", "replace")
+        return json.loads(body).get("description") or body or str(e)
+    except Exception:
+        return str(e)
+
+
+def _text_preview(text: str, limit: int = 160) -> str:
+    """Einzeilige, gekürzte Vorschau des Nachrichtentexts fürs Logging."""
+    flat = " ".join(str(text).split())
+    return flat if len(flat) <= limit else flat[:limit] + "…"
+
+
+# Telegram begrenzt sendMessage auf 4096 UTF-16-Einheiten. Wir teilen knapp darunter.
+TELEGRAM_TEXT_LIMIT = 4000
+
+
+def _utf16_len(s: str) -> int:
+    """Länge in UTF-16-Einheiten — so zählt Telegram (Emojis = 2)."""
+    return len(s.encode("utf-16-le")) // 2
+
+
+def _split_message(text: str, limit: int = TELEGRAM_TEXT_LIMIT) -> list:
+    """Teilt langen Text an Zeilengrenzen in Stücke ≤ limit (UTF-16). Hält Markdown-Zeilen intakt."""
+    chunks, current = [], ""
+    for line in text.split("\n"):
+        candidate = f"{current}\n{line}" if current else line
+        if current and _utf16_len(candidate) > limit:
+            chunks.append(current)
+            current = line
+        else:
+            current = candidate
+        while _utf16_len(current) > limit:   # einzelne überlange Zeile hart zerlegen (selten)
+            chunks.append(current[:limit])
+            current = current[limit:]
+    if current:
+        chunks.append(current)
+    return chunks
+
+
 def send_message(chat_id: int, text: str, reply_markup: dict = None) -> bool:
-    """Sendet eine Textnachricht (mit optionaler Tastatur) über die Telegram-API."""
+    """Sendet eine Textnachricht (mit optionaler Tastatur) über die Telegram-API.
+
+    Lange Nachrichten (> Telegram-Limit) werden an Zeilengrenzen in mehrere Nachrichten
+    aufgeteilt; die Tastatur hängt an der letzten. Schlägt der Markdown-Versand eines
+    Teilstücks mit HTTP 400 fehl, wird es ohne Formatierung erneut gesendet.
+    """
     if not config.TELEGRAM_BOT_TOKEN:
         logger.warning("Telegram Bot Token nicht konfiguriert. Nachricht wird nicht gesendet.")
         return False
-        
+
+    chunks = _split_message(text) if _utf16_len(text) > TELEGRAM_TEXT_LIMIT else [text]
+    if len(chunks) > 1:
+        logger.info(f"Nachricht an {chat_id} zu lang ({_utf16_len(text)} Zeichen) — in {len(chunks)} Teile aufgeteilt.")
+    last = len(chunks) - 1
+    ok = True
+    for i, chunk in enumerate(chunks):
+        ok = _send_chunk(chat_id, chunk, reply_markup if i == last else None) and ok
+    return ok
+
+
+def _send_chunk(chat_id: int, text: str, reply_markup: dict = None) -> bool:
+    """Sendet ein einzelnes (bereits längen-begrenztes) Nachrichten-Teilstück inkl. Klartext-Fallback."""
     url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": chat_id,
@@ -30,17 +105,39 @@ def send_message(chat_id: int, text: str, reply_markup: dict = None) -> bool:
     }
     if reply_markup:
         payload["reply_markup"] = reply_markup
-        
+
+    preview = _text_preview(text)
     try:
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
+        return _post_send_message(url, payload)
+    except urllib.error.HTTPError as e:
+        detail = _telegram_error_detail(e)
+        if e.code == 400:
+            logger.warning(
+                f"Telegram lehnte Markdown-Nachricht an {chat_id} ab (HTTP 400). "
+                f"Grund: {detail} | Nachricht: \"{preview}\" — sende ohne Formatierung erneut."
+            )
+            payload.pop("parse_mode", None)
+            try:
+                ok = _post_send_message(url, payload)
+                if ok:
+                    logger.info(f"Klartext-Fallback an {chat_id} erfolgreich zugestellt.")
+                return ok
+            except urllib.error.HTTPError as e2:
+                logger.error(
+                    f"Klartext-Fallback an {chat_id} ebenfalls abgelehnt (HTTP {e2.code}). "
+                    f"Grund: {_telegram_error_detail(e2)} | Nachricht: \"{preview}\""
+                )
+                return False
+            except Exception as e2:
+                logger.error(f"Klartext-Fallback an {chat_id} fehlgeschlagen: {e2} | Nachricht: \"{preview}\"")
+                return False
+        logger.error(
+            f"Fehler beim Senden der Telegram-Nachricht an {chat_id} (HTTP {e.code}). "
+            f"Grund: {detail} | Nachricht: \"{preview}\""
         )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            return response.status == 200
+        return False
     except Exception as e:
-        logger.error(f"Fehler beim Senden der Telegram-Nachricht an {chat_id}: {e}")
+        logger.error(f"Fehler beim Senden der Telegram-Nachricht an {chat_id}: {e} | Nachricht: \"{preview}\"")
         return False
 
 def send_photo(chat_id: int, image_bytes: bytes, caption: str = None) -> bool:

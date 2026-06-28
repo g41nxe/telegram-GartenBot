@@ -1236,7 +1236,7 @@ def _process_message(msg_obj: dict):
             name = del_state["name"]
             _state_del(delete_states, chat_id)
             if database.delete_schedule(sched_id):
-                telegram_client.send_message(chat_id, f"🗑️ Zeitplan *'{name}'* wurde gelöscht.", get_main_keyboard())
+                telegram_client.send_message(chat_id, f"🗑️ Zeitplan *'{_md_escape(name)}'* wurde gelöscht.", get_main_keyboard())
                 handle_schedules(chat_id)
             else:
                 telegram_client.send_message(chat_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.", get_main_keyboard())
@@ -1830,7 +1830,7 @@ def _process_callback_query(cb_obj: dict):
                     database.set_schedule_valves(db_id, [state["valve_id"]])
                 _state_del(wizard_states, chat_id)
                 if db_id > 0:
-                    telegram_client.send_message(chat_id, f"🌫️ Nebel-Intervall *'{name}'* erfolgreich angelegt!", get_main_keyboard())
+                    telegram_client.send_message(chat_id, f"🌫️ Nebel-Intervall *'{_md_escape(name)}'* erfolgreich angelegt!", get_main_keyboard())
                     handle_schedules(chat_id)
                 else:
                     telegram_client.send_message(chat_id, "❌ Fehler beim Speichern des Nebel-Intervalls in der Datenbank.", get_main_keyboard())
@@ -1843,7 +1843,7 @@ def _process_callback_query(cb_obj: dict):
                     database.set_schedule_valves(db_id, [state["valve_id"]])
                 _state_del(wizard_states, chat_id)
                 if db_id > 0:
-                    telegram_client.send_message(chat_id, f"📅 Zeitplan *'{name}'* erfolgreich angelegt!", get_main_keyboard())
+                    telegram_client.send_message(chat_id, f"📅 Zeitplan *'{_md_escape(name)}'* erfolgreich angelegt!", get_main_keyboard())
                     handle_schedules(chat_id)
                 else:
                     telegram_client.send_message(chat_id, "❌ Fehler beim Speichern des Zeitplans in der Datenbank.", get_main_keyboard())
@@ -2702,7 +2702,7 @@ def _on_watering_stopped(event: WateringCycleStopped):
     telegram_client.broadcast_notification(msg)
 
 def _on_nebel_interval_started(event: NebelIntervalStarted):
-    wish = _resolve_valve_wish_name(event.mqtt_name)
+    wish = _md_escape(_resolve_valve_wish_name(event.mqtt_name))
     end_str = ""
     try:
         end_str = datetime.fromisoformat(event.end_time).strftime("%H:%M")
@@ -2717,7 +2717,7 @@ def _on_nebel_interval_started(event: NebelIntervalStarted):
     )
 
 def _on_nebel_interval_ended(event: NebelIntervalEnded):
-    wish = _resolve_valve_wish_name(event.mqtt_name)
+    wish = _md_escape(_resolve_valve_wish_name(event.mqtt_name))
     telegram_client.broadcast_notification(
         f"🌫️ *Nebel-Intervall beendet*\n"
         f"„{wish}“: {event.burst_count} Nebelstöße in ca. {event.duration_run} Min."
@@ -2734,42 +2734,42 @@ def _on_daily_report(event: DailyReportTriggered):
 def _on_watering_skipped(event: WateringSkipped):
     telegram_client.broadcast_notification(
         f"🌧 *Heute übernimmt der Regen*\n"
-        f"Zeitplan '{event.schedule_name}' übersprungen -- {event.details}"
+        f"Zeitplan '{_md_escape(event.schedule_name)}' übersprungen -- {event.details}"
     )
 
 def _on_schedule_failed(event: ScheduleFailed):
-    telegram_client.broadcast_notification(f"⚠️ *Fehler bei Zeitplan '{event.schedule_name}'!*\n{event.details}")
+    telegram_client.broadcast_notification(f"⚠️ *Fehler bei Zeitplan '{_md_escape(event.schedule_name)}'!*\n{event.details}")
 
 def _on_watering_scaled(event: WateringScaled):
     pct = int(round(event.factor * 100))
     has_volume = event.volume_original > 0
     scaled = f"{event.duration_scaled} min" + (f" / {event.volume_scaled} L" if has_volume else "")
     original = f"{event.duration_original} min" + (f" / {event.volume_original} L" if has_volume else "")
-    msg = f"💧 *Guss reduziert ({pct} %)*\nZeitplan '{event.schedule_name}': {scaled} (statt {original})."
+    msg = f"💧 *Guss reduziert ({pct} %)*\nZeitplan '{_md_escape(event.schedule_name)}': {scaled} (statt {original})."
     if event.reasons:
         msg += f"\n{event.reasons[0]}"
     telegram_client.broadcast_notification(msg)
 
 def _on_inactivity_alert(event: InactivityAlertTriggered):
     msg = (
-        f"⚠️ *Verbindung verloren:* Ventil \"{event.device_name}\" "
+        f"⚠️ *Verbindung verloren:* Ventil \"{_md_escape(event.device_name)}\" "
         f"hat seit {event.hours_silent:.1f} Stunden kein Signal gesendet."
     )
     telegram_client.broadcast_notification(msg)
 
 def _on_inactivity_resolved(event: InactivityAlertResolved):
-    msg = f"🟢 *Verbindung wiederhergestellt:* Ventil \"{event.device_name}\" sendet wieder Signale."
+    msg = f"🟢 *Verbindung wiederhergestellt:* Ventil \"{_md_escape(event.device_name)}\" sendet wieder Signale."
     telegram_client.broadcast_notification(msg)
 
 def _on_camera_inactivity_alert(event: CameraInactivityAlertTriggered):
     msg = (
-        f"⚠️ *Kamera-Verbindung verloren:* Kamera \"{event.wish_name}\" "
+        f"⚠️ *Kamera-Verbindung verloren:* Kamera \"{_md_escape(event.wish_name)}\" "
         f"hat seit {event.seconds_silent / 3600:.1f} Stunden kein Bild gesendet."
     )
     telegram_client.broadcast_notification(msg)
 
 def _on_camera_inactivity_resolved(event: CameraInactivityAlertResolved):
-    msg = f"🟢 *Kamera-Verbindung wiederhergestellt:* Kamera \"{event.wish_name}\" sendet wieder Bilder."
+    msg = f"🟢 *Kamera-Verbindung wiederhergestellt:* Kamera \"{_md_escape(event.wish_name)}\" sendet wieder Bilder."
     telegram_client.broadcast_notification(msg)
 
 _RAIN_FLAG_KEY = "rain_sensor_raining_flag"
@@ -2813,7 +2813,7 @@ def _on_rain_sensor_inactivity_resolved(event: RainSensorInactivityAlertResolved
     telegram_client.broadcast_notification("🟢 *Regensensor wieder aktiv* — Messung empfangen.")
 
 def _on_unexpected_valve_opened(event: UnexpectedValveOpened):
-    wish_name = _resolve_wish_name(event.mqtt_name)
+    wish_name = _md_escape(_resolve_wish_name(event.mqtt_name))
     safety_min = config.get_setting("SAFETY_TIMEOUT_MINUTES", 30)
     telegram_client.broadcast_notification(
         f"⚠️ *Ventil von außen geöffnet*\n"
@@ -2823,7 +2823,7 @@ def _on_unexpected_valve_opened(event: UnexpectedValveOpened):
     )
 
 def _on_unexpected_valve_resolved(event: UnexpectedValveResolved):
-    wish_name = _resolve_wish_name(event.mqtt_name)
+    wish_name = _md_escape(_resolve_wish_name(event.mqtt_name))
     telegram_client.broadcast_notification(
         f"✅ *Ventil wieder geschlossen*\n„{wish_name}“ ist wieder zu."
     )
