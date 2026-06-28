@@ -89,6 +89,11 @@ class WateringController:
                 }
             return None
 
+    def get_active_valve_names(self) -> list:
+        """Gibt die mqtt_names aller laufenden Güsse zurück (fürs Stopp-Menü)."""
+        with self._lock:
+            return list(self._active_cycles.keys())
+
     def start_watering(self, duration_minutes: int, target_volume_liters: int, source: str,
                        mqtt_name: str = "garden_valve", valve_topic: str = None) -> Tuple[bool, str]:
         """Startet einen bewachten Guss für ein bestimmtes Ventil."""

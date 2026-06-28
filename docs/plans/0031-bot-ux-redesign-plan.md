@@ -11,9 +11,9 @@ Neue Tests in `tests/ui/test_ux_redesign.py`:
 - `⚙️ Einstellungen`-Button sendet Inline-Keyboard mit 5 Buttons inkl. `update_start`
 - `/tagesbericht` ruft denselben Report-Handler auf wie bisher `/report`
 - `/zeitplaene` öffnet direkt die Gieß-Zeitpläne (keine Routing-Frage)
-- `/foto` öffnet direkt die Foto-Anzeige
 - `/stopp` stoppt die Bewässerung
-- Entfernte Befehle (`/add`, `/delete`, `/toggle`, `/photo`, `/report`, `/stop`, `/setup`, `/zeitplan`, `/camera_setup`, `/photo_clear`, `/aufnahmen`) → „Unbekannter Befehl"
+- _Endstand (De-dup):_ `/foto` **nicht** als Befehl übernommen (Foto nur über 📷 Kamera ▸ Foto anzeigen). Registriertes Menü: `/status` (Ausnahme), `/tagesbericht`, `/update`. `/zeitplaene`, `/einstellungen`, `/stopp` ganz entfernt (nur Button).
+- Entfernte Befehle (`/add`, `/delete`, `/toggle`, `/photo`, `/foto`, `/report`, `/stop`, `/setup`, `/zeitplan`, `/camera_setup`, `/photo_clear`, `/aufnahmen`) → „Unbekannter Befehl"
 - Alte Tastatur-Texte (`📊 Status anzeigen`, `🚿 Bewässern starten`, `📸 Foto anzeigen`, `⚙️ Setup`) → „Unbekannter Befehl"
 - Bewässern: `🚿 Bewässern` zeigt zuerst die Art-Auswahl (`water_mode_guss`, `nebel_now`)
 - Bewässern/Guss: bei genau einem Ventil entfällt die Ventil-Frage und der Zeitlimit-Schritt folgt direkt
@@ -174,7 +174,7 @@ def is_suppressed(self, mqtt_name: str) -> bool:
 |---|---|
 | `/report`, `/statusbericht` | `/tagesbericht` |
 | `/zeitplan` | `/zeitplaene` |
-| `/photo` | `/foto` |
+| `/photo` | Entfernt (→ 📷 Kamera ▸ Foto anzeigen; `/foto` bei Umsetzung verworfen) |
 | `/stop` | `/stopp` |
 | `/camera_setup` | Entfernt (→ Kamera-Untermenü Callback) |
 | `/photo_clear` | Entfernt (→ Kamera-Untermenü Callback) |
@@ -185,11 +185,11 @@ def is_suppressed(self, mqtt_name: str) -> bool:
 ## Schritt 10 — `main.py`: registrierte Befehle
 
 ```python
+{"command": "status",        "description": "Systemstatus anzeigen"},
 {"command": "tagesbericht",  "description": "Tagesbericht anzeigen"},
-{"command": "zeitplaene",    "description": "Zeitpläne verwalten"},
-{"command": "einstellungen", "description": "Einstellungen öffnen"},
-{"command": "stopp",         "description": "Bewässerung sofort stoppen"},
+{"command": "update",        "description": "Software-Update starten"},
 ```
+_Endstand (De-dup-Regel):_ Registriert sind nur Befehle ohne gleichwertigen Button (`/tagesbericht`, `/update`) plus die bewusste Ausnahme `/status` (häufigster + in Nachrichten verlinkt). `/zeitplaene`, `/einstellungen` und `/stopp` wurden **ganz entfernt** (reine Button-Duplikate ohne Verlinkung) — nur noch über ihren Tastatur-Button erreichbar. `/update` ist registriert (CI-verlinkt). Siehe `.agents/rules/telegram_messages.md`.
 
 ## Schritt 11 — `telegram-nachrichten.html` aktualisieren
 

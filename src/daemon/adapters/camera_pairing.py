@@ -100,7 +100,7 @@ def _pairing_worker(chat_id: int, notify_fn, wish_name: str,
                 "❌ *Kamera-Kopplung fehlgeschlagen.*\n\n"
                 "Keine Kamera hat sich innerhalb von 90 Sekunden gemeldet. "
                 "Koppelmodus wurde automatisch deaktiviert.\n\n"
-                "Erneut versuchen: `/camera_setup`"
+                "Erneut versuchen über ⚙️ Einstellungen ▸ 📷 Kamera koppeln."
             )
             
     except Exception as e:

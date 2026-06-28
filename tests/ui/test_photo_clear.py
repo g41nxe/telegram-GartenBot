@@ -31,7 +31,7 @@ class TestPhotoClearCommand(unittest.TestCase):
     def test_no_camera_sends_hint(self, mock_db, mock_tc):
         """Keine gekoppelte Kamera → Hinweis, keine Rückfrage."""
         mock_db.get_all_cameras.return_value = []
-        _process_message(_msg("/photo_clear"))
+        _process_callback_query(_cb("kamera_verlauf"))
         mock_tc.send_message.assert_called_once()
         self.assertIn("keine kamera", mock_tc.send_message.call_args.args[1].lower())
 
@@ -41,7 +41,7 @@ class TestPhotoClearCommand(unittest.TestCase):
     def test_single_camera_asks_confirmation_with_count(self, mock_db, mock_tc, mock_count):
         """Eine Kamera mit Bildern → Ja/Nein-Rückfrage mit Anzahl und Bestätigungs-Callback."""
         mock_db.get_all_cameras.return_value = [{"wish_name": "Garten", "mac_address": "AA"}]
-        _process_message(_msg("/photo_clear"))
+        _process_callback_query(_cb("kamera_verlauf"))
 
         call = mock_tc.send_message.call_args
         self.assertIn("3", call.args[1])
@@ -53,7 +53,7 @@ class TestPhotoClearCommand(unittest.TestCase):
     def test_single_camera_no_photos_hint(self, mock_db, mock_tc, mock_count):
         """Eine Kamera ohne Bilder → Hinweis statt Rückfrage (kein Bestätigungs-Keyboard)."""
         mock_db.get_all_cameras.return_value = [{"wish_name": "Garten", "mac_address": "AA"}]
-        _process_message(_msg("/photo_clear"))
+        _process_callback_query(_cb("kamera_verlauf"))
 
         call = mock_tc.send_message.call_args
         self.assertIsNone(_markup(call))
@@ -68,17 +68,18 @@ class TestPhotoClearCommand(unittest.TestCase):
             {"wish_name": "Garten", "mac_address": "AA"},
             {"wish_name": "Terrasse", "mac_address": "BB"},
         ]
-        _process_message(_msg("/photo_clear"))
+        _process_callback_query(_cb("kamera_verlauf"))
 
         data = _cb_data(_markup(mock_tc.send_message.call_args))
         self.assertIn("photoclear_Garten", data)
         self.assertIn("photoclear_Terrasse", data)
 
+    @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.handle_photo")
     @patch("daemon.ui.telegram_ui.handle_photo_clear")
-    def test_photo_clear_not_routed_to_photo(self, mock_clear, mock_photo):
-        """/photo_clear muss handle_photo_clear auslösen, nicht die Foto-Anzeige."""
-        _process_message(_msg("/photo_clear"))
+    def test_photo_clear_not_routed_to_photo(self, mock_clear, mock_photo, _tc):
+        """Kamera-Untermenü „Fotos löschen" (kamera_verlauf) löst handle_photo_clear aus, nicht die Foto-Anzeige."""
+        _process_callback_query(_cb("kamera_verlauf"))
         mock_clear.assert_called_once()
         mock_photo.assert_not_called()
 

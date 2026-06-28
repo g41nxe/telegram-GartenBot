@@ -60,7 +60,7 @@
 
 <header class="doc">
   <h1>Referenz: Telegram-Nachrichten des GartenBots</h1>
-  <div class="meta">Stand: 2026-06-21 · Originalgetreu nach aktueller Implementation (kein Entwurf). Features 0016, 0017, 0025 integriert.</div>
+  <div class="meta">Stand: 2026-06-28 · Originalgetreu nach aktueller Implementation (kein Entwurf). Features 0016, 0017, 0025, 0031 (Bot-UX-Redesign) integriert.</div>
   <div class="meta">Quellen: <code>src/daemon/ui/telegram_ui.py</code> · <code>src/daemon/adapters/daily_report.py</code></div>
   <div class="legend">
     Beispieldaten sind in die echten Textvorlagen eingesetzt. Telegram stellt <b>**Text**</b>/<b>*Text*</b> fett dar,
@@ -75,7 +75,7 @@
 <div class="grid">
 
   <div class="phone">
-    <div class="src">handle_status() · /status · „📊 Status anzeigen" — Normal (alles grün)</div>
+    <div class="src">handle_status() · /status · „📊 Status" — Normal (alles grün)</div>
     <div class="bubble">🌱 <b>Dein Garten auf einen Blick</b>
 Fr, 19.06. · 14:32 Uhr
 
@@ -133,7 +133,7 @@ Fr, 19.06. · 14:32 Uhr
   </div>
 
   <div class="phone">
-    <div class="src">handle_report() · /report · /statusbericht — Kurzform (alles grün)</div>
+    <div class="src">Tagesbericht · /tagesbericht — Kurzform (alles grün)</div>
     <div class="bubble" style="padding:0; overflow:hidden">
       <div class="photo-ph">📈 [ Wetter-Chart QuickChart.io ]</div>
       <div style="padding:8px 12px">🌤 Wetterverlauf — letzte &amp; nächste 24h<br>🌱 Gießen empfohlen — trocken bis morgen</div>
@@ -150,7 +150,7 @@ Fr, 19.06. · 14:32 Uhr
 
 ☀️ Heute 14–24 °C · Leicht bewölkt (15 % ☂)
 💧 Gestern 1× bewässert · 45 L</div>
-    <div class="note">Manuelle Auslösung (/report) und automatischer 08:00-Bericht erzeugen identischen Text.</div>
+    <div class="note">Manuelle Auslösung (/tagesbericht) und automatischer 08:00-Bericht erzeugen identischen Text.</div>
     <ul class="variants">
       <li>Kurzform nur wenn: Dienste OK, kein Watchdog, keine Ventil-Anomalie, alle Batterien über Schwellenwert</li>
       <li>Problem-Reihenfolge: 🔴 Systemausfall → 🚨 Anomalie → 🟡 Batterie → ⚠️ Watchdog</li>
@@ -162,7 +162,7 @@ Fr, 19.06. · 14:32 Uhr
   </div>
 
   <div class="phone">
-    <div class="src">handle_schedules() · /zeitplan · „📅 Zeitpläne"</div>
+    <div class="src">handle_schedules() · „📅 Zeitpläne"</div>
     <div class="bubble">📅 <b>Aktuelle Zeitsteuerung (Zeitpläne):</b>
 
 🆔 <b>ID 1: Rasen morgens</b>
@@ -181,12 +181,12 @@ Fr, 19.06. · 14:32 Uhr
     <div class="btnrow"><span class="btn">🟢 Rasen morgens (06:00)</span><span class="btn narrow">✏️</span><span class="btn narrow">🗑️</span></div>
     <div class="btnrow"><span class="btn">🔴 Hochbeet abends (20:15)</span><span class="btn narrow">✏️</span><span class="btn narrow">🗑️</span></div>
     <div class="btnrow"><span class="btn">➕ Neuer Zeitplan</span></div>
-    <div class="note">Leerzustand zeigt stattdessen Anleitung zum <code>/add</code>-Befehl + Button „➕ Neuer Zeitplan". Jede Zeile enthält nun ✏️ (Zeitplan-Bearbeitung, Feature 0021).</div>
+    <div class="note">Leerzustand zeigt nur den Button „➕ Neuer Zeitplan" (Zeitplan-Wizard). Jede Zeile enthält ✏️ (Zeitplan-Bearbeitung, Feature 0021). Die frühere Sofort-Nebel-Zeile ist mit Feature 0031 nach „Bewässern" umgezogen.</div>
   </div>
 
   <div class="phone">
-    <div class="src">handle_einstellungen() · /einstellungen</div>
-    <div class="bubble">⚙️ <b>Einstellungen</b>
+    <div class="src">handle_einstellungen() · ⚙️ Einstellungen ▸ „📊 Schwellenwerte" (einst_open)</div>
+    <div class="bubble">📊 <b>Schwellenwerte</b>
 
 • <b>Regenschwelle:</b> 2.0 mm
 • <b>Batterie-Warnschwelle:</b> 20 %
@@ -219,12 +219,13 @@ Wähle einen neuen Wert:</div>
     <div class="src">/start</div>
     <div class="bubble">👋 <b>Willkommen bei der Gartenbewässerung-Steuerung!</b>
 
-Ich bin Ihr lokaler Assistent. Nutzen Sie die Buttons unten oder die Chat-Befehle <code>/status</code> und <code>/zeitplan</code>, um Ihr System zu steuern.</div>
-    <div class="kbd">📊 Status anzeigen &nbsp;|&nbsp; 💧 Gießcheck<br>🚿 Bewässern starten &nbsp;|&nbsp; 🛑 Sofort Stopp<br>📅 Zeitpläne &nbsp;|&nbsp; ⚙️ Setup<br>📸 Foto anzeigen</div>
+Ich bin Ihr lokaler Assistent. Nutze die Buttons unten oder den Chat-Befehl <code>/status</code>, um dein System zu steuern.</div>
+    <div class="kbd">📊 Status &nbsp;|&nbsp; 💧 Gießcheck<br>🚿 Bewässern &nbsp;|&nbsp; 🛑 Stopp<br>📅 Zeitpläne &nbsp;|&nbsp; 📷 Kamera<br>⚙️ Einstellungen</div>
+    <div class="note">Feature 0031: registriertes <code>/</code>-Menü mit 3 Einträgen (De-dup-Regel) — <code>/status</code> (Ausnahme: Button-Duplikat, aber häufigster + verlinkt), <code>/tagesbericht</code> (kein Button), <code>/update</code> (CI-verlinkt). Dispatcher-only: <code>/start</code>. Komplett entfernt (nur noch über Button): <code>/zeitplaene</code>, <code>/einstellungen</code>, <code>/stopp</code>. Foto-Anzeige zog ins 📷-Kamera-Untermenü, „⚙️ Setup" → „⚙️ Einstellungen". Clean Cut (keine Aliases): <code>/add /delete /toggle /photo /foto /report /stop /setup /zeitplan /camera_setup /photo_clear /aufnahmen /statusbericht /camera_interval</code>.</div>
   </div>
 
   <div class="phone">
-    <div class="src">handle_giesscheck() · /giesscheck · „💧 Gießcheck" — Voller Guss</div>
+    <div class="src">handle_giesscheck() · „💧 Gießcheck" (nur Tastatur-Button, Feature 0031) — Voller Guss</div>
     <div class="bubble">*💧 Gießcheck*
 
 🚿 Voller Guss
@@ -247,7 +248,17 @@ Ich bin Ihr lokaler Assistent. Nutzen Sie die Buttons unten oder die Chat-Befehl
   </div>
 
   <div class="phone">
-    <div class="src">_send_latest_photo() · „📸 Foto anzeigen"</div>
+    <div class="src">handle_kamera_menu() · „📷 Kamera" — Untermenü (Feature 0031)</div>
+    <div class="bubble">📷 <b>Kamera</b>
+
+Was möchtest du tun?</div>
+    <div class="btnrow"><span class="btn">📸 Foto anzeigen</span><span class="btn">🗑️ Fotos löschen</span></div>
+    <div class="btnrow"><span class="btn">⏰ Fotozeiten</span></div>
+    <div class="note">Bündelt alle Kamera-Funktionen. Callbacks: <code>kamera_foto</code>, <code>kamera_verlauf</code>, <code>kamera_fotozeiten</code>. „Fotos löschen"/„Fotozeiten" sind UI-Kurzformen (CONTEXT.md _UI-Ausnahme_); ⏰ statt 📅 (ADR 0029: 📅 für Gieß-Zeitpläne reserviert).</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">_send_latest_photo() · 📷 Kamera ▸ „📸 Foto anzeigen" (kamera_foto)</div>
     <div class="bubble" style="padding:0; overflow:hidden">
       <div class="photo-ph">🌱 [ Garten-Foto ]</div>
       <div style="padding:8px 12px">📸 'Hochbeet' — 17.06.2026 14:15 Uhr</div>
@@ -256,7 +267,7 @@ Ich bin Ihr lokaler Assistent. Nutzen Sie die Buttons unten oder die Chat-Befehl
   </div>
 
   <div class="phone">
-    <div class="src">handle_aufnahmen() · „/aufnahmen" (Foto-Uhrzeiten verwalten)</div>
+    <div class="src">handle_aufnahmen() · 📷 Kamera ▸ „⏰ Fotozeiten" (kamera_fotozeiten)</div>
     <div class="bubble">📷 <b>Foto-Uhrzeiten</b>
 
 Keine Aufnahme-Uhrzeiten konfiguriert.</div>
@@ -267,7 +278,7 @@ Keine Aufnahme-Uhrzeiten konfiguriert.</div>
   </div>
 
   <div class="phone">
-    <div class="src">handle_photo_clear() · „/photo_clear" (Bild-Historie löschen)</div>
+    <div class="src">handle_photo_clear() · 📷 Kamera ▸ „🗑️ Fotos löschen" (kamera_verlauf)</div>
     <div class="bubble">🗑️ <b>Bild-Historie löschen</b>
 
 Möchtest du wirklich alle <b>42</b> Bilder der Kamera <b>'Hochbeet'</b> löschen?
@@ -285,12 +296,14 @@ Möchtest du wirklich alle <b>42</b> Bilder der Kamera <b>'Hochbeet'</b> lösche
 <div class="grid">
 
   <div class="phone">
-    <div class="cap">handle_setup_menu() · „⚙️ Setup"</div>
-    <div class="bubble">⚙️ <b>Setup</b>
+    <div class="cap">handle_einstellungen_menu() · „⚙️ Einstellungen" (Feature 0031)</div>
+    <div class="bubble">⚙️ <b>Einstellungen</b>
 
 Was möchtest du einrichten?</div>
     <div class="btnrow"><span class="btn">🔧 Ventil koppeln</span><span class="btn">📷 Kamera koppeln</span></div>
-    <div class="btnrow"><span class="btn">⏱ Kamera-Einstellungen</span></div>
+    <div class="btnrow"><span class="btn">⏱ Kamera-Einstellungen</span><span class="btn">📊 Schwellenwerte</span></div>
+    <div class="btnrow"><span class="btn">🔄 Software-Update</span></div>
+    <div class="note">Erweitert um „📊 Schwellenwerte" (<code>einst_open</code>) und „🔄 Software-Update" (<code>update_start</code>) — beide aus dem früheren Hauptmenü hierher verschoben.</div>
   </div>
 
   <div class="phone">
@@ -352,15 +365,21 @@ Wie lange soll die <b>Pause</b> zwischen zwei Nebelstößen sein?</div>
   </div>
 
   <div class="phone">
-    <div class="cap">Sofort-Nebel (nebel_now / nebel_dur_* / nebel_stop) — Feature 0032</div>
-    <div class="bubble">🌫️ <b>Sofort-Nebel</b>
+    <div class="cap">Sofort-Nebel · 🚿 Bewässern ▸ „🌫️ Sofort-Nebel" (nebel_now) — Feature 0032/0031</div>
+    <div class="bubble">🌫️ <b>Sofort-Nebel — Stoß-Dauer</b>
 
-Wie lange soll die Terrasse gekühlt werden?</div>
+Wie lange soll ein Nebelstoß dauern?</div>
+    <div class="btnrow"><span class="btn">10s</span><span class="btn">15s</span><span class="btn">20s</span><span class="btn">30s</span><span class="btn">45s</span><span class="btn">60s</span></div>
+    <div class="bubble">🌫️ <b>Sofort-Nebel — Pause</b>
+
+Wie lange Pause zwischen den Stößen?</div>
+    <div class="btnrow"><span class="btn">1min</span><span class="btn">2min</span><span class="btn">3min</span><span class="btn">5min</span><span class="btn">10min</span><span class="btn">15min</span></div>
+    <div class="bubble">🌫️ <b>Sofort-Nebel — Laufzeit</b>
+
+Wie lange soll gekühlt werden?</div>
     <div class="btnrow"><span class="btn">30 Min</span><span class="btn">60 Min</span><span class="btn">120 Min</span></div>
-    <div class="btnrow"><span class="btn">🛑 Nebel stoppen</span><span class="btn">❌ Abbrechen</span></div>
-    <div class="bubble">🌫️ <b>Sofort-Nebel gestartet</b> für „Terrasse“ (60 Min).</div>
-    <div class="bubble">🛑 <b>Nebel gestoppt.</b></div>
-    <div class="note">Laufzeit hart gedeckelt durch <code>NEBEL_MANUAL_MAX_MINUTES</code>. Bei mehreren Ventilen folgt eine Ventil-Auswahl (nebel_pick).</div>
+    <div class="bubble">🌫️ <b>Sofort-Nebel gestartet</b> für „Terrasse“ (60 Min, 30s / 5min).</div>
+    <div class="note">Feature 0031: Reihenfolge Ventil → Stoß-Dauer → Pause → Laufzeit (pro Lauf wählbar, nicht persistiert). Ventil-Auswahl entfällt bei genau einem Ventil. Takt-Callbacks: <code>nebel_now_on_{s}</code>, <code>nebel_now_pause_{m}</code>, <code>nebel_dur_{m}</code>. Laufzeit hart gedeckelt durch <code>NEBEL_MANUAL_MAX_MINUTES</code>; <code>NEBEL_ON_SECONDS</code>/<code>NEBEL_PAUSE_MINUTES</code> nur noch Default/Fallback.</div>
   </div>
 
   <div class="phone">
@@ -416,7 +435,7 @@ Sende /status um den Verbindungsstatus zu prüfen.</div>
 
 Kein Ventil erkannt nach 90 Sekunden. Koppelmodus wurde automatisch deaktiviert.
 
-Erneut versuchen: <code>/setup</code></div>
+Erneut versuchen über ⚙️ Einstellungen ▸ 🔧 Ventil koppeln.</div>
   </div>
 
   <div class="phone">
@@ -430,7 +449,7 @@ Der Koppelmodus wurde automatisch deaktiviert.</div>
 
 Keine Kamera hat sich innerhalb von 90 Sekunden gemeldet. Koppelmodus wurde automatisch deaktiviert.
 
-Erneut versuchen: <code>/camera_setup</code></div>
+Erneut versuchen über ⚙️ Einstellungen ▸ 📷 Kamera koppeln.</div>
   </div>
 
   <div class="phone">
@@ -442,8 +461,13 @@ Erneut versuchen: <code>/camera_setup</code></div>
 
 
   <div class="phone">
-    <div class="src">Manuelle Bewässerung · „🚿 Bewässern starten"</div>
-    <div class="bubble">🚿 <b>Bewässern starten — Schritt 1/2</b>
+    <div class="src">Manuelle Bewässerung · „🚿 Bewässern" → Art → Ventil → Details (Feature 0031)</div>
+    <div class="bubble">🚿 <b>Bewässern</b>
+
+Was möchtest du?</div>
+    <div class="btnrow"><span class="btn">🚿 Guss</span><span class="btn">🌫️ Sofort-Nebel</span></div>
+    <div class="note">Art-Auswahl (Callbacks <code>water_mode_guss</code> / <code>nebel_now</code>). Danach Ventil-Auswahl (<code>water_valve_{id}</code>, entfällt bei genau einem Ventil), dann die Details. Ohne gekoppeltes Ventil: <code>❌ Es ist noch kein Ventil gekoppelt. Koppel zuerst ein Ventil über Einstellungen.</code></div>
+    <div class="bubble" style="margin-top:8px">🚿 <b>Bewässern starten — Schritt 1/2</b>
 
 Wie lange soll <b>maximal</b> bewässert werden? (Zeitlimit)
 
@@ -459,6 +483,18 @@ Wie viel Wasser soll <b>maximal</b> fließen? (Volumenlimit)
     <div class="btnrow"><span class="btn">🌱 10 L</span><span class="btn">🥬 25 L</span></div>
     <div class="btnrow"><span class="btn">🍅 50 L</span><span class="btn">🥦 80 L</span></div>
     <div class="bubble me" style="margin-top:8px">🚿 <b>Befehl gesendet:</b> Bewässerung gestartet (15 Min / 25 l).</div>
+  </div>
+
+  <div class="phone">
+    <div class="src">handle_stopp() · „🛑 Stopp" — querschnittlicher Aus (Feature 0031)</div>
+    <div class="bubble">🛑 <b>Stopp</b>
+
+Mehrere Quellen aktiv — was soll gestoppt werden?</div>
+    <div class="btnrow"><span class="btn">🛑 Rasen</span><span class="btn">🛑 Beet</span></div>
+    <div class="btnrow"><span class="btn">🛑 Terrasse (Nebel)</span></div>
+    <div class="btnrow"><span class="btn">🛑 Alle stoppen</span></div>
+    <div class="bubble">🛑 <b>Gestoppt:</b> Rasen</div>
+    <div class="note">Listet alle aktiven Aktuierungen — laufende Güsse (<code>stop_valve_{mqtt}</code>) <b>und</b> ein laufendes Nebel-Fenster (<code>stop_nebel_{mqtt}</code>, Suffix „(Nebel)") — plus „Alle stoppen" (<code>stop_valve_all</code>). 0 aktiv: <code>ℹ️ Es läuft gerade nichts.</code> · genau 1 aktiv: sofort stoppen (kein Extra-Klick). Ein manuell gestopptes geplantes Nebel-Fenster wird bis zu seiner Endzeit gegen den Scheduler-Neustart unterdrückt (ADR 0033 Amendment, C1).</div>
   </div>
 
   <div class="phone">
@@ -480,7 +516,7 @@ Soll dieser Zeitplan gespeichert werden?</div>
   </div>
 
   <div class="phone">
-    <div class="src">Ventil-Kopplung · /setup · „🔧 Ventil koppeln"</div>
+    <div class="src">Ventil-Kopplung · ⚙️ Einstellungen ▸ „🔧 Ventil koppeln" (setup_confirm)</div>
     <div class="bubble">🔧 <b>Neues Ventil koppeln</b>
 
 Wie soll dieses Ventil heißen?
@@ -496,7 +532,7 @@ Bitte drücke jetzt den <b>Reset-Knopf</b> am Sonoff Hydro ONE für <b>5 Sekunde
   </div>
 
   <div class="phone">
-    <div class="src">Kamera-Kopplung · „📷 Kamera koppeln" (4 Schritte)</div>
+    <div class="src">Kamera-Kopplung · ⚙️ Einstellungen ▸ „📷 Kamera koppeln" (camsetup_start, 4 Schritte)</div>
     <div class="note">Name → Intervall → Auflösung → Qualität, Abschluss:</div>
     <div class="bubble">🔧 <b>Kamera-Kopplung gestartet</b> — "Hochbeet"
 Intervall: 15 Min · Auflösung: UXGA · Qualität: high
@@ -506,7 +542,7 @@ Bitte schalte die Kamera jetzt ein oder drücke Reset.
   </div>
 
   <div class="phone">
-    <div class="src">handle_update() · /update — Software-Update (OTA)</div>
+    <div class="src">handle_update() · /update (registriert) · ⚙️ Einstellungen ▸ „🔄 Software-Update" (update_start) — OTA</div>
     <div class="bubble">🔄 <b>Software-Update verfügbar</b>
 
 Installiert: <code>v1.2.1</code>
@@ -523,7 +559,7 @@ Soll das Update jetzt installiert werden?
   </div>
 
   <div class="phone">
-    <div class="src">Wizard phtadd_start → phtadd_h_ → phtadd_m_ · /aufnahmen „Uhrzeit hinzufügen"</div>
+    <div class="src">Wizard phtadd_start → phtadd_h_ → phtadd_m_ · 📷 Kamera ▸ ⏰ Fotozeiten „Uhrzeit hinzufügen"</div>
     <div class="bubble">📷 <b>Foto-Uhrzeit hinzufügen</b>
 
 Zu welcher <b>Stunde</b> soll die Kamera aufnehmen?</div>
@@ -659,15 +695,14 @@ Terrasse · 4 Min · 2.1 l geflossen · 0.6 mm erkannt</div>
 Warst das nicht du, prüf die Leitung — das Hardware-Sicherheits-Timeout schließt spätestens nach 30 Min.</div>
     <div class="note">Feature 0029: Ventil meldet ON ohne aktiven Guss (Knopf am Ventil, Hersteller-App). Der Daemon schließt NICHT — der Hardware-Sicherheits-Timeout ist der Flutschutz. Abschaltbar via <code>UNEXPECTED_VALVE_ALERT_ENABLED</code>. „30 Min." = aktueller <code>SAFETY_TIMEOUT_MINUTES</code>.</div>
 
-    <div class=”src”>_on_unexpected_valve_resolved · UnexpectedValveResolved</div>
-    <div class=”bubble”>✅ <b>Ventil wieder geschlossen</b>
-„Rasen” ist wieder zu.</div>
-    <div class=”note”>Entwarnung, sobald das zuvor unerwartet geöffnete Ventil wieder schließt.</div>
+    <div class="src">_on_unexpected_valve_resolved · UnexpectedValveResolved</div>
+    <div class="bubble">✅ <b>Ventil wieder geschlossen</b>
+„Rasen“ ist wieder zu.</div>
+    <div class="note">Entwarnung, sobald das zuvor unerwartet geöffnete Ventil wieder schließt.</div>
 
-    <div class=”src”>_on_timed_photo_captured · TimedPhotoCaptured</div>
-    <div class=”photo-placeholder”>[Foto]</div>
-    <div class=”bubble”>📷 Foto um 08:00</div>
-    <ul class=”variants”>
+    <div class="src">_on_timed_photo_captured · TimedPhotoCaptured</div>
+    <div class="bubble">📷 Foto um 08:00</div>
+    <ul class="variants">
       <li>Nach Guss: <code>📷 Nach dem Guss um 06:00</code> (Guss-Startzeit aus Zeitplan)</li>
       <li>Absolut: <code>📷 Foto um 18:00</code> (konfigurierte Uhrzeit)</li>
     </ul>
@@ -712,17 +747,11 @@ Verwenden Sie die Buttons oder <code>/status</code> für eine Übersicht.</div>
   </div>
 
   <div class="phone">
-    <div class="cap">Format- &amp; Ablauf-Fehler</div>
-    <div class="bubble">❌ <b>Ungültiges Format.</b>
-
-Nutzen Sie folgendes Format:
-<code>/add Name, HH:MM, Tage, Dauer, [Menge_Liter]</code> (z.B. <code>/add Abend, 20:00, Mon,Wed,Fri, 12, 30</code>)
-
-Tage: <code>everyday</code> oder kommagetrennt: <code>Mon,Tue,Wed,Thu,Fri,Sat,Sun</code>.</div>
-    <div class="bubble">❌ <b>Ungültiges Format.</b> Nutzen Sie: <code>/delete &lt;ID&gt;</code> (z.B. <code>/delete 2</code>)</div>
+    <div class="cap">Ablauf-Fehler</div>
     <div class="bubble">❌ Fehler beim Starten: Es läuft bereits eine Bewässerung.</div>
     <div class="bubble">❌ Fehler beim Starten: Zeitlimit überschreitet das Sicherheitslimit (30 Min).</div>
-    <div class="bubble">❌ Zeitplan ID 5 nicht gefunden.</div>
+    <div class="bubble">❌ Es ist noch kein Ventil gekoppelt. Koppel zuerst ein Ventil über Einstellungen.</div>
+    <div class="note">Die Textbefehle <code>/add</code>, <code>/delete</code>, <code>/toggle</code> und ihre Format-Fehlermeldungen wurden mit Feature 0031 entfernt (Zeitplan-Wizard ersetzt sie).</div>
   </div>
 </div>
 

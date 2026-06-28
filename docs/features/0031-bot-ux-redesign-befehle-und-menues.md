@@ -133,22 +133,24 @@ Bisher fragt der Sofort-Nebel nur die Gesamtlaufzeit ab und nutzt für Stoß-Dau
 - `NEBEL_MANUAL_MAX_MINUTES` deckelt weiterhin die Laufzeit (harter Backstop, unverändert).
 - Der gewählte Takt gilt nur für diesen einen Lauf — es wird nichts persistiert (bewusst, analog zur „Laufzeit"-Wahl).
 
-### Registriertes Telegram-Menü (4 Einträge, keine Duplikate zu Tastatur-Buttons)
-- `/tagesbericht` — Tagesbericht manuell abrufen
-- `/zeitplaene` — Gieß-Zeitpläne öffnen
-- `/einstellungen` — Einstellungen-Untermenü öffnen
-- `/stopp` — Bewässerung sofort stoppen (Notfall-Direktzugriff)
+### Registriertes Telegram-Menü (3 Einträge — De-dup-Regel)
+- `/status` — Systemstatus anzeigen (**bewusste Ausnahme**: dupliziert den 📊-Button, bleibt aber registriert, weil häufigster Befehl und in mehreren Nachrichten verlinkt)
+- `/tagesbericht` — Tagesbericht manuell abrufen (kein Button)
+- `/update` — Software-Update starten (kein Reply-Keyboard-Button; nur ⚙️ Einstellungen ▸ Software-Update; per CI-Build-Benachrichtigung verlinkt)
 
 ### Dispatcher-only Befehle (funktionieren, aber nicht registriert)
-- `/status` — entspricht Tastatur-Button „📊 Status"
-- `/foto` — entspricht „📸 Foto anzeigen" im Kamera-Untermenü
-- `/stopp` — auch im Menü registriert
+- `/start` — Willkommen + Haupttastatur
+
+### Aus Menü und Dispatcher komplett entfernt (De-dup)
+- `/zeitplaene`, `/einstellungen`, `/stopp` — reine Tastatur-Button-Duplikate ohne separate Verlinkung; nur noch über ihren Button (📅 / ⚙️ / 🛑) erreichbar.
+
+_De-dup-Prinzip:_ Ein Slash-Befehl wird nur geführt, wenn er **eigene Logik / einzigen Zugang** hat (kein gleichwertiger Button) **oder separat verlinkt** ist (eine Bot-/CI-Nachricht fordert zum Tippen auf). Reine Button-Duplikate ohne Verlinkung fliegen ganz raus. Festgehalten in `.agents/rules/telegram_messages.md`.
 
 ### Entfernte Befehle (Clean Cut — keine Aliases)
 - `/add`, `/delete`, `/toggle` — seit Feature 0021 durch Wizard-UI ersetzt
-- `/photo`, `/report`, `/stop`, `/setup`, `/zeitplan` — englisch/umbenannt
+- `/photo`, `/foto`, `/report`, `/stop`, `/setup`, `/zeitplan` — englisch/umbenannt bzw. in Untermenü integriert (Foto: 📷 Kamera ▸ Foto anzeigen)
 - `/camera_setup`, `/photo_clear`, `/camera_times`, `/aufnahmen` — in Untermenüs integriert
-- `/statusbericht`, `/camera_interval` — wegfallende Aliases
+- `/statusbericht`, `/camera_interval`, `/giesscheck` — wegfallende Aliases bzw. nur noch Tastatur-Button
 
 ### ADR-Änderungen
 - **ADR 0012, Punkt 6:** `/report` und `/statusbericht` werden zu `/tagesbericht` zusammengeführt (domain-konform zu CONTEXT.md „Tagesbericht"; _Avoid_: Daily-Report, Status-Report).
@@ -174,8 +176,8 @@ Bei der Implementierung muss `docs/design/telegram-nachrichten.html` aktualisier
   - „⚙️ Einstellungen"-Button öffnet das erweiterte Untermenü (5 Buttons inkl. Update)
   - `/tagesbericht` ruft denselben Handler auf wie bisher `/report`
   - `/zeitplaene` öffnet direkt die Gieß-Zeitpläne (kein Routing)
-  - `/foto` öffnet direkt die Foto-Anzeige
-  - Entfernte Befehle (`/add`, `/delete`, `/toggle`, `/photo`, `/report` etc.) lösen „Unbekannter Befehl" aus
+  - `/update` bleibt als dispatcher-only Schnellwahl erreichbar (ruft `handle_update`)
+  - Entfernte Befehle (`/add`, `/delete`, `/toggle`, `/photo`, `/foto`, `/report` etc.) lösen „Unbekannter Befehl" aus
   - Callback `phtadd_start` (Fotozeiten-Wizard) erreichbar über Kamera-Untermenü
   - Callback `photoclear_` (Fotos löschen) erreichbar über Kamera-Untermenü
   - Sofort-Nebel: nach Ventil-Wahl zeigt der Flow zuerst die Stoß-Dauer-Auswahl, dann Pause, dann Laufzeit

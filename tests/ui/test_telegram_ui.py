@@ -225,7 +225,32 @@ class TestSchedulesInlineKeyboard(unittest.TestCase):
     def test_multiple_schedules_generate_correct_row_count(self):
         schedules = [self._s(1, "A", "07:00", 1), self._s(2, "B", "20:00", 0)]
         kb = get_schedules_inline_keyboard(schedules)
-        self.assertEqual(len(kb["inline_keyboard"]), 4)  # 2 schedule rows + Sofort-Nebel + add row
+        # Feature 0031: Sofort-Nebel-Zeile entfernt → 2 Zeitplan-Zeilen + Add-Zeile
+        self.assertEqual(len(kb["inline_keyboard"]), 3)
+
+    def test_no_sofort_nebel_row(self):
+        """Feature 0031: Die Zeitplan-Ansicht enthält keine Sofort-Nebel-Zeile mehr."""
+        kb = get_schedules_inline_keyboard([self._s(1, "A", "07:00", 1)])
+        all_cb = [b.get("callback_data") for row in kb["inline_keyboard"] for b in row]
+        self.assertNotIn("nebel_now", all_cb)
+
+
+class TestSchedulesMarkdownSafety(unittest.TestCase):
+    """Zeitplan-Namen mit Markdown-Sonderzeichen dürfen die Nachricht nicht zerschießen (HTTP 400)."""
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_schedule_name_with_underscore_is_escaped(self, mock_db, mock_client):
+        from daemon.ui.telegram_ui import handle_schedules
+        mock_db.get_schedules.return_value = [{
+            "id": 1, "name": "valve_report_test", "time": "06:00",
+            "days": "everyday", "duration_minutes": 12,
+            "target_volume_liters": 30, "is_active": 1,
+        }]
+        handle_schedules(100)
+        text = mock_client.send_message.call_args[0][1]
+        self.assertIn(r"valve\_report\_test", text)        # escaped → Markdown-sicher
+        self.assertNotIn("valve_report_test", text)        # roher Name darf nicht im Markdown-Text stehen
 
 
 class TestScheduleEditFlow(unittest.TestCase):
@@ -490,7 +515,7 @@ class TestManualWateringPresetCallback(unittest.TestCase):
 
         _process_callback_query(self._cb("man_vol_25"))
 
-        mock_ctrl.start_watering.assert_called_once_with(10, 25, "manual")
+        mock_ctrl.start_watering.assert_called_once_with(10, 25, "manual", mqtt_name="garden_valve")
 
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
@@ -530,18 +555,29 @@ class TestNebelUI(unittest.TestCase):
     def _cb(self, data, chat_id=100, msg_id=1):
         return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
 
+    def _seed_nebel_flow(self, on_seconds=20, pause_minutes=5):
+        """Setzt den Sofort-Nebel-Flow-State (Ventil + Takt) wie nach der Takt-Auswahl (Feature 0031)."""
+        _state_set(manual_states, 100, {
+            "flow": "nebel_now",
+            "valve": {"id": 3, "wish_name": "Terrasse", "mqtt_name": "terrace_mist"},
+            "on_seconds": on_seconds,
+            "pause_minutes": pause_minutes,
+        })
+
     @patch("daemon.ui.telegram_ui._nebel_ctrl")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_sofort_nebel_single_valve_starts(self, mock_client, mock_db, mock_nebel):
-        mock_db.get_all_valves.return_value = [{"id": 3, "wish_name": "Terrasse", "mqtt_name": "terrace_mist"}]
         mock_nebel.start.return_value = (True, "OK")
+        self._seed_nebel_flow(on_seconds=30, pause_minutes=3)
 
         _process_callback_query(self._cb("nebel_dur_60"))
 
         self.assertTrue(mock_nebel.start.called)
         args = mock_nebel.start.call_args[0]
         self.assertEqual(args[0], "terrace_mist")          # mqtt_name
+        self.assertEqual(args[1], 30)                       # gewählte Stoß-Dauer
+        self.assertEqual(args[2], 3)                        # gewählte Pause
         self.assertEqual(mock_nebel.start.call_args[0][4], "nebel_manual")  # source
 
     @patch("daemon.ui.telegram_ui._nebel_ctrl")
@@ -549,8 +585,8 @@ class TestNebelUI(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_sofort_nebel_caps_runtime(self, mock_client, mock_db, mock_nebel):
         from daemon.ui import telegram_ui
-        mock_db.get_all_valves.return_value = [{"id": 3, "wish_name": "Terrasse", "mqtt_name": "terrace_mist"}]
         mock_nebel.start.return_value = (True, "OK")
+        self._seed_nebel_flow()
 
         with patch.object(telegram_ui.config, "NEBEL_MANUAL_MAX_MINUTES", 90):
             _process_callback_query(self._cb("nebel_dur_120"))   # über dem Cap
@@ -762,7 +798,7 @@ class TestTelegramWiringSmoke(unittest.TestCase):
         mock_poll.assert_called_once()
 
     def test_register_telegram_commands_ruft_set_my_commands_auf(self):
-        """register_telegram_commands in main.py registriert status, zeitplan und stop."""
+        """register_telegram_commands registriert das aufgeräumte Menü (Feature 0031)."""
         from daemon.ui import telegram_client
         with patch.object(telegram_client, "set_my_commands") as mock_cmds:
             from daemon.main import register_telegram_commands
@@ -770,11 +806,8 @@ class TestTelegramWiringSmoke(unittest.TestCase):
             mock_cmds.assert_called_once()
             commands = mock_cmds.call_args[0][0]
             self.assertIsInstance(commands, list)
-            self.assertGreater(len(commands), 3)
             cmd_names = [c["command"] for c in commands]
-            self.assertIn("status", cmd_names)
-            self.assertIn("zeitplan", cmd_names)
-            self.assertIn("stop", cmd_names)
+            self.assertEqual(cmd_names, ["status", "tagesbericht", "update"])
 
 
 
@@ -1036,7 +1069,7 @@ class TestReportChartIntegration(unittest.TestCase):
              patch.object(mc, "request_valve_status"), \
              patch.object(mc, "is_broker_connected", return_value=True), \
              patch.object(mc, "get_bridge_status", return_value="online"):
-            _process_message(self._msg("/report"))
+            _process_message(self._msg("/tagesbericht"))
             
         self.assertEqual(call_order, ["generate_report", "generate_chart"])
 
@@ -1056,7 +1089,7 @@ class TestReportChartIntegration(unittest.TestCase):
              patch.object(mc, "request_valve_status"), \
              patch.object(mc, "is_broker_connected", return_value=True), \
              patch.object(mc, "get_bridge_status", return_value="online"):
-            _process_message(self._msg("/report"))
+            _process_message(self._msg("/tagesbericht"))
 
         mock_client.send_photo.assert_called_once()
         args = mock_client.send_photo.call_args[0]
@@ -1078,7 +1111,7 @@ class TestReportChartIntegration(unittest.TestCase):
              patch.object(mc, "request_valve_status"), \
              patch.object(mc, "is_broker_connected", return_value=True), \
              patch.object(mc, "get_bridge_status", return_value="online"):
-            _process_message(self._msg("/report"))
+            _process_message(self._msg("/tagesbericht"))
 
         mock_client.send_photo.assert_not_called()
         # Tagesbericht wird trotzdem gesendet
@@ -1100,7 +1133,7 @@ class TestReportChartIntegration(unittest.TestCase):
              patch.object(mc, "request_valve_status"), \
              patch.object(mc, "is_broker_connected", return_value=True), \
              patch.object(mc, "get_bridge_status", return_value="online"):
-            _process_message(self._msg("/report"))
+            _process_message(self._msg("/tagesbericht"))
 
         all_texts = " ".join(str(c) for c in mock_client.send_message.call_args_list)
         self.assertIn("Tagesbericht", all_texts)
@@ -1335,42 +1368,6 @@ class TestStatusCameraBlock(unittest.TestCase):
         self.assertNotIn("📷", sent_text)
 
 
-class TestCamintCallbackSafety(unittest.TestCase):
-    """Stellt sicher, dass fehlerhafte camint_-Callbacks den Handler nicht zum Absturz bringen."""
-
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    @patch("daemon.ui.telegram_ui.database")
-    def test_camint_callback_with_missing_parts_does_not_raise(self, mock_db, mock_client):
-        """camint_-Callback ohne MAC und Minuten löst keinen IndexError/ValueError aus."""
-        mock_db.get_camera.return_value = None
-        cb = {
-            "id": "cb_001",
-            "from": {"id": 12345},
-            "message": {"chat": {"id": 12345}, "message_id": 1},
-            "data": "camint_",  # fehlende MAC und Minuten
-        }
-        try:
-            _process_callback_query(cb)
-        except (IndexError, ValueError) as e:
-            self.fail(f"Unkontrollierte Ausnahme bei fehlerhaftem camint_-Callback: {e}")
-
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    @patch("daemon.ui.telegram_ui.database")
-    def test_camint_callback_with_non_numeric_minutes_does_not_raise(self, mock_db, mock_client):
-        """camint_-Callback mit nicht-numerischen Minuten löst keinen ValueError aus."""
-        mock_db.get_camera.return_value = None
-        cb = {
-            "id": "cb_002",
-            "from": {"id": 12345},
-            "message": {"chat": {"id": 12345}, "message_id": 1},
-            "data": "camint_AA:BB:CC:DD:EE:FF_abc",  # Minuten nicht numerisch
-        }
-        try:
-            _process_callback_query(cb)
-        except (IndexError, ValueError) as e:
-            self.fail(f"Unkontrollierte Ausnahme bei nicht-numerischen Minuten: {e}")
-
-
 class TestCameraPairingMetadataCleanup(unittest.TestCase):
     """Stellt sicher, dass veraltete Koppel-Metadaten beim Start bereinigt werden."""
 
@@ -1540,45 +1537,50 @@ class TestHauptmenueButtons(unittest.TestCase):
     """Tests für die Hauptmenü-Button-Texte (Schritt 4 Design-System-Migration)."""
 
     def test_hauptmenue_hat_guss_button(self):
-        """Hauptmenü enthält '🚿 Bewässern starten', nicht mehr '🟢 Bewässern starten'."""
+        """Hauptmenü enthält '🚿 Bewässern' (Feature 0031, gekürzt)."""
         from daemon.ui.telegram_ui import get_main_keyboard
         kb = get_main_keyboard()
         texts = [b["text"] for row in kb["keyboard"] for b in row]
-        self.assertIn("🚿 Bewässern starten", texts)
-        self.assertNotIn("🟢 Bewässern starten", texts)
+        self.assertIn("🚿 Bewässern", texts)
+        self.assertNotIn("🚿 Bewässern starten", texts)
 
     def test_hauptmenue_hat_stopp_button(self):
-        """Hauptmenü enthält '🛑 Sofort Stopp', nicht mehr '🔴 Sofort Stopp'."""
+        """Hauptmenü enthält '🛑 Stopp' (Feature 0031, gekürzt)."""
         from daemon.ui.telegram_ui import get_main_keyboard
         kb = get_main_keyboard()
         texts = [b["text"] for row in kb["keyboard"] for b in row]
-        self.assertIn("🛑 Sofort Stopp", texts)
-        self.assertNotIn("🔴 Sofort Stopp", texts)
+        self.assertIn("🛑 Stopp", texts)
+        self.assertNotIn("🛑 Sofort Stopp", texts)
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_guss_button_loest_wizard_aus(self, mock_client, mock_db):
-        """'🚿 Bewässern starten' startet den Bewässerungs-Assistenten."""
+        """'🚿 Bewässern' zeigt die Art-Auswahl (Guss / Sofort-Nebel)."""
         mock_db.get_all_valves.return_value = [_make_valve()]
-        _process_message({"chat": {"id": 100}, "text": "🚿 Bewässern starten"})
+        _process_message({"chat": {"id": 100}, "text": "🚿 Bewässern"})
         mock_client.send_message.assert_called_once()
         text = mock_client.send_message.call_args[0][1]
         self.assertIn("Bewässer", text)
 
+    @patch("daemon.ui.telegram_ui._nebel_ctrl")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_stopp_button_stoppt_guss(self, mock_client, mock_ctrl):
-        """'🛑 Sofort Stopp' ruft stop_watering auf."""
+    def test_stopp_button_stoppt_guss(self, mock_client, mock_db, mock_ctrl, mock_nebel):
+        """'🛑 Stopp' stoppt bei genau einer aktiven Quelle direkt den Guss."""
+        mock_ctrl.get_active_valve_names.return_value = ["garden_valve"]
+        mock_nebel.get_active_window.return_value = None
         mock_ctrl.stop_watering.return_value = (True, "gestoppt")
-        _process_message({"chat": {"id": 100}, "text": "🛑 Sofort Stopp"})
+        mock_db.get_valve_by_mqtt_name.return_value = _make_valve()
+        _process_message({"chat": {"id": 100}, "text": "🛑 Stopp"})
         mock_ctrl.stop_watering.assert_called_once()
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_guss_wizard_schritt1_zeigt_guss_emoji(self, mock_client, mock_db):
-        """Wizard-Schritt 1 zeigt 🚿 im Titel, nicht 🟢."""
+        """Art-Auswahl zeigt 🚿 im Titel, nicht 🟢."""
         mock_db.get_all_valves.return_value = [_make_valve()]
-        _process_message({"chat": {"id": 100}, "text": "🚿 Bewässern starten"})
+        _process_message({"chat": {"id": 100}, "text": "🚿 Bewässern"})
         text = mock_client.send_message.call_args[0][1]
         self.assertIn("🚿", text)
         self.assertNotIn("🟢", text)
@@ -1634,7 +1636,7 @@ class TestKeinDoppelAsterisk(unittest.TestCase):
     def test_guss_starten_kein_doppelasterisk(self, mock_client, mock_db):
         """Manuellen Guss starten (Schritt 1/2) erzeugt kein **."""
         mock_db.get_all_valves.return_value = [_make_valve()]
-        _process_message(self._msg("🚿 Bewässern starten"))
+        _process_message(self._msg("🚿 Bewässern"))
         for call in mock_client.send_message.call_args_list:
             text = call[0][1] if len(call[0]) > 1 else ""
             self.assertNotIn("**", text, f"** gefunden in: {text[:120]}")
@@ -1673,7 +1675,7 @@ class TestTypingIndikator(unittest.TestCase):
              patch.object(mc, "request_valve_status"), \
              patch("daemon.ui.telegram_ui._generate_daily_report", return_value="Bericht"), \
              patch("daemon.adapters.chart.generate_weather_chart", return_value=None):
-            _process_message(self._msg("/report"))
+            _process_message(self._msg("/tagesbericht"))
         calls = [c[0] for c in mock_client.send_chat_action.call_args_list]
         self.assertIn((100, "typing"), calls)
 
@@ -1699,12 +1701,12 @@ class TestEinstellungenHandler(unittest.TestCase):
         self.assertIn("20", text)
         self.assertIn("30", text)
 
-    @patch("daemon.config.get_setting", return_value=2.0)
     @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_einstellungen_befehl_in_process_message(self, mock_client, mock_get):
-        """/einstellungen-Befehl wird in _process_message verarbeitet."""
+    def test_einstellungen_slash_entfernt(self, mock_client):
+        """/einstellungen wurde entfernt (De-dup) — nur noch über den ⚙️-Button erreichbar."""
         _process_message({"chat": {"id": 100}, "from": {"id": 100}, "text": "/einstellungen"})
-        mock_client.send_message.assert_called()
+        text = mock_client.send_message.call_args[0][1]
+        self.assertIn("Unbekannter Befehl", text)
 
     @patch("daemon.config.set_setting")
     @patch("daemon.config.get_setting", return_value=2.0)
@@ -1903,17 +1905,12 @@ class TestGiesscheckHandler(unittest.TestCase):
         self.assertIn("Gießcheck", text)
         self.assertIn("🚿", text)
 
-    @patch("daemon.ui.telegram_ui._weather_adapter.evaluate_watering_factor")
     @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_slash_command_triggers_same_handler(self, mock_client, mock_factor):
-        from daemon.core.watering_advice import WateringDecision
-        mock_factor.return_value = WateringDecision(
-            factor=0.0, verdict="🌧 Kein Gießen nötig", reasons=["4.0 mm im 48h-Fenster."], skip=True
-        )
+    def test_slash_giesscheck_removed(self, mock_client):
+        """/giesscheck Slash-Befehl wurde mit Feature 0031 entfernt (nur Tastatur-Button)."""
         _process_message(self._msg("/giesscheck"))
-        mock_client.send_message.assert_called_once()
         text = mock_client.send_message.call_args[0][1]
-        self.assertIn("🌧", text)
+        self.assertIn("Unbekannter Befehl", text)
 
     @patch("daemon.ui.telegram_ui._weather_adapter.evaluate_watering_factor", side_effect=Exception("no data"))
     @patch("daemon.ui.telegram_ui.telegram_client")
@@ -1941,7 +1938,7 @@ class TestGiesscheckHandler(unittest.TestCase):
         mock_factor.return_value = WateringDecision(
             factor=0.5, verdict="💧 Reduzierter Guss (50 %)", reasons=["1.5 mm Regen."], skip=False
         )
-        _process_message(self._msg("/giesscheck"))
+        _process_message(self._msg("💧 Gießcheck"))
         text = mock_client.send_message.call_args[0][1]
         self.assertIn("💧", text)
         self.assertIn("50", text)

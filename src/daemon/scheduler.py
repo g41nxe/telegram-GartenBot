@@ -65,7 +65,8 @@ def _ensure_nebel_window(sched: dict, now: datetime) -> None:
         if valve is None:
             continue
         mqtt_name = valve["mqtt_name"]
-        if not _nebel_controller.is_active(mqtt_name):
+        # Nicht neu starten, wenn schon aktiv ODER manuell für dieses Fenster gestoppt (C1).
+        if not _nebel_controller.is_active(mqtt_name) and not _nebel_controller.is_suppressed(mqtt_name):
             _nebel_controller.start(mqtt_name, on_seconds, pause_minutes, end_dt, "nebel",
                                     valve_topic=f"zigbee2mqtt/{mqtt_name}")
 
@@ -335,7 +336,7 @@ def clear_camera_history(wish_name: str) -> int:
     """Löscht alle Historienbilder (photo_*.jpg) einer Garten-Kamera und gibt deren Anzahl zurück.
 
     Geschwister-Funktion zum automatischen Cleanup. Die Momentaufnahme latest.jpg
-    bleibt bewusst erhalten, damit die Sofort-Anzeige (/photo) weiter funktioniert.
+    bleibt bewusst erhalten, damit die Sofort-Foto-Anzeige (📷 Kamera ▸ Foto anzeigen) weiter funktioniert.
     Ein fehlendes Kamera-Verzeichnis liefert 0 ohne Fehler.
     """
     cam_dir = Path(config.CAMERA_IMAGE_DIR) / wish_name

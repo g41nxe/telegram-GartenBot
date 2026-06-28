@@ -1,9 +1,10 @@
-# Telegram-Nachrichten: Design-System &amp; Referenz
+# Telegram-Nachrichten &amp; Navigation: Design-System, Referenz &amp; Sitemap
 
-Zwei Dokumente in `docs/design/` steuern die Telegram-Nachrichten:
+Drei Dokumente in `docs/design/` steuern die Telegram-Oberfläche:
 
 - [`telegram-design-system.html`](../../docs/design/telegram-design-system.html) — **SOLL / verbindliche Regeln**: Anrede, Ton-Register, Markdown-Konvention, Einheiten-/Datumsformate, Emoji-Semantik, Garten-Ampel, Progressive Disclosure. Grundlage ist ADR 0029.
-- [`telegram-nachrichten.html`](../../docs/design/telegram-nachrichten.html) — **IST-Stand**: originalgetreue Referenz aller heute versendeten Nachrichten.
+- [`telegram-nachrichten.html`](../../docs/design/telegram-nachrichten.html) — **IST-Stand der Nachrichten**: originalgetreue Referenz aller heute versendeten Nachrichten.
+- [`telegram-sitemap.html`](../../docs/design/telegram-sitemap.html) — **Navigations-Übersicht**: alle Slash-Befehle (registriert vs. dispatcher-only), Haupttastatur und Untermenü-/Flow-Ebenen mit ihren `callback_data`.
 
 ## Regel: Design-System einhalten
 
@@ -28,6 +29,39 @@ Beim Aktualisieren:
 3. **In die passende Sektion einordnen:** Befehle & Menüs / Assistenten / Ereignis-Benachrichtigungen / Fehler & Hinweise.
 4. **Varianten dokumentieren:** Statusabhängige Textbausteine (z. B. Batterie-Stufen, Tagesbericht-Zweige) in einer `ul.variants`-Liste festhalten.
 
+## Regel: Sitemap synchron halten
+
+Wenn du die **Navigationsstruktur** des Bots änderst — also einen Slash-Befehl, einen Tastatur-Button, ein Untermenü, einen Flow-Schritt oder einen `callback_data`-Eintrag **hinzufügst, umbenennst, verschiebst oder entfernst** — MUSST du `telegram-sitemap.html` im selben Arbeitsschritt aktualisieren. Das betrifft insbesondere Änderungen in:
+
+- dem Dispatcher in `src/daemon/ui/telegram_ui.py` (`_process_message` / `_process_callback_query`),
+- `get_main_keyboard()` und den Untermenü-Handlern (`handle_kamera_menu`, `handle_einstellungen_menu`, …),
+- der registrierten Befehlsliste in `src/daemon/main.py` (`register_telegram_commands`).
+
+Beim Aktualisieren:
+
+1. **Registriert vs. dispatcher-only:** Befehle korrekt einordnen — ins registrierte `/`-Menü kommt nur, was `register_telegram_commands` listet; alles andere unter „Dispatcher-only".
+2. **Callbacks annotieren:** Jede Ebene trägt ihr `callback_data`; situative Schritte (z. B. „>1 Ventil") als `.pill`-Bedingung markieren.
+3. **Abgrenzung zur Nachrichten-Referenz:** Reine Textänderungen ohne Struktur-/Routing-Wirkung gehören in `telegram-nachrichten.html`; die Sitemap ändert sich nur, wenn sich **Befehle, Buttons, Menü-Ebenen oder Callbacks** ändern.
+
+## Regel: Keine redundanten Slash-Befehle (De-dup Menü ↔ Tastatur)
+
+Das registrierte `/`-Menü (`register_telegram_commands` in `main.py`) und die permanente Haupttastatur (`get_main_keyboard`) sind zwei Wege zur selben Funktion. Um Redundanz zu vermeiden, gilt für **jeden** Slash-Befehl:
+
+Ein Slash-Befehl wird nur im Dispatcher (`_process_message`) geführt — und nur dann ggf. ins `/`-Menü aufgenommen — wenn er **mindestens eines** erfüllt:
+
+1. **Eigene Logik / einziger Zugang:** Es gibt keinen gleichwertigen Reply-Keyboard-Button (z. B. `/tagesbericht`, `/start`).
+2. **Separat verlinkt:** Eine Bot- oder CI-Nachricht fordert den Nutzer auf, ihn zu **tippen** (z. B. `/status` — Kopplungs-, OTA- und Unbekannt-Hinweise; `/update` — CI-Build-Benachrichtigung in `.github/workflows/release.yml`).
+
+Ein Befehl, der **nur einen Tastatur-Button dupliziert** und **nirgends verlinkt** ist, wird **komplett entfernt** — weder registriert noch im Dispatcher. Der Button ist dann der einzige Zugang (so geschehen mit `/zeitplaene`, `/einstellungen`, `/stopp`).
+
+Weitere Leitplanken:
+
+- **Registriertes `/`-Menü ⊂ Dispatcher:** Es enthält nur Befehle, die ohnehin im Dispatcher leben, und davon nur die für Tippen/Auffindbarkeit sinnvollen. `/start` bleibt dispatcher-only (Telegram-Konvention).
+- **Bewusste Ausnahmen benennen:** Ein registrierter Befehl, der einen Button dupliziert (derzeit nur `/status`), MUSS als ausdrückliche Ausnahme dokumentiert sein (häufigster Befehl + mehrfach in Nachrichten verlinkt).
+- **Verlinkung mitpflegen:** Wer einen verlinkten Befehl entfernt oder umbenennt, MUSS auch die verweisende Nachricht (Bot-Text oder CI-Workflow) anpassen — sonst zeigt sie ins Leere.
+
+Grundlage: ADR 0034 (Bot-Navigation). Jede Änderung am Befehls-/Menü-Satz aktualisiert zusätzlich die Sitemap (siehe oben).
+
 ## Hinweis für Feature-Arbeit
 
-Plant ein Feature neue Benachrichtigungen, gehört die Aktualisierung dieser Referenz zur Definition of Done — analog zur Pflege von `CONTEXT.md` und den ADRs.
+Plant ein Feature neue Benachrichtigungen oder ändert es die Navigation, gehört die Aktualisierung **beider** Referenzen (`telegram-nachrichten.html` und `telegram-sitemap.html`) zur Definition of Done — analog zur Pflege von `CONTEXT.md` und den ADRs.

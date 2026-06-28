@@ -19,18 +19,14 @@ logger = logging.getLogger("garden_main")
 def register_telegram_commands():
     """Registriert das native Telegram-Befehlsmenü (sichtbar im '/' Eingabefeld des Chats)."""
     from .ui import telegram_client
+    # Feature 0031: De-dup zwischen /-Menü und Tastatur (siehe .agents/rules/telegram_messages.md).
+    # Registriert nur Befehle ohne gleichwertigen Button (/tagesbericht) oder die in Nachrichten
+    # verlinkt sind (/status: Kopplung/OTA/Hinweise · /update: CI-Build). /zeitplaene,
+    # /einstellungen und /stopp wurden ganz entfernt (nur noch über ihren Tastatur-Button).
     commands = [
         {"command": "status",        "description": "Systemstatus anzeigen"},
-        {"command": "zeitplan",      "description": "Zeitpläne verwalten"},
-        {"command": "report",        "description": "Tagesbericht anzeigen"},
-        {"command": "stop",          "description": "Bewässerung sofort stoppen"},
-        {"command": "setup",         "description": "Ventil koppeln"},
-        {"command": "photo",         "description": "Aktuelles Kamerabild"},
-        {"command": "camera_setup",  "description": "Kamera koppeln"},
-        {"command": "photo_clear",   "description": "Bild-Historie löschen"},
-        {"command": "aufnahmen",      "description": "Foto-Uhrzeiten verwalten"},
+        {"command": "tagesbericht",  "description": "Tagesbericht anzeigen"},
         {"command": "update",        "description": "Software-Update starten"},
-        {"command": "einstellungen", "description": "Schwellenwerte anpassen"},
     ]
     telegram_client.set_my_commands(commands)
 

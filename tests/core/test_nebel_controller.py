@@ -105,6 +105,48 @@ class TestNebelController(unittest.TestCase):
         self.assertEqual(len(started), 1)
         self.claim.assert_called_once_with("terrace_mist")
 
+    # --- get_active_window (Lese-Schnittstelle fürs Stopp-Menü) ---
+
+    def test_get_active_window_none_when_idle(self):
+        self.assertIsNone(self.nebel.get_active_window())
+
+    def test_get_active_window_returns_running_valve(self):
+        self.nebel.start("terrace_mist", 20, 5, self._future(), "nebel")
+        self.assertEqual(self.nebel.get_active_window(), "terrace_mist")
+        self.nebel.stop("terrace_mist")
+        self.assertIsNone(self.nebel.get_active_window())
+
+    # --- Restart-Unterdrückung (C1, in-memory) ---
+
+    def test_stop_suppresses_until_end_time(self):
+        """Manueller Stopp merkt sich die Fenster-Endzeit und unterdrückt bis dahin."""
+        end = self._future(30)
+        self.nebel.start("terrace_mist", 20, 5, end, "nebel")
+        self.assertFalse(self.nebel.is_suppressed("terrace_mist"))
+
+        self.nebel.stop("terrace_mist")
+        self.assertTrue(self.nebel.is_suppressed("terrace_mist"))
+
+    def test_is_suppressed_lazy_expires_after_end_time(self):
+        """Nach Ablauf der Endzeit läuft die Sperre lazy ab."""
+        self.nebel._suppressed_until["terrace_mist"] = datetime.now() - timedelta(minutes=1)
+        self.assertFalse(self.nebel.is_suppressed("terrace_mist"))
+        # nach dem Lazy-Ablauf ist der Eintrag entfernt
+        self.assertNotIn("terrace_mist", self.nebel._suppressed_until)
+
+    def test_start_clears_suppression(self):
+        """Expliziter Neustart hebt die Sperre auf (Neustart gewinnt)."""
+        self.nebel.start("terrace_mist", 20, 5, self._future(), "nebel")
+        self.nebel.stop("terrace_mist")
+        self.assertTrue(self.nebel.is_suppressed("terrace_mist"))
+
+        self.nebel.start("terrace_mist", 20, 5, self._future(), "nebel")
+        self.assertFalse(self.nebel.is_suppressed("terrace_mist"))
+        self.nebel.stop("terrace_mist")
+
+    def test_is_suppressed_unknown_valve_is_false(self):
+        self.assertFalse(self.nebel.is_suppressed("never_seen"))
+
 
 if __name__ == "__main__":
     unittest.main()

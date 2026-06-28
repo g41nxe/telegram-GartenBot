@@ -33,6 +33,9 @@ class NebelController:
         self._lock = threading.RLock()
         # Indiziert nach mqtt_name; ein aktives Nebel-Fenster pro Ventil.
         self._cycles: Dict[str, Dict[str, Any]] = {}
+        # Restart-Unterdrückung (C1, in-memory): manuell gestoppte Fenster bleiben bis
+        # zu ihrer Endzeit gegen den Scheduler-Neustart gesperrt. Läuft lazy ab.
+        self._suppressed_until: Dict[str, datetime] = {}
 
     # --- Öffentliche API ---
 
@@ -49,6 +52,9 @@ class NebelController:
         with self._lock:
             if mqtt_name in self._cycles:
                 return False, "Es läuft bereits ein Nebel-Intervall."
+
+            # Expliziter Neustart hebt eine bestehende Sperre auf (Neustart gewinnt).
+            self._suppressed_until.pop(mqtt_name, None)
 
             self._cycles[mqtt_name] = {
                 "on_seconds": on_seconds,
@@ -75,6 +81,10 @@ class NebelController:
             targets = [mqtt_name] if (mqtt_name and mqtt_name in self._cycles) else list(self._cycles.keys())
             if not targets:
                 return False, "Kein aktives Nebel-Intervall."
+            # Endzeit jedes Fensters merken, bevor _finish es entfernt — so bleibt ein
+            # geplantes Fenster bis zu seinem regulären Ende gegen Neustart gesperrt.
+            for name in targets:
+                self._suppressed_until[name] = self._cycles[name]["end_time"]
 
         for name in targets:
             self._finish(name, "Manuell gestoppt")
@@ -85,6 +95,24 @@ class NebelController:
             if mqtt_name:
                 return mqtt_name in self._cycles
             return bool(self._cycles)
+
+    def get_active_window(self, mqtt_name: str = None) -> str:
+        """Gibt das mqtt_name eines laufenden Nebel-Fensters zurück (fürs Stopp-Menü), sonst None."""
+        with self._lock:
+            if mqtt_name:
+                return mqtt_name if mqtt_name in self._cycles else None
+            return next(iter(self._cycles.keys()), None)
+
+    def is_suppressed(self, mqtt_name: str) -> bool:
+        """Wahr, solange ein manuell gestopptes Fenster gegen Neustart gesperrt ist (läuft lazy ab)."""
+        with self._lock:
+            until = self._suppressed_until.get(mqtt_name)
+            if until is None:
+                return False
+            if datetime.now() >= until:
+                self._suppressed_until.pop(mqtt_name, None)
+                return False
+            return True
 
     # --- Burst-Loop (Transitions) ---
 

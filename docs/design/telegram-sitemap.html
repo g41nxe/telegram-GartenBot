@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sitemap: Slash-Befehle &amp; Menü-Ebenen des GartenBots</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+    background: #f1f3f5; color: #1a1a1a; margin: 0; padding: 32px 16px; line-height: 1.5;
+  }
+  .page { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  .meta { color: #64748b; font-size: 13px; margin-bottom: 4px; }
+  .meta code { background: #e2e8f0; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .legend { font-size: 12px; color: #475569; background: #fff; border: 1px solid #e2e8f0;
+            border-radius: 8px; padding: 10px 14px; margin: 12px 0 28px; }
+  .legend code { background: #0e1621; color: #8fd6ff; padding: 1px 5px; border-radius: 4px; }
+  h2.section {
+    font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+    color: #475569; margin: 34px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #cbd5e1;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 18px; align-items: start; }
+  .card { background: #0e1621; border-radius: 14px; padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,.18); }
+  .card.full { grid-column: 1 / -1; }
+  .card h3 { color: #fff; font-size: 15px; margin: 0 0 4px; }
+  .card .sub { font-size: 11px; color: #6b7d92; font-family: ui-monospace, "Cascadia Code", monospace; margin-bottom: 10px; }
+  ul.tree { list-style: none; margin: 0; padding: 0; }
+  ul.tree ul { list-style: none; margin: 2px 0 2px 0; padding-left: 18px; border-left: 1px solid #2b3a4d; }
+  ul.tree li { font-size: 13px; color: #e9edf2; padding: 3px 0; position: relative; }
+  ul.tree li::before { content: "└ "; color: #46586e; }
+  ul.tree > li:first-child::before { content: ""; }
+  .lbl { color: #e9edf2; }
+  .btn { color: #6ab3f3; font-weight: 600; }
+  .cmd { color: #8fd6ff; font-family: ui-monospace, monospace; }
+  .cb  { color: #6b7d92; font-family: ui-monospace, monospace; font-size: 11px; }
+  .note { color: #aebfd0; font-size: 11px; }
+  .pill { display: inline-block; background: #182533; color: #aebfd0; border-radius: 6px;
+          padding: 0 6px; font-size: 10px; margin-left: 4px; }
+  .root { color: #fff; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <h1>Sitemap: Slash-Befehle &amp; Menü-Ebenen</h1>
+  <div class="meta">Stand: 2026-06-28 · Navigationsbaum nach Feature 0031 (Bot-UX-Redesign)</div>
+  <div class="meta">Quelle: <code>src/daemon/ui/telegram_ui.py</code> (<code>_process_message</code> / <code>_process_callback_query</code>) · <code>src/daemon/main.py</code> (registriertes Menü)</div>
+  <div class="legend">
+    <span class="btn">Blau</span> = Button-Beschriftung · <code class="cmd">/befehl</code> = Slash-Befehl ·
+    <code class="cb">callback_data</code> = Inline-Callback · <span class="pill">Bedingung</span> = situativer Schritt.<br>
+    Die <b>Haupttastatur</b> (Reply-Keyboard) ist permanent; <b>Untermenüs/Flows</b> sind Inline-Keyboards an einzelnen Nachrichten.
+  </div>
+</header>
+
+<!-- ============ EINSTIEGSPUNKTE ============ -->
+<h2 class="section">Einstiegspunkte</h2>
+<div class="grid">
+
+  <div class="card">
+    <h3>📋 Registriertes /-Menü</h3>
+    <div class="sub">main.py · register_telegram_commands() — 3 Einträge (De-dup-Regel)</div>
+    <ul class="tree">
+      <li><span class="cmd">/status</span> — Systemstatus anzeigen <span class="cb">= 📊 Status</span> <span class="note">(bewusste Ausnahme: Button-Duplikat, aber häufigster + in Nachrichten verlinkt)</span></li>
+      <li><span class="cmd">/tagesbericht</span> — Tagesbericht anzeigen <span class="note">(kein Button)</span></li>
+      <li><span class="cmd">/update</span> — Software-Update starten <span class="note">(kein Button; nur ⚙️ Einstellungen ▸ Software-Update, CI-verlinkt)</span></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>⌨️ Dispatcher-only Befehle</h3>
+    <div class="sub">funktionieren beim Tippen, aber nicht im /-Menü gelistet</div>
+    <ul class="tree">
+      <li><span class="cmd">/start</span> — Willkommen + Haupttastatur</li>
+    </ul>
+    <div class="note">Entfernt (nur noch über ihren Tastatur-Button erreichbar, da reine Duplikate ohne Verlinkung): <code class="cmd">/zeitplaene</code> (📅), <code class="cmd">/einstellungen</code> (⚙️), <code class="cmd">/stopp</code> (🛑).</div>
+  </div>
+
+</div>
+
+<!-- ============ HAUPTTASTATUR ============ -->
+<h2 class="section">Haupttastatur (Reply-Keyboard, permanent)</h2>
+<div class="grid">
+  <div class="card full">
+    <div class="sub">get_main_keyboard() — 7 Buttons in 4 Reihen</div>
+    <ul class="tree">
+      <li><span class="root">📊 Status</span> &nbsp;|&nbsp; <span class="root">💧 Gießcheck</span></li>
+      <li><span class="root">🚿 Bewässern</span> &nbsp;|&nbsp; <span class="root">🛑 Stopp</span></li>
+      <li><span class="root">📅 Zeitpläne</span> &nbsp;|&nbsp; <span class="root">📷 Kamera</span></li>
+      <li><span class="root">⚙️ Einstellungen</span></li>
+    </ul>
+    <ul class="tree" style="margin-top:8px">
+      <li><span class="btn">📊 Status</span> <span class="cb">handle_status</span> — Garten-Status (kein Untermenü)</li>
+      <li><span class="btn">💧 Gießcheck</span> <span class="cb">handle_giesscheck</span> — Gieß-Empfehlung (kein Untermenü)</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ BEWÄSSERN ============ -->
+<h2 class="section">🚿 Bewässern — Art → Ventil → Details</h2>
+<div class="grid">
+
+  <div class="card">
+    <h3>🚿 Bewässern</h3>
+    <div class="sub">handle_bewaessern_start() — Art-Auswahl</div>
+    <ul class="tree">
+      <li><span class="btn">🚿 Guss</span> <span class="cb">water_mode_guss</span>
+        <ul>
+          <li><span class="pill">&gt;1 Ventil</span> Ventil-Auswahl <span class="cb">water_valve_{id}</span></li>
+          <li>Zeitlimit <span class="cb">man_dur_{n} · man_dur_custom</span></li>
+          <li>Volumenlimit <span class="cb">man_vol_{n} · man_vol_custom</span></li>
+          <li>▶ Guss startet <span class="cb">start_watering(mqtt_name)</span></li>
+        </ul>
+      </li>
+      <li><span class="btn">🌫️ Sofort-Nebel</span> <span class="cb">nebel_now</span>
+        <ul>
+          <li><span class="pill">&gt;1 Ventil</span> Ventil-Auswahl <span class="cb">nebel_now_valve_{id}</span></li>
+          <li>Stoß-Dauer <span class="cb">nebel_now_on_{s}</span></li>
+          <li>Pause <span class="cb">nebel_now_pause_{m}</span></li>
+          <li>Laufzeit <span class="cb">nebel_dur_{m}</span> &nbsp;(+ <span class="btn">🛑 Nebel stoppen</span> <span class="cb">nebel_stop</span>)</li>
+          <li>▶ Nebel-Intervall startet</li>
+        </ul>
+      </li>
+      <li><span class="btn">❌ Abbrechen</span> <span class="cb">man_cancel · nebel_cancel</span></li>
+    </ul>
+    <div class="note">Ventil-Auswahl entfällt bei genau einem gekoppelten Ventil (Auto-Selektion).</div>
+  </div>
+
+  <div class="card">
+    <h3>🛑 Stopp</h3>
+    <div class="sub">handle_stopp() — querschnittlich (Güsse + Nebel)</div>
+    <ul class="tree">
+      <li><span class="pill">0 aktiv</span> „Es läuft gerade nichts."</li>
+      <li><span class="pill">1 aktiv</span> sofort stoppen (kein Extra-Klick)</li>
+      <li><span class="pill">&gt;1 aktiv</span> Auswahl:
+        <ul>
+          <li><span class="btn">🛑 {Guss}</span> <span class="cb">stop_valve_{mqtt}</span></li>
+          <li><span class="btn">🛑 {Nebel}</span> <span class="cb">stop_nebel_{mqtt}</span></li>
+          <li><span class="btn">🛑 Alle stoppen</span> <span class="cb">stop_valve_all</span></li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+
+</div>
+
+<!-- ============ KAMERA ============ -->
+<h2 class="section">📷 Kamera (Inline-Untermenü)</h2>
+<div class="grid">
+  <div class="card">
+    <h3>📷 Kamera</h3>
+    <div class="sub">handle_kamera_menu()</div>
+    <ul class="tree">
+      <li><span class="btn">📸 Foto anzeigen</span> <span class="cb">kamera_foto → handle_photo</span>
+        <ul><li><span class="pill">&gt;1 Kamera</span> Kamera-Auswahl <span class="cb">camphoto_{name}</span></li></ul>
+      </li>
+      <li><span class="btn">🗑️ Fotos löschen</span> <span class="cb">kamera_verlauf → handle_photo_clear</span>
+        <ul>
+          <li><span class="pill">&gt;1 Kamera</span> Auswahl <span class="cb">photoclear_{name}</span></li>
+          <li>Bestätigung <span class="cb">photoclear_confirm_{name}</span> (Reply-Keyboard, ADR 0013)</li>
+        </ul>
+      </li>
+      <li><span class="btn">⏰ Fotozeiten</span> <span class="cb">kamera_fotozeiten → handle_aufnahmen</span>
+        <ul>
+          <li><span class="btn">➕ Uhrzeit hinzufügen</span> <span class="cb">phtadd_start → phtadd_h_{h} → phtadd_m_{m}</span></li>
+          <li><span class="btn">🗑️</span> je Eintrag <span class="cb">phtime_del_ask_{id}</span></li>
+        </ul>
+      </li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ EINSTELLUNGEN ============ -->
+<h2 class="section">⚙️ Einstellungen (Inline-Untermenü)</h2>
+<div class="grid">
+  <div class="card full">
+    <h3>⚙️ Einstellungen</h3>
+    <div class="sub">handle_einstellungen_menu() — 5 Optionen</div>
+    <ul class="tree">
+      <li><span class="btn">🔧 Ventil koppeln</span> <span class="cb">setup_confirm</span> → Kopplungs-Wizard (Name eingeben → 90 s Suchlauf)</li>
+      <li><span class="btn">📷 Kamera koppeln</span> <span class="cb">camsetup_start</span>
+        <ul><li>Name → Intervall → Auflösung <span class="cb">camsetup_res_{UXGA|XGA|VGA}</span> → Qualität <span class="cb">camsetup_qual_{high|medium|low}</span></li></ul>
+      </li>
+      <li><span class="btn">⏱ Kamera-Einstellungen</span> <span class="cb">camsetup_settings</span>
+        <ul><li><span class="pill">&gt;1 Kamera</span> Auswahl <span class="cb">camsetup_settings_sel_{mac}</span> → neues Intervall</li></ul>
+      </li>
+      <li><span class="btn">📊 Schwellenwerte</span> <span class="cb">einst_open → handle_einstellungen</span>
+        <ul><li>Regenschwelle · Batterie-Warnschwelle · Sicherheits-Timeout <span class="cb">einst_edit_{KEY} · einst_close</span></li></ul>
+      </li>
+      <li><span class="btn">🔄 Software-Update</span> <span class="cb">update_start → handle_update</span>
+        <ul><li><span class="btn">✓ Jetzt installieren</span> <span class="cb">update_confirm</span> &nbsp;·&nbsp; <span class="btn">✗ Abbrechen</span> <span class="cb">update_cancel</span></li></ul>
+      </li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============ ZEITPLÄNE ============ -->
+<h2 class="section">📅 Zeitpläne (Inline)</h2>
+<div class="grid">
+
+  <div class="card">
+    <h3>📅 Zeitpläne — Liste</h3>
+    <div class="sub">handle_schedules()</div>
+    <ul class="tree">
+      <li>je Zeitplan eine Zeile:
+        <ul>
+          <li>Aktiv-Umschalter <span class="cb">sched_toggle_{id}</span></li>
+          <li><span class="btn">✏️</span> Bearbeiten <span class="cb">sched_edit_{id}</span>
+            <ul>
+              <li>Feld wählen <span class="cb">sched_editfield_{time|days|duration|volume|name|valve}_{id}</span></li>
+              <li>Ventil setzen <span class="cb">sched_setvalve_{...}</span> · Tage <span class="cb">sched_editday_{...}</span></li>
+              <li><span class="btn">❌ Abbrechen</span> <span class="cb">sched_edit_cancel</span></li>
+            </ul>
+          </li>
+          <li><span class="btn">🗑️</span> Löschen <span class="cb">sched_delete_ask_{id}</span> → Bestätigung (Reply-Keyboard, ADR 0013)</li>
+        </ul>
+      </li>
+      <li><span class="btn">➕ Neuer Zeitplan</span> <span class="cb">wiz_start</span> → Art-Auswahl</li>
+    </ul>
+    <div class="note">Die Sofort-Nebel-Zeile ist mit Feature 0031 nach „🚿 Bewässern" umgezogen.</div>
+  </div>
+
+  <div class="card">
+    <h3>➕ Zeitplan-Assistent</h3>
+    <div class="sub">wiz_* / nb_* — Art → Schritte</div>
+    <ul class="tree">
+      <li><span class="btn">🚿 Bewässerung</span> <span class="cb">wiz_mode_watering</span>
+        <ul>
+          <li>Name → Stunde <span class="cb">wiz_hour_{h}</span> → Minute <span class="cb">wiz_min_{m}</span></li>
+          <li>Dauer → Volumen → <span class="pill">&gt;1 Ventil</span> <span class="cb">wv_valve_{id}</span></li>
+          <li>Wochentage <span class="cb">wiz_day_*</span> → <span class="btn">✅ Speichern</span> <span class="cb">wiz_save</span></li>
+        </ul>
+      </li>
+      <li><span class="btn">🌫️ Nebel</span> <span class="cb">wiz_mode_nebel</span>
+        <ul>
+          <li>Name → Start → Endstunde <span class="cb">nb_ehour_{h}</span> → Endminute <span class="cb">nb_emin_{m}</span></li>
+          <li>Stoß-Dauer <span class="cb">nb_on_{s}</span> → Pause <span class="cb">nb_pause_{m}</span></li>
+          <li><span class="pill">&gt;1 Ventil</span> <span class="cb">nb_valve_{id}</span> → Wochentage → Speichern</li>
+        </ul>
+      </li>
+      <li><span class="btn">❌ Abbrechen</span> <span class="cb">wiz_cancel</span></li>
+    </ul>
+  </div>
+
+</div>
+
+<div class="legend" style="margin-top:28px">
+  Detail-Mockups jeder Nachricht: siehe <a href="telegram-nachrichten.html">telegram-nachrichten.html</a> ·
+  Ton-/Design-Zielbild: <a href="telegram-design-system.html">telegram-design-system.html</a>.
+</div>
+
+</div>
+</body>
+</html>

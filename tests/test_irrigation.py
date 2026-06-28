@@ -882,6 +882,20 @@ class TestNebelScheduling(unittest.TestCase):
             self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 14, 0, 0))
             mock_weather.assert_not_called()
 
+    def test_suppressed_window_does_not_restart(self):
+        """Ein manuell gestopptes Fenster wird vom Scheduler nicht binnen ≤60s neu angestoßen."""
+        from datetime import datetime
+        sched = self._nebel_sched()
+        self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 14, 0, 0))
+        self.assertTrue(self.nebel.is_active("terrace_mist"))
+
+        self.nebel.stop("terrace_mist")  # setzt Suppression bis Fenster-Endzeit
+        self.assertTrue(self.nebel.is_suppressed("terrace_mist"))
+
+        # Nächster Minuten-Tick im Fenster darf NICHT neu starten
+        self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 14, 1, 0))
+        self.assertFalse(self.nebel.is_active("terrace_mist"))
+
     def test_nebelstoss_does_not_trigger_unexpected_open(self):
         """End-to-End: ein vom Scheduler gestartetes Nebel-Fenster beansprucht das Ventil,
         sodass ein Nebelstoß (ON ohne Guss-Zyklus) keine Unerwartete Ventilöffnung auslöst.

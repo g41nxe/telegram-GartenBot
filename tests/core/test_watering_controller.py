@@ -63,6 +63,19 @@ class TestWateringController(unittest.TestCase):
         self.assertEqual(events[1].volume_run, 5.0)
         self.assertIn("Volumenlimit", events[1].details)
 
+    def test_get_active_valve_names_reflects_running_cycles(self):
+        """get_active_valve_names liefert die mqtt_names aller laufenden Güsse (fürs Stopp-Menü)."""
+        self.assertEqual(self.controller.get_active_valve_names(), [])
+
+        self.controller.start_watering(10, 5, "manual", mqtt_name="garden_valve")
+        self.controller.start_watering(10, 5, "manual", mqtt_name="beet_valve")
+        self.assertCountEqual(
+            self.controller.get_active_valve_names(), ["garden_valve", "beet_valve"]
+        )
+
+        self.controller.stop_watering("garden_valve")
+        self.assertEqual(self.controller.get_active_valve_names(), ["beet_valve"])
+
     def test_emergency_shutdown_on_time_limit(self):
         """Verifies that if the time limit expires before the volume is reached, it triggers emergency shutdown."""
         events = []

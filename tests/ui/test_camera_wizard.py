@@ -126,16 +126,18 @@ class TestCameraWizardSteps(unittest.TestCase):
 class TestMainMenuReorganisation(unittest.TestCase):
 
     def test_main_keyboard_has_setup_button(self):
-        """Das Hauptmenü enthält den ⚙️ Setup-Button."""
+        """Das Hauptmenü enthält den ⚙️ Einstellungen-Button (Feature 0031)."""
         kb = get_main_keyboard()
         all_texts = [btn["text"] for row in kb["keyboard"] for btn in row]
-        self.assertIn("⚙️ Setup", all_texts)
+        self.assertIn("⚙️ Einstellungen", all_texts)
+        self.assertNotIn("⚙️ Setup", all_texts)
 
-    def test_main_keyboard_has_photo_button(self):
-        """Das Hauptmenü enthält 📸 Foto anzeigen."""
+    def test_main_keyboard_has_kamera_button(self):
+        """Das Hauptmenü enthält 📷 Kamera (Foto-Anzeige zog ins Kamera-Untermenü, Feature 0031)."""
         kb = get_main_keyboard()
         all_texts = [btn["text"] for row in kb["keyboard"] for btn in row]
-        self.assertIn("📸 Foto anzeigen", all_texts)
+        self.assertIn("📷 Kamera", all_texts)
+        self.assertNotIn("📸 Foto anzeigen", all_texts)
 
     def test_main_keyboard_no_direct_pairing_buttons(self):
         """Kopplungsbuttons sind nicht mehr direkt im Hauptmenü sichtbar."""
@@ -146,8 +148,8 @@ class TestMainMenuReorganisation(unittest.TestCase):
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_setup_button_opens_submenu_with_pairing_options(self, mock_tc):
-        """Nachricht '⚙️ Setup' sendet ein Inline-Keyboard mit Kopplungsoptionen."""
-        _process_message(_msg("⚙️ Setup"))
+        """Nachricht '⚙️ Einstellungen' sendet ein Inline-Keyboard mit Kopplungsoptionen."""
+        _process_message(_msg("⚙️ Einstellungen"))
 
         mock_tc.send_message.assert_called_once()
         call_args = mock_tc.send_message.call_args

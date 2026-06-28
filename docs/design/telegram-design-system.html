@@ -172,7 +172,7 @@
   </div>
 
   <div class="phone">
-    <div class="cap">/report &amp; Morgen-Bericht — Foto + Kurzform <span class="reg-pill play">verspielt</span></div>
+    <div class="cap">/tagesbericht &amp; Morgen-Bericht — Foto + Kurzform <span class="reg-pill play">verspielt</span></div>
     <div class="bubble" style="padding:0; overflow:hidden">
       <div style="height:80px; background:linear-gradient(135deg,#1f3a5f,#3b6ea5); display:flex; align-items:center; justify-content:center; color:#cfe4ff; font-size:12px;">📈 [ Wetter-Chart ]</div>
     </div>
@@ -185,7 +185,7 @@
   </div>
 
   <div class="phone">
-    <div class="cap">/zeitplan — Liste <span class="reg-pill neutral">neutral</span></div>
+    <div class="cap">📅 Zeitpläne — Liste <span class="reg-pill neutral">neutral</span></div>
     <div class="bubble">📅 <b>Zeitpläne</b>
 
 ✅ <b>Rasen morgens</b> · 06:00 Uhr
@@ -195,17 +195,18 @@
     <div class="btnrow"><span class="btn">✅ Rasen morgens (06:00)</span><span class="btn" style="flex:0;min-width:36px">🗑️</span></div>
     <div class="btnrow"><span class="btn">⏸️ Hochbeet abends (20:15)</span><span class="btn" style="flex:0;min-width:36px">🗑️</span></div>
     <div class="btnrow"><span class="btn">➕ Neuer Zeitplan</span></div>
-    <div class="note">Leerzustand: „Noch keine Zeitpläne — tipp auf ➕ Neuer Zeitplan oder nutze /add."</div>
+    <div class="note">Leerzustand: „Noch keine Zeitpläne — tipp auf ➕ Neuer Zeitplan."</div>
   </div>
 
   <div class="phone">
     <div class="cap">/start <span class="reg-pill neutral">neutral</span> · Hauptmenü mit 🚿/🛑</div>
     <div class="bubble">👋 <b>Willkommen in deinem Garten!</b>
 
-Ich halte deine Bewässerung im Griff. Nimm die Buttons unten oder die Befehle <code>/status</code> und <code>/zeitplan</code>.</div>
-    <div class="kbd-row"><div class="kbd-key">📊 Status anzeigen</div><div class="kbd-key">📅 Zeitpläne</div></div>
-    <div class="kbd-row"><div class="kbd-key" style="background:#2a3f2d">🚿 Bewässern starten</div><div class="kbd-key" style="background:#3d2a2a">🛑 Sofort Stopp</div></div>
-    <div class="kbd-row"><div class="kbd-key">📸 Foto anzeigen</div><div class="kbd-key">⚙️ Setup</div></div>
+Ich halte deine Bewässerung im Griff. Nimm die Buttons unten oder den Befehl <code>/status</code>.</div>
+    <div class="kbd-row"><div class="kbd-key">📊 Status</div><div class="kbd-key">💧 Gießcheck</div></div>
+    <div class="kbd-row"><div class="kbd-key" style="background:#2a3f2d">🚿 Bewässern</div><div class="kbd-key" style="background:#3d2a2a">🛑 Stopp</div></div>
+    <div class="kbd-row"><div class="kbd-key">📅 Zeitpläne</div><div class="kbd-key">📷 Kamera</div></div>
+    <div class="kbd-row"><div class="kbd-key">⚙️ Einstellungen</div></div>
   </div>
 
   <div class="phone">
@@ -317,7 +318,7 @@ Halt den Reset-Knopf 5 Sekunden gedrückt, bis die LED schnell blinkt.
 „Terrasse" ist da und als <code>valve_a1b2</code> registriert. Prüf den Status mit <code>/status</code>.</div>
     <div class="bubble">❌ <b>Kopplung fehlgeschlagen</b>
 
-Nach 90 Sekunden kein Ventil erkannt. Erneut versuchen: <code>/setup</code></div>
+Nach 90 Sekunden kein Ventil erkannt. Erneut versuchen über ⚙️ Einstellungen ▸ 🔧 Ventil koppeln.</div>
     <div class="bubble">✅ <b>Kamera gekoppelt!</b>
 
 „Nordseite" ist registriert · Intervall 15 Min.</div>
@@ -381,7 +382,7 @@ Die Kamera sendet wieder Bilder.</div>
   </div>
 
   <div class="phone">
-    <div class="cap">Tagesbericht (DailyReportTriggered) — wie /report</div>
+    <div class="cap">Tagesbericht (DailyReportTriggered) — wie /tagesbericht</div>
     <div class="bubble">🌱 <b>Guten Morgen — dein Tagesbericht</b>
 <i>Mi, 18.06.</i>
 
@@ -418,12 +419,7 @@ Nimm die Buttons unten oder <code>/status</code> für die Übersicht.</div>
 
   <div class="phone">
     <div class="cap">Format- &amp; Ablauf-Fehler</div>
-    <div class="bubble">❌ <b>Ungültiges Format</b>
-So geht's: <code>/add Name, HH:MM, Tage, Dauer, [Menge]</code>
-z. B. <code>/add Abend, 20:00, Mon,Wed,Fri, 12, 30</code>
-Tage: <code>everyday</code> oder <code>Mon,Tue,…</code></div>
-    <div class="bubble">❌ <b>Ungültiges Format</b>
-So geht's: <code>/delete &lt;ID&gt;</code> (z. B. <code>/delete 2</code>)</div>
+    <div class="bubble">❌ <b>Ungültige Eingabe.</b> Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:</div>
     <div class="bubble">Es läuft bereits eine Bewässerung.</div>
     <div class="bubble">Das überschreitet das Sicherheitslimit (30 Min).</div>
     <div class="bubble">Zeitplan ID 5 gibt's nicht.</div>

@@ -97,7 +97,7 @@ def _pairing_worker(chat_id: int, notify_fn, wish_name: str):
                 "❌ *Ventil-Kopplung fehlgeschlagen.*\n\n"
                 "Kein Ventil erkannt nach 90 Sekunden. "
                 "Koppelmodus wurde automatisch deaktiviert.\n\n"
-                "Erneut versuchen: `/setup`"
+                "Erneut versuchen über ⚙️ Einstellungen ▸ 🔧 Ventil koppeln."
             )
             return
 
