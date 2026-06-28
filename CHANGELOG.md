@@ -1,3 +1,10 @@
+## v1.12.1 — 2026-06-28
+
+### Behoben
+- „Stopp" schließt jetzt auch extern/manuell geöffnete Ventile, nicht nur laufende Güsse und Nebel
+
+---
+
 ## v1.12.0 — 2026-06-28
 
 ### Neu
