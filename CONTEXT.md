@@ -77,7 +77,7 @@ Das vom Füllstandssensor per MQTT an die Steuerzentrale gesendete Datenpaket mi
 _Avoid_: Sensor-Signal, Telemetrie-Paket
 
 **Gieß-Empfehlung**:
-Die vom Bewässerungs-Daemon berechnete Einschätzung, ob eine manuelle oder geplante Bewässerung heute sinnvoll ist. Basiert auf dem Regen-Fenster (letzte + nächste 24h), der Tagestemperatur und der Hitzestrecke. Wird auf Anfrage über den Telegram-Bot ausgegeben (`/giesscheck`).
+Die vom Bewässerungs-Daemon berechnete Einschätzung, ob eine manuelle oder geplante Bewässerung heute sinnvoll ist. Basiert auf dem Regen-Fenster (letzte + nächste 24h), der Tagestemperatur und der Hitzestrecke. Wird auf Anfrage über den Telegram-Bot ausgegeben.
 _Avoid_: Gieß-Ratschlag, Bewässerungs-Hinweis, Watering-Advice
 _Status_: 🚧 In Umsetzung — geplant in Feature 0009 (`docs/features/0009-giesscheck-bewasserungsempfehlung.md`, ADR 0021). Im Code noch nicht aktiv; aktuell existiert nur die Teil-Funktion `evaluate_rain_window` (Regen-Fenster).
 
