@@ -621,11 +621,16 @@ Regen 48h-Fenster: 2.8 mm (gefallen 1.8 mm [ERA5-Reanalyse], erwartet 1.0 mm), S
     <div class="src">_on_watering_rain_warning · WateringRainWarning (Guss-Vorwarnung, Feature 0034)</div>
     <div class="bubble">🌧 <b>Regen voraus — Guss in 5 Min betroffen</b>
 Zeitplan „Rasen morgens“ um 06:00 (Rasen-Düse) würde regenbedingt angepasst.
-Geplant ohne Regen: 10 Min / 20 L.
+Geplant: 10 Min / 20 L
+→ <b>Reduziert auf 5 Min / 10 L</b> (50 %)
 Regen 48h-Fenster: 6.0 mm (gefallen 5.0 mm [ERA5-Reanalyse], erwartet 1.0 mm), Schwelle 3.0 mm.
 
 Soll trotzdem voll gegossen werden?
-      <div class="btnrow"><span class="btn">🚿 Regen ignorieren</span></div></div>
+      <div class="btnrow"><span class="btn">🚿 Regen ignorieren</span></div>
+      <ul class="variants">
+        <li><b>Reduzierung</b> (0 &lt; Faktor &lt; 1): „→ <b>Reduziert auf &lt;Dauer&gt; Min / &lt;Menge&gt; L</b> (&lt;Faktor&gt; %)“ — bei zeitbasiertem Zeitplan ohne Volumenziel entfällt „/ &lt;Menge&gt; L“.</li>
+        <li><b>Komplett-Skip</b> (Faktor 0): „→ <b>Komplett übersprungen</b> (kein Guss)“ statt der Reduzier-Zeile.</li>
+      </ul></div>
     <div class="src">→ Antwort auf „🚿 Regen ignorieren" (rainoverride_ID_Datum)</div>
     <div class="bubble">🚿 <b>Regen-Übersteuerung aktiv</b>
 Der Guss läuft zu seiner geplanten Zeit mit den vollen Werten.</div>

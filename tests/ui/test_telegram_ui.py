@@ -2024,11 +2024,13 @@ class TestRainOverride(unittest.TestCase):
         return {"id": "cb1", "data": data,
                 "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
 
-    def _warning(self, sid=7, name="Rasen", run_date="2099-01-01"):
+    def _warning(self, sid=7, name="Rasen", run_date="2099-01-01",
+                 duration_scaled=5, volume_scaled=10, factor=0.5):
         from daemon.core.scheduler_events import WateringRainWarning
         return WateringRainWarning(
             schedule_id=sid, schedule_name=name, time="20:00", run_date=run_date,
             valve_names=["Rasen-Düse"], duration_original=10, volume_original=20,
+            duration_scaled=duration_scaled, volume_scaled=volume_scaled, factor=factor,
             reasons=["Regen 48h-Fenster: 6.0 mm, Schwelle 3.0 mm."])
 
     @patch("daemon.ui.telegram_ui.telegram_client")
@@ -2045,6 +2047,25 @@ class TestRainOverride(unittest.TestCase):
         # Inline-Button mit dem richtigen Callback
         callbacks = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
         self.assertIn("rainoverride_7_2099-01-01", callbacks)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_rain_warning_shows_reduced_target(self, mock_client):
+        """Die Vorwarnung nennt die reduzierten Zielwerte (Zeit/Menge/Prozent)."""
+        from daemon.ui.telegram_ui import _on_watering_rain_warning
+        _on_watering_rain_warning(self._warning(duration_scaled=5, volume_scaled=10, factor=0.5))
+        text = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("5 Min", text)      # reduzierte Dauer
+        self.assertIn("10 L", text)       # reduziertes Volumen
+        self.assertIn("50 %", text)       # Faktor
+        self.assertIn("10 Min", text)     # Originaldauer weiterhin sichtbar
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_rain_warning_skip_shows_uebersprungen(self, mock_client):
+        """Bei Faktor 0 meldet die Vorwarnung 'übersprungen' statt reduzierter Werte."""
+        from daemon.ui.telegram_ui import _on_watering_rain_warning
+        _on_watering_rain_warning(self._warning(factor=0.0))
+        text = mock_client.broadcast_notification.call_args[0][0]
+        self.assertIn("übersprungen", text.lower())
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")

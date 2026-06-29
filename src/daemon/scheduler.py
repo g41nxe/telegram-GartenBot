@@ -132,6 +132,9 @@ def _check_rain_warning(sched: dict, now: datetime):
         valve_names=_resolve_schedule_valve_names(sched),
         duration_original=plan.duration_original,
         volume_original=plan.volume_original,
+        duration_scaled=plan.duration,
+        volume_scaled=plan.volume,
+        factor=plan.factor,
         reasons=list(plan.reasons),
     ))
 

@@ -28,12 +28,14 @@ class WateringSkipped(Event):
 
 class WateringRainWarning(Event):
     """Guss-Vorwarnung (Feature 0034): ~5 Min vor einem geplanten Guss, der regenbedingt
-    übersprungen oder reduziert würde. Trägt die Originalwerte und das Datum des geplanten
-    Laufs, damit der Nutzer die Reduzierung/das Überspringen für genau diesen Lauf
-    übersteuern kann (Regen-Übersteuerung)."""
+    übersprungen oder reduziert würde. Trägt Original- *und* reduzierte Zielwerte (samt
+    Faktor) sowie das Datum des geplanten Laufs, damit der Nutzer sieht, worauf angepasst
+    würde, und die Reduzierung/das Überspringen für genau diesen Lauf übersteuern kann
+    (Regen-Übersteuerung)."""
 
     def __init__(self, schedule_id: int, schedule_name: str, time: str, run_date: str,
-                 valve_names: list, duration_original: int, volume_original: int, reasons: list):
+                 valve_names: list, duration_original: int, volume_original: int, reasons: list,
+                 duration_scaled: int = 0, volume_scaled: int = 0, factor: float = 0.0):
         self.schedule_id = schedule_id
         self.schedule_name = schedule_name
         self.time = time
@@ -41,6 +43,11 @@ class WateringRainWarning(Event):
         self.valve_names = valve_names
         self.duration_original = duration_original
         self.volume_original = volume_original
+        # Reduzierte Zielwerte + Faktor, damit die Vorwarnung anzeigen kann, worauf
+        # angepasst würde (factor == 0 ⇒ kompletter Skip).
+        self.duration_scaled = duration_scaled
+        self.volume_scaled = volume_scaled
+        self.factor = factor
         self.reasons = reasons
 
 class ScheduleFailed(Event):

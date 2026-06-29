@@ -590,6 +590,7 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertEqual(w.schedule_name, "Rasen")
         self.assertEqual(w.duration_original, 10)
         self.assertEqual(w.volume_original, 20)
+        self.assertEqual(w.factor, 0.0, "Skip-Fall: Faktor 0 wird mitgeliefert")
         self.assertTrue(any("mm" in r for r in w.reasons), "Begründung mit mm-Wert erwartet")
 
     def test_15e_rain_warning_published_on_scaled(self):
@@ -611,6 +612,9 @@ class TestGardenIrrigation(unittest.TestCase):
 
         self.assertEqual(len(warnings), 1)
         self.assertEqual(warnings[0].schedule_id, 4243)
+        # Reduzierte Zielwerte und Faktor werden mitgeliefert (für die Vorwarnung-Anzeige)
+        self.assertEqual(warnings[0].duration_scaled, 5)   # 10 Min × 0.5
+        self.assertEqual(warnings[0].factor, 0.5)
 
     def test_15f_no_warning_on_full_watering(self):
         """T−5: Bei vollem Guss (kein Eingriff) wird keine Vorwarnung publiziert."""
