@@ -57,7 +57,7 @@ Die konfigurierbare untere Schwelle der durchschnittlichen Flussrate (L/min) ein
 _Avoid_: Durchflussschwelle, Min-Flow
 
 **Ventil-Kopplung**:
-Der geführte Einrichtungsvorgang im Telegram-Bot (`/setup`), bei dem ein neues Ventil mit dem Funk-Koordinator verbunden wird. Der Benutzer vergibt vorab einen Wunschnamen. Der Bewässerungs-Daemon aktiviert temporär den Koppelmodus des Mittelweg-Dienstes, wartet auf das Beitrittssignal des Ventils, weist ihm einen eindeutigen Systemnamen (`valve_<ieee_address>`) zu und registriert es in der Datenbank.
+Der geführte Einrichtungsvorgang im Telegram-Bot, bei dem ein neues Ventil mit dem Funk-Koordinator verbunden wird. Der Benutzer vergibt vorab einen Wunschnamen. Der Bewässerungs-Daemon aktiviert temporär den Koppelmodus des Mittelweg-Dienstes, wartet auf das Beitrittssignal des Ventils, weist ihm einen eindeutigen Systemnamen (`valve_<ieee_address>`) zu und registriert es in der Datenbank.
 _Avoid_: Pairing, Registrierung, Gerät hinzufügen
 
 **Guss-Steuerung**:
