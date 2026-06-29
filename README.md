@@ -43,16 +43,16 @@ Bedient wird er sicher von überall über einen whitelist-basierten **Telegram-B
 
 *   **🟢 Kombinierter Guss (First-to-Hit Limit):** Zuverlässiger Überflutungsschutz. Jeder Bewässerungslauf (manuell wie geplant) überwacht *parallel* ein **Zeitlimit** (Minuten) und ein **Volumenlimit** (Liter). Das Ventil schließt automatisch, sobald der *erste* Grenzwert erreicht wird (z. B. 50 Liter fließen ODER 15 Minuten verstreichen).
 *   **📡 Mehrfach-Ventil-Unterstützung:** Kopple und benenne beliebig viele Sonoff Hydro ONE Ventile über den Telegram-Bot. Zeitpläne steuern mehrere Ventile **sequentiell** (nacheinander, druckschonend) oder **parallel** (gleichzeitig, jedes mit eigenem Grenzwert). Live-Status und Tagesbericht zeigen Batterie, Signalstärke und letztes Lebenszeichen pro Ventil separat an.
-*   **📅 Geführter Zeitplan-Assistent:** Erstelle *und bearbeite* Zeitpläne in 6 Schritten direkt im Chat über Inline-Tastaturen — freie Namenseingabe, Stunden-Raster (6×4), 5-Minuten-Schritte, Dauer- und Volumen-Schnellwahl (5–25 Min bzw. 10/25/50/80 L, jeweils mit Option für eigene Werte) sowie Multi-Select-Wochentage. Alternativ legt der Power-User-Befehl `/add <Name>, <Uhrzeit>, <Tage>, <Dauer>, [Menge_Liter]` einen Zeitplan in einer Zeile an.
+*   **📅 Geführter Zeitplan-Assistent:** Erstelle *und bearbeite* Zeitpläne in 6 Schritten direkt im Chat über Inline-Tastaturen — freie Namenseingabe, Stunden-Raster (6×4), 5-Minuten-Schritte, Dauer- und Volumen-Schnellwahl (5–25 Min bzw. 10/25/50/80 L, jeweils mit Option für eigene Werte) sowie Multi-Select-Wochentage.
 *   **🌧️ Lokaler Regensensor (primäre Niederschlagsquelle):** Ein gekoppelter Funk-Regensensor (Aqua Scope RANWIE01) meldet gemessenen Regen per MQTT. Er ist die **primäre** Quelle für den *gefallenen* Regen der letzten 24 h; ist der Sensor länger als `RAIN_SENSOR_OFFLINE_HOURS` offline, greift automatisch das ERA5-Archiv als Fallback. Die *Vorhersage* der nächsten 24 h liefert weiterhin Open-Meteo (ADR 0028). Setzt während eines laufenden Gusses Regen ein, wird der Guss **sofort unterbrochen**; beim Ein- und Aussetzen von Regen erfolgt zudem eine Flanken-Benachrichtigung.
-*   **🪴 Graduierte Gieß-Steuerung & Gieß-Empfehlung (`/giesscheck`):** Statt eines binären „gießen/überspringen“ berechnet der Daemon aus gefallenem + erwartetem Regen sowie der Temperatur einen **Skalierungsfaktor von 0–100 %**. Ein geplanter Guss wird also bei leichtem Regen nur *reduziert* statt komplett übersprungen. Eine **Hitzestrecke** (mehrere heiße Tage in Folge) erhöht den Bedarf. `/giesscheck` liefert jederzeit ein Verdict mit klarer Begründung.
-*   **📷 Garten-Kamera (optional, M5Stack Timer Camera F):** Kopple eine batteriebetriebene Kamera über `/camera_setup` (Wizard: Name, Aufnahme-Intervall, Auflösung VGA/XGA/UXGA, Bildqualität Hoch/Mittel/Niedrig). **Getimte Aufnahmen** zu frei konfigurierten Uhrzeiten (`/aufnahmen`), Abruf des aktuellen Bildes per `/photo`, automatisches Foto kurz nach jedem Guss sowie Löschen der Bild-Historie per `/photo_clear`. Die Bilder liegen als einzelne JPGs im **Dateisystem** (`data/camera/<name>/`); ein täglicher Job löscht Aufnahmen älter als `CAMERA_CLEANUP_DAYS` (Standard 30 Tage), behält aber ein Bild pro Tag als Langzeit-Archiv. Akkustand und Online-Status erscheinen im `/status`.
+*   **🪴 Graduierte Gieß-Steuerung & Gieß-Empfehlung (💧 Gießcheck):** Statt eines binären „gießen/überspringen“ berechnet der Daemon aus gefallenem + erwartetem Regen sowie der Temperatur einen **Skalierungsfaktor von 0–100 %**. Ein geplanter Guss wird also bei leichtem Regen nur *reduziert* statt komplett übersprungen. Eine **Hitzestrecke** (mehrere heiße Tage in Folge) erhöht den Bedarf. Der Button **💧 Gießcheck** liefert jederzeit ein Verdict mit klarer Begründung.
+*   **📷 Garten-Kamera (optional, M5Stack Timer Camera F):** Kopple eine batteriebetriebene Kamera über den Kopplungs-Wizard (Name, Aufnahme-Intervall, Auflösung VGA/XGA/UXGA, Bildqualität Hoch/Mittel/Niedrig). **Getimte Aufnahmen** zu frei konfigurierten Uhrzeiten, Abruf des aktuellen Bildes, automatisches Foto kurz nach jedem Guss sowie Löschen der Bild-Historie. Die Bilder liegen als einzelne JPGs im **Dateisystem** (`data/camera/<name>/`); ein täglicher Job löscht Aufnahmen älter als `CAMERA_CLEANUP_DAYS` (Standard 30 Tage), behält aber ein Bild pro Tag als Langzeit-Archiv. Akkustand und Online-Status erscheinen im `/status`.
 *   **🐕 Inaktivitäts-Watchdog:** Proaktive Überwachung batteriebetriebener Geräte. Bleibt das Lebenszeichen eines Ventils (z. B. > 24 h), eine Messung des Regensensors (z. B. > 18 h) oder ein Lebenszeichen der Kamera aus, warnt der Bot sofort vor einem Verbindungs- oder Batterieausfall.
 *   **🚨 Unerwartete-Ventilöffnung-Alarm:** Öffnet ein Ventil ohne aktiven Guss (z. B. durch manuelle Betätigung oder Fehlfunktion), meldet der Bot dies umgehend per Push.
 *   **🌦️ Wettervorhersage & Offline-Cache:** Der Daemon holt regelmäßig (alle ~30 Min) die Open-Meteo-Vorhersage und legt sie lokal in SQLite ab. Durch dieses Cache-first-Vorgehen bleibt die Gieß-Entscheidung auch bei temporärem Internetausfall funktionsfähig. Ein Wetterchart visualisiert ±24 h Regen inklusive „Jetzt“-Markierung.
 *   **🔌 Live-Verbindungsanzeige:** `/status` zeigt in Echtzeit den MQTT-Brokerstatus und für jedes Ventil separat Verbindung, Batterie und Signalqualität — mit Garten-Ampel (🟢/🟡/🔴) und Progressive Disclosure (technische Details nur bei Problemen).
 *   **🔄 OTA-Software-Update (`/update`):** Aktualisiert den Daemon direkt aus dem Chat über GitHub-Releases inkl. Release-Notes, automatischer Telegram-Bestätigung und Rollback bei Fehlschlag — ohne SSH-Zugriff.
-*   **⚙️ In-Chat-Einstellungen (`/einstellungen`):** Schwellenwerte (z. B. Regenschwelle, Gießcheck-Parameter) lassen sich direkt im Chat anpassen.
+*   **⚙️ In-Chat-Einstellungen:** Schwellenwerte (z. B. Regenschwelle, Gießcheck-Parameter) lassen sich direkt im Chat anpassen.
 *   **⚡ Minimaler Footprint:** Telegram-Anbindung, Open-Meteo-Abruf und Kamera-Empfänger laufen rein auf der Python-Standardbibliothek (`urllib.request`, `http.server`). Keine schweren Frameworks – optimiert für den Single-Core-Prozessor des Pi Zero W. Einzige produktive Drittabhängigkeit ist `paho-mqtt`.
 
 ---
@@ -286,24 +286,24 @@ Der Bot bietet ein permanentes Tastenmenü am unteren Bildschirmrand sowie ein n
 
 ### Bewässerung
 *   **📊 Status (`/status`):** Dashboard mit MQTT-Brokerstatus, Zustand aller Ventile (Verbindung, Batterie, Signalstärke), Regensensor- und Kamera-Status, Wetterdaten, nächster Bewässerung und Verlauf — mit Garten-Ampel 🟢/🟡/🔴.
-*   **📅 Zeitsteuerung (`/zeitplan`):** Listet aktive Zeitpläne, bietet **`➕ Neuer Zeitplan`** (geführter Assistent) und das Bearbeiten bestehender Zeitpläne.
+*   **📅 Zeitsteuerung:** Listet aktive Zeitpläne, bietet **`➕ Neuer Zeitplan`** (geführter Assistent) und das Bearbeiten bestehender Zeitpläne.
 *   **🚿 Bewässern starten:** Zweistufiger manueller Guss-Assistent für Zeitlimit (Minuten) und Volumenlimit (Liter).
-*   **🛑 Sofort Stopp (`/stop`):** Schließt alle aktiven Ventile unverzüglich und bricht alle Scheduler-Threads ab.
-*   **🪴 Gieß-Empfehlung (`/giesscheck`):** Verdict + Begründung auf Basis von Regen-Fenster, Temperatur und Hitzestrecke.
-*   **📈 Tagesbericht (`/report`):** Manueller Abruf des kompakten Tages-Briefings inkl. Wetterchart.
+*   **🛑 Sofort Stopp:** Schließt alle aktiven Ventile unverzüglich und bricht alle Scheduler-Threads ab.
+*   **🪴 Gieß-Empfehlung (💧 Gießcheck):** Verdict + Begründung auf Basis von Regen-Fenster, Temperatur und Hitzestrecke.
+*   **📈 Tagesbericht (`/tagesbericht`):** Manueller Abruf des kompakten Tages-Briefings inkl. Wetterchart.
 
 ### Geräte koppeln
-*   **🔧 Ventil koppeln (`/setup`):** Fragt zuerst nach einem **Wunschnamen** (z. B. „Terrasse“), dann wird der Reset-Knopf am Sonoff Hydro ONE gedrückt. Das Ventil erhält automatisch einen eindeutigen MQTT-Namen (`valve_<letzte 4 Stellen der IEEE-Adresse>`) und wird registriert. Mehrere Ventile lassen sich nacheinander hinzufügen.
-*   **📷 Kamera koppeln (`/camera_setup`):** 4-Schritte-Wizard (Name, Aufnahme-Intervall, Auflösung VGA/XGA/UXGA, Bildqualität Hoch/Mittel/Niedrig).
+*   **🔧 Ventil koppeln:** Fragt zuerst nach einem **Wunschnamen** (z. B. „Terrasse“), dann wird der Reset-Knopf am Sonoff Hydro ONE gedrückt. Das Ventil erhält automatisch einen eindeutigen MQTT-Namen (`valve_<letzte 4 Stellen der IEEE-Adresse>`) und wird registriert. Mehrere Ventile lassen sich nacheinander hinzufügen.
+*   **📷 Kamera koppeln:** 4-Schritte-Wizard (Name, Aufnahme-Intervall, Auflösung VGA/XGA/UXGA, Bildqualität Hoch/Mittel/Niedrig).
 
 ### Kamera
-*   **🖼️ Aktuelles Bild (`/photo`):** Fordert ein frisches Foto an; die Caption zeigt den Aufnahmezeitstempel.
-*   **⏱️ Foto-Uhrzeiten (`/aufnahmen`):** Verwaltung der getimten Aufnahmezeitpunkte (mit Wizard).
-*   **🗑️ Bild-Historie löschen (`/photo_clear`):** Löscht die Bild-Historie der Kamera (mit Rückfrage).
+*   **🖼️ Aktuelles Bild:** Fordert ein frisches Foto an; die Caption zeigt den Aufnahmezeitstempel.
+*   **⏱️ Foto-Uhrzeiten:** Verwaltung der getimten Aufnahmezeitpunkte (mit Wizard).
+*   **🗑️ Bild-Historie löschen:** Löscht die Bild-Historie der Kamera (mit Rückfrage).
 
 ### System
 *   **🔄 Software-Update (`/update`):** OTA-Update aus dem neuesten GitHub-Release inkl. Release-Notes und Erfolgs-/Rollback-Meldung.
-*   **⚙️ Einstellungen (`/einstellungen`):** Passt Schwellenwerte direkt im Chat an.
+*   **⚙️ Einstellungen:** Passt Schwellenwerte direkt im Chat an.
 
 ---
 
