@@ -11,6 +11,7 @@
   <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python">
   <img src="https://img.shields.io/badge/platform-Raspberry%20Pi%20Zero%20W-c51a4a" alt="Platform">
   <img src="https://img.shields.io/badge/runtime%20deps-paho--mqtt-green" alt="Runtime deps">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0"></a>
 </p>
 
 </div>
@@ -33,7 +34,6 @@ Bedient wird er sicher von überall über einen whitelist-basierten **Telegram-B
 - [🔄 OTA-Updates](#-ota-updates)
 - [🩺 Troubleshooting](#-troubleshooting)
 - [🧪 Entwicklung und Tests](#-entwicklung-und-tests)
-- [🤝 Mitwirken](#-mitwirken)
 - [🔒 Sicherheit](#-sicherheit)
 - [📄 Lizenz](#-lizenz)
 
@@ -365,22 +365,6 @@ Die Tests decken Datenbank-Schema und CRUD, Multi-Ventil-Kopplung, Zeitsteuerung
 
 ---
 
-## 🤝 Mitwirken
-
-Vor Änderungen am Code lies in dieser Reihenfolge:
-
-1. [`CONTEXT.md`](CONTEXT.md) — Domänensprache (Ubiquitous Language). Nutze die exakten deutschen Begriffe.
-2. [`ARCHITECTURE.md`](ARCHITECTURE.md) — strukturelle Regeln (zustandslose Adapter, EventBus, Core ohne I/O).
-3. [`docs/adr/`](docs/adr/) — Architekturentscheidungen (ADRs 0001–0032). Abweichungen explizit kennzeichnen.
-
-Weitere Konventionen:
-
-*   **Aufgaben** werden mit dem **Beads**-Issue-Tracker verwaltet (`bd ready`, `bd show <id>`).
-*   **TDD:** Schreibe zuerst einen fehlschlagenden Test; Coverage darf nicht sinken.
-*   **Telegram-Nachrichten:** Neue/geänderte benutzersichtbare Texte müssen dem Design-System entsprechen und in [`docs/design/telegram-nachrichten.html`](docs/design/telegram-nachrichten.html) gespiegelt werden.
-
----
-
 ## 🔒 Sicherheit
 
 *   **Keine offenen Ports:** Telegram-Long-Polling kommt ohne Portweiterleitung/NAT-Traversal aus — der Pi initiiert alle Verbindungen ausgehend.
@@ -393,4 +377,10 @@ Weitere Konventionen:
 
 ## 📄 Lizenz
 
-Für dieses Projekt ist derzeit **keine Lizenz** hinterlegt. Ohne ausdrückliche Lizenz gelten die Standard-Urheberrechte — eine Nutzung/Weiterverbreitung sollte vorab mit dem Autor geklärt werden. *(Empfehlung: eine `LICENSE`-Datei ergänzen, z. B. MIT.)*
+Dieses Projekt steht unter der **GNU Affero General Public License v3.0** (AGPL-3.0) — siehe [`LICENSE`](LICENSE).
+
+Das bedeutet: Du darfst den Code frei nutzen, verändern und weitergeben. Wer das Projekt verändert und weitergibt **oder als Netzwerkdienst betreibt**, muss den vollständigen Quellcode (inkl. Änderungen) unter derselben Lizenz verfügbar machen.
+
+Der mitgelieferte *Mittelweg-Dienst* unter [`vendor/zigbee2mqtt/`](vendor/zigbee2mqtt) ist eine eingebundene Drittkomponente und behält seine eigene Lizenz (GPL-3.0, siehe [`vendor/zigbee2mqtt/LICENSE`](vendor/zigbee2mqtt/LICENSE)).
+
+© 2026 Dan Hachenberger
