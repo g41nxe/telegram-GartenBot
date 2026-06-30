@@ -105,8 +105,24 @@ Die Überwachungslogik im Bewässerungs-Daemon, die das Ausbleiben regelmäßige
 _Avoid_: Offline-Timer, Connection-Checker, Heartbeat-Sensor
 
 **Tagesbericht**:
-Der automatisch generierte Statusbericht, der täglich um 08:00 Uhr per Telegram-Bot versendet wird und den Systemzustand, die Wetterlage sowie die Zyklenhistorie der letzten 24 Stunden für den Benutzer zusammenfasst.
+Der automatisch generierte Statusbericht, der täglich um 08:00 Uhr per Telegram-Bot versendet wird und den Systemzustand, die Wetterlage sowie die Zyklenhistorie der letzten 24 Stunden für den Benutzer zusammenfasst. Gegliedert entlang einer Zeitachse: **Rückblick** (Gestern-Block) → **Ausblick** (Heute-Block) → **Zustand** (Zustands-Block als Abschluss).
 _Avoid_: Status-Report, Update-Meldung, Daily-Report
+
+**Gestern-Block (Rückblick)**:
+Der erste Abschnitt des Tagesberichts unter der Überschrift `*Gestern*`. Fasst das 24-h-Fenster in **zwei kompakten Zeilen** zusammen (Format wie der Heute-Block, `·`-gebündelt): eine **Aktivitätszeile** (Guss 💧 inkl. Nebel-Intervall 🌫️, falls genebelt) und eine **Wetterzeile** (gefallener Regen 🌧 und Temperatur Ø/max 🌡 kombiniert).
+_Avoid_: Verlauf, History-Block, Rückschau.
+
+**Heute-Block (Ausblick)**:
+Der zweite Abschnitt des Tagesberichts unter der Überschrift `*Heute*`. Einzeilige Wettervorhersage: Bedingungs-Emoji (aus dem WMO-Wettercode) und -Text, Temperatur-Spanne sowie — bei Regen — erwartete Menge und Wahrscheinlichkeit.
+_Avoid_: Vorschau, Forecast-Zeile, Prognose-Block.
+
+**Zustands-Block**:
+Der abschließende Abschnitt des Tagesberichts. Im Normalfall die einzeilige Bestätigung `✅ System: alles in Ordnung` (ohne Ampel-Headline); im Problemfall werden die Warnungen direkt gelistet (Dienst-Ausfall, Ventil-Anomalie, schwache Batterie, Watchdog). Der **Regensensor** ist dabei eine Issue-Quelle im selben Format wie ein Ventil (`🟡 Regensensor: Batterie schwach (X%)`, `⚠️ Regensensor: kein Signal (Watchdog aktiv)`). Steht bewusst am **Schluss** des Berichts (nicht zuvorderst), da kritische Lagen ohnehin über Echtzeit-Benachrichtigungen gemeldet werden.
+_Avoid_: Status-Block, Health-Block, Fußzeile.
+
+**Messquelle-Kennzeichnung**:
+Im Tagesbericht stammen Regen und Temperatur des Gestern-Blocks im Normalfall vom lokalen Regensensor und tragen **keinen** Quell-Tag (stiller Standard — die Regel schweigt). Nur die Ausnahme wird benannt: Fällt der Sensor aus, liefern **beide** Werte der Wetter-Dienst (Open-Meteo) und tragen dann den Tag `(Open-Meteo)`. Guss (eigene Historie) wird nie getaggt.
+_Avoid_: geschätzt, lokal gemessen, online/offline, ERA5 (benutzersichtbar).
 
 **Software-Update (OTA)**:
 Das Over-the-Air Update-Verfahren, das dem Benutzer über den Telegram-Bot ermöglicht, neue Releases direkt von GitHub herunterzuladen und auf der Steuerzentrale vollautomatisch zu installieren.
