@@ -140,24 +140,33 @@ Fr, 19.06. · 14:32 Uhr
     </div>
     <div class="bubble">🌿 <b>Guten Morgen, Fr 19.06.!</b>
 
-☀️ Heute 14–24 °C · Leicht bewölkt (15 % ☂)
-💧 Gestern 1× bewässert · 45 L
+<b>Gestern</b>
+💧 1× bewässert · 45 l
+🌧 0.0 mm · 🌡 Ø 18.0 °C, max 24.0 °C
+
+<b>Heute</b>
+🌤️ Leicht bewölkt · 14–24 °C · 15 % ☂
+
 ✅ System: alles in Ordnung</div>
-    <div class="note">Problemfall-Variante (mind. eine Warnung):</div>
+    <div class="note">Problemfall-Variante (mind. eine Warnung — Zustand am Schluss):</div>
     <div class="bubble">🌿 <b>Guten Morgen, Fr 19.06.!</b>
 
-🟡 Terrasse: Batterie schwach (15%)
+<b>Gestern</b>
+💧 2× bewässert · 80 l · 🌫️ 3 Fenster · 45 Min
+🌧 0.0 mm · 🌡 Ø 24.1 °C, max 33.5 °C
 
-☀️ Heute 14–24 °C · Leicht bewölkt (15 % ☂)
-💧 Gestern 1× bewässert · 45 L</div>
-    <div class="note">Manuelle Auslösung (/tagesbericht) und automatischer 08:00-Bericht erzeugen identischen Text.</div>
+<b>Heute</b>
+🌤️ Leicht bewölkt · 14–24 °C · 15 % ☂
+
+🟡 Terrasse: Batterie schwach (15%)
+🟡 Regensensor: Batterie schwach (18%)</div>
+    <div class="note">Manuelle Auslösung (/tagesbericht) und automatischer 08:00-Bericht erzeugen identischen Text. Zeitachse: <b>Gestern → Heute → Zustand</b> (ADR 0037).</div>
     <ul class="variants">
-      <li>Kurzform nur wenn: Dienste OK, kein Watchdog, keine Ventil-Anomalie, alle Batterien über Schwellenwert</li>
-      <li>Problem-Reihenfolge: 🔴 Systemausfall → 🚨 Anomalie → 🟡 Batterie → ⚠️ Watchdog</li>
-      <li>Regen-Extrazeile: <code>🌧 0.8 mm erwartet</code> (wenn rain_next ≥ 0.5 mm)</li>
-      <li>Guss übersprungen: <code>🌧 Guss übersprungen · 2.5 mm gefallen</code></li>
-      <li>Kein Guss, kein Skip: <code>💧 Gestern nicht bewässert</code></li>
-      <li>LQI-Zahlenwerte und Meldungsanzahlen erscheinen nie im Bericht</li>
+      <li>Gestern-Aktivität: <code>💧 1× bewässert · 45 l</code> / <code>N× …</code> / <code>nicht bewässert</code> / <code>💧 Guss übersprungen (Regen)</code>; Nebel angehängt: <code>· 🌫️ N Fenster · M Min</code></li>
+      <li>Gestern-Wetter: <code>🌧 3.0 mm · 🌡 Ø 19.2 °C, max 32.0 °C</code> — Quell-Tag nur im Fallback: <code>(Open-Meteo)</code> bei Sensor-Ausfall (deckt Regen + Temp)</li>
+      <li>Heute: Emoji + Text aus <code>get_wmo_description</code>; Regen gefaltet: <code>· 6.2 mm (80 % ☂)</code></li>
+      <li>Zustand am Schluss: grün <code>✅ System: alles in Ordnung</code>; sonst Issues direkt (Dienst, Ventile, Regensensor im Ventil-Format)</li>
+      <li>Wassermenge in Klein-<code>l</code>; LQI-Zahlen/Meldungsanzahlen erscheinen nie im Bericht</li>
     </ul>
   </div>
 
@@ -657,31 +666,41 @@ Fehler beim Ansteuern des Ventils über MQTT.</div>
     </div>
     <div class="bubble">🌿 <b>Guten Morgen, Di 17.06.!</b>
 
-☀️ Heute 14–27 °C · Leicht bewölkt (12 % ☂)
-💧 Gestern 1× bewässert · 8 L
+<b>Gestern</b>
+💧 1× bewässert · 8 l
+🌧 0.0 mm · 🌡 Ø 16.0 °C, max 27.0 °C
+
+<b>Heute</b>
+🌤️ Leicht bewölkt · 14–27 °C · 12 % ☂
+
 ✅ System: alles in Ordnung</div>
-    <div class="note">Problemfall-Variante (Batterie schwach):</div>
+    <div class="note">Problemfall-Variante (Batterie schwach, Regen heute erwartet):</div>
     <div class="bubble">🌿 <b>Guten Morgen, Di 17.06.!</b>
 
-🟡 Terrasse: Batterie schwach (18%)
+<b>Gestern</b>
+💧 2× bewässert · 17 l · 1 Fehler
+🌧 1.2 mm · 🌡 Ø 14.0 °C, max 19.0 °C (Open-Meteo)
 
-🌦 Heute 11–19 °C · Bewölkt (65 % ☂)
-🌧 4.0 mm erwartet
-💧 Gestern 2× bewässert · 17 L gesamt · 1 Fehler</div>
+<b>Heute</b>
+🌧️ Leichter Regen · 11–19 °C · 4.0 mm (65 % ☂)
+
+🟡 Terrasse: Batterie schwach (18%)</div>
     <div class="note">Problemfall-Variante (Systemausfall):</div>
     <div class="bubble">🌿 <b>Guten Morgen, Di 17.06.!</b>
 
-🔴 Mittelweg-Dienst (Zigbee2MQTT) offline
+<b>Gestern</b>
+💧 nicht bewässert
+🌧 0.0 mm · 🌡 Ø 16.0 °C, max 27.0 °C
 
-☀️ Heute 14–27 °C · Sonnig (5 % ☂)
-💧 Gestern nicht bewässert</div>
+<b>Heute</b>
+☀️ Sonnig / Klar · 14–27 °C · 5 % ☂
+
+🔴 Mittelweg-Dienst (Zigbee2MQTT) offline</div>
     <ul class="variants">
-      <li>Kurzform (✅-Pfad): alle Dienste OK, kein Watchdog, keine Anomalie, alle Batterien über Schwellenwert</li>
-      <li>Problem-Reihenfolge: 🔴 Systemausfall → 🚨 Anomalie → 🟡 Batterie → ⚠️ Watchdog</li>
-      <li>Bewässerungszeile: <code>💧 Gestern 1× bewässert · 8 L</code> / <code>N× … gesamt</code> / <code>nicht bewässert</code> / <code>🌧 Guss übersprungen · 2.5 mm gefallen</code></li>
-      <li>Regen-Extrazeile <code>🌧 X mm erwartet</code>: nur wenn rain_next ≥ 0.5 mm</li>
-      <li>Wetter-Emoji: ☀️ (trocken) · 🌦 (0.5–2 mm) · 🌧 (≥ 2 mm)</li>
-      <li>Kein LQI-Zahlenwert, keine Meldungsanzahl im Bericht (ab Feature 0025)</li>
+      <li>Identisch zu /tagesbericht. Zeitachse <b>Gestern → Heute → Zustand</b> (ADR 0037)</li>
+      <li>Gestern-Wetter trägt nur im Sensor-Ausfall den Tag <code>(Open-Meteo)</code> (deckt Regen + Temp); sonst kein Tag</li>
+      <li>Regensensor erscheint im Problemfall als Issue im Ventil-Format: <code>🟡 Regensensor: Batterie schwach (X%)</code> · <code>⚠️ Regensensor: kein Signal (Watchdog aktiv)</code></li>
+      <li>Heute-Emoji aus <code>get_wmo_description</code> (echter Himmelszustand); Wassermenge in Klein-<code>l</code></li>
     </ul>
   </div>
 

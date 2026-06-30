@@ -965,7 +965,7 @@ def _format_rain_sensor_status() -> str | None:
     offline_hours = config.RAIN_SENSOR_OFFLINE_HOURS
     if age_hours >= offline_hours:
         last_weather = database.get_last_weather()
-        source_label = "Sensor offline · Regen-24h via ERA5"
+        source_label = "Sensor offline · Regen-24h via Open-Meteo"
         if last_weather and last_weather.get("rain_last_source") == "sensor":
             source_label = "Sensor offline"
         return f"🌧 *Regen*  ⚠️ {source_label} (seit {age_hours:.1f} h)"

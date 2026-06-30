@@ -166,7 +166,7 @@ def evaluate_watering(
     # Reasons
     source_label = {
         "sensor": "lokal gemessen",
-        "measured": "ERA5-Reanalyse",
+        "measured": "Open-Meteo",
         "forecast": "Vorhersage (Fallback)",
     }.get(rain_last_source, rain_last_source)
     reasons: list[str] = [

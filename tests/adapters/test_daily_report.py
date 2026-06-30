@@ -193,6 +193,11 @@ class TestSendDailyReport(unittest.TestCase):
         mocks = {k: p.start() for k, p in patches.items()}
         for p in patches.values():
             self.addCleanup(p.stop)
+        # Standard: gesunder Regensensor mit Daten (from_sensor-Pfad, kein Fallback/Issue)
+        mocks["db"].get_last_rain_measurement.return_value = {"battery_pct": 100}
+        mocks["db"].get_rain_stats_last_24h.return_value = {
+            "rain_sum": 0.0, "rain_max": 0.0, "temp_avg": 18.0, "temp_max": 24.0,
+        }
         return mocks
 
     def _setup_db_mock(self, mocks, success=1, failed=0, volume=5.0, skip_count=0, valves=None):
@@ -299,74 +304,6 @@ class TestDailyReportDesignSystem(unittest.TestCase):
         self.assertNotIn("**", result)
 
 
-class TestKameraWarnungen(unittest.TestCase):
-
-    def test_niedrige_kamera_batterie_erzeugt_warnung(self):
-        """Kamera mit Akku <= Schwellenwert erscheint in den Warnungen."""
-        with patch("daemon.config.get_setting", return_value=20):
-            result = dr._camera_warnings({"wish_name": "Hochbeet", "battery": 10})
-        self.assertEqual(len(result), 1)
-        self.assertIn("Hochbeet", result[0])
-        self.assertIn("10%", result[0])
-
-    def test_volle_kamera_batterie_keine_warnung(self):
-        """Kamera mit vollem Akku erzeugt keine Warnung."""
-        with patch("daemon.config.get_setting", return_value=20):
-            result = dr._camera_warnings({"wish_name": "Hochbeet", "battery": 80})
-        self.assertEqual(result, [])
-
-    def test_kamera_ohne_akkustand_keine_warnung(self):
-        """Kamera ohne bekannten Akkustand (None) erzeugt keine Warnung."""
-        with patch("daemon.config.get_setting", return_value=20):
-            result = dr._camera_warnings({"wish_name": "Hochbeet", "battery": None})
-        self.assertEqual(result, [])
-
-
-class TestMorningReportAssembly(unittest.TestCase):
-
-    def test_short_form_starts_with_guten_morgen(self):
-        result = dr._format_morning_report_short(
-            date_display="Do 19.06.",
-            watering_line="💧 Gestern 1× bewässert · 45 L",
-            weather_line="☀️ Heute 14–24 °C · Sonnig (5 % ☂)",
-            rain_extra_line=None,
-        )
-        self.assertIn("Guten Morgen", result)
-        self.assertIn("✅ System: alles in Ordnung", result)
-        self.assertNotIn("LQI", result)
-
-    def test_short_form_includes_rain_extra_when_present(self):
-        result = dr._format_morning_report_short(
-            date_display="Do 19.06.",
-            watering_line="💧 Gestern 1× bewässert · 45 L",
-            weather_line="🌦 Heute 12–18 °C · Bewölkt (40 % ☂)",
-            rain_extra_line="🌧 0.8 mm erwartet",
-        )
-        self.assertIn("0.8 mm", result)
-
-    def test_problem_form_shows_issue_first(self):
-        result = dr._format_morning_report_problem(
-            date_display="Do 19.06.",
-            issues=["🟡 Terrasse: Batterie schwach (15%)"],
-            watering_line="💧 Gestern 1× bewässert · 45 L",
-            weather_line="☀️ Heute 14–24 °C · Sonnig (5 % ☂)",
-            rain_extra_line=None,
-        )
-        self.assertIn("Guten Morgen", result)
-        self.assertIn("Batterie schwach", result)
-        self.assertLess(result.index("Batterie"), result.index("bewässert"))
-
-    def test_problem_form_no_double_asterisk(self):
-        result = dr._format_morning_report_problem(
-            date_display="Do 19.06.",
-            issues=["🔴 MQTT-Broker nicht erreichbar"],
-            watering_line="💧 Gestern nicht bewässert",
-            weather_line="☀️ Heute 14–24 °C · Sonnig (5 % ☂)",
-            rain_extra_line=None,
-        )
-        self.assertNotIn("**", result)
-
-
 class TestGenerateDailyReportIntegration(unittest.TestCase):
 
     def _make_patches(self):
@@ -378,6 +315,11 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks = {k: p.start() for k, p in patches.items()}
         for p in patches.values():
             self.addCleanup(p.stop)
+        # Standard: gesunder Regensensor mit Daten (from_sensor-Pfad, kein Fallback/Issue)
+        mocks["db"].get_last_rain_measurement.return_value = {"battery_pct": 100}
+        mocks["db"].get_rain_stats_last_24h.return_value = {
+            "rain_sum": 0.0, "rain_max": 0.0, "temp_avg": 18.0, "temp_max": 24.0,
+        }
         return mocks
 
     def _generate(self, success=1, failed=0, volume=45.0, skip_count=0, valves=None):
@@ -404,12 +346,35 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 28.0, 0, 18.0, 30.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
         result = generate_daily_report("2026-06-27")
-        self.assertIn("Nebel-Intervall", result)
+        self.assertIn("🌫️", result)
         self.assertIn("2 Fenster", result)
 
     def test_no_nebel_line_when_not_misted(self):
         result = self._generate()
-        self.assertNotIn("Nebel-Intervall", result)
+        self.assertNotIn("🌫️", result)
+
+    def test_sensor_offline_falls_back_to_open_meteo(self):
+        """Ohne lokale Sensor-Daten kommen Regen + Temperatur von Open-Meteo (mit Tag)."""
+        from daemon.adapters.daily_report import generate_daily_report
+        mocks = self._make_patches()
+        mocks["db"].get_last_rain_measurement.return_value = None  # kein Sensor → Fallback
+        mocks["db"].get_rain_stats_last_24h.return_value = {}
+        mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
+        mocks["db"].get_watering_skip_count_last_24h.return_value = 0
+        mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
+        mocks["db"].get_all_valves.return_value = []
+        mocks["db"].get_metadata.return_value = None
+        mocks["weather"].get_weather_data.return_value = (1.2, 0.0, 18.0, 3, 20.0, 31.0, 20, "measured")
+        mocks["weather"].get_yesterday_temp_stats.return_value = (17.4, 22.1)
+        mocks["mqtt"].HAS_PAHO = False
+        with patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_cfg.get_setting.return_value = 20
+            mock_cfg.LATITUDE = 48.0
+            mock_cfg.LONGITUDE = 11.0
+            result = generate_daily_report("2026-06-30")
+        self.assertIn("🌧 1.2 mm", result)
+        self.assertIn("Ø 17.4 °C, max 22.1 °C", result)
+        self.assertIn("(Open-Meteo)", result)
 
     def test_green_case_starts_with_guten_morgen(self):
         result = self._generate()
@@ -474,79 +439,20 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         self.assertNotIn("**", result)
 
 
-class TestFormatWeatherMorning(unittest.TestCase):
-
-    def test_dry_day_returns_sunny_emoji(self):
-        main, extra = dr._format_weather_morning(14.0, 24.0, "Sonnig", rain_next=0.0, rain_prob=5)
-        self.assertIn("☀️", main)
-        self.assertIn("14", main)
-        self.assertIn("24", main)
-        self.assertIsNone(extra)
-
-    def test_light_rain_returns_partly_cloudy_emoji_and_extra_line(self):
-        main, extra = dr._format_weather_morning(12.0, 18.0, "Bewölkt", rain_next=0.8, rain_prob=40)
-        self.assertIn("🌦", main)
-        self.assertIsNotNone(extra)
-        self.assertIn("0.8", extra)
-
-    def test_heavy_rain_returns_rain_emoji(self):
-        main, extra = dr._format_weather_morning(10.0, 15.0, "Regen", rain_next=8.0, rain_prob=85)
-        self.assertIn("🌧", main)
-        self.assertIsNotNone(extra)
-        self.assertIn("8.0", extra)
-
-    def test_below_threshold_no_extra_line(self):
-        main, extra = dr._format_weather_morning(14.0, 22.0, "Leicht bewölkt", rain_next=0.3, rain_prob=10)
-        self.assertIsNone(extra)
-
-    def test_no_double_asterisk(self):
-        main, _ = dr._format_weather_morning(14.0, 24.0, "Sonnig", rain_next=0.0, rain_prob=5)
-        self.assertNotIn("**", main)
-
-
-class TestFormatWateringMorning(unittest.TestCase):
-
-    def test_no_activity_returns_nicht_bewaessert(self):
-        result = dr._format_watering_morning(0, 0, 0.0, skip_count=0)
-        self.assertIn("nicht bewässert", result)
-        self.assertTrue(result.startswith("💧"))
-
-    def test_one_cycle_shows_volume(self):
-        result = dr._format_watering_morning(1, 0, 45.0, skip_count=0)
-        self.assertIn("1×", result)
-        self.assertIn("45", result)
-        self.assertTrue(result.startswith("💧"))
-
-    def test_multiple_cycles_shows_gesamt(self):
-        result = dr._format_watering_morning(3, 0, 90.0, skip_count=0)
-        self.assertIn("3×", result)
-        self.assertIn("gesamt", result)
-
-    def test_skip_with_no_success_shows_uebersprungen(self):
-        result = dr._format_watering_morning(0, 0, 0.0, skip_count=1, rain_last=2.5)
-        self.assertIn("übersprungen", result)
-        self.assertIn("2.5", result)
-        self.assertTrue(result.startswith("🌧"))
-
-    def test_failed_cycle_noted(self):
-        result = dr._format_watering_morning(0, 2, 0.0, skip_count=0)
-        self.assertIn("Fehler", result)
-        self.assertNotIn("LQI", result)
-
-    def test_no_double_asterisk(self):
-        result = dr._format_watering_morning(1, 0, 30.0, skip_count=0)
-        self.assertNotIn("**", result)
-
-
 class TestIsReportGreen(unittest.TestCase):
 
     def _valve(self, battery=100, abnormal_state="normal", valve_id=1):
         return {"id": valve_id, "battery": battery, "valve_abnormal_state": abnormal_state, "wish_name": "Terrasse"}
 
+    def _patched(self, mock_db, *, watchdog=None, sensor=None):
+        """Standard-Mock: Watchdog-Flag aus, kein Regensensor."""
+        mock_db.get_metadata.return_value = watchdog
+        mock_db.get_last_rain_measurement.return_value = sensor
+
     def test_all_healthy_services_ok_returns_true(self):
         with patch("daemon.adapters.daily_report.database") as mock_db, \
              patch("daemon.adapters.daily_report.config") as mock_cfg:
-            mock_db.get_metadata.return_value = None
+            self._patched(mock_db)
             mock_cfg.get_setting.return_value = 20
             result = dr._is_report_green([self._valve()], services_ok=True)
         self.assertTrue(result)
@@ -558,7 +464,7 @@ class TestIsReportGreen(unittest.TestCase):
     def test_low_battery_returns_false(self):
         with patch("daemon.adapters.daily_report.database") as mock_db, \
              patch("daemon.adapters.daily_report.config") as mock_cfg:
-            mock_db.get_metadata.return_value = None
+            self._patched(mock_db)
             mock_cfg.get_setting.return_value = 20
             result = dr._is_report_green([self._valve(battery=15)], services_ok=True)
         self.assertFalse(result)
@@ -566,7 +472,7 @@ class TestIsReportGreen(unittest.TestCase):
     def test_battery_exactly_at_threshold_returns_false(self):
         with patch("daemon.adapters.daily_report.database") as mock_db, \
              patch("daemon.adapters.daily_report.config") as mock_cfg:
-            mock_db.get_metadata.return_value = None
+            self._patched(mock_db)
             mock_cfg.get_setting.return_value = 20
             result = dr._is_report_green([self._valve(battery=20)], services_ok=True)
         self.assertFalse(result)
@@ -574,7 +480,7 @@ class TestIsReportGreen(unittest.TestCase):
     def test_abnormal_state_returns_false(self):
         with patch("daemon.adapters.daily_report.database") as mock_db, \
              patch("daemon.adapters.daily_report.config") as mock_cfg:
-            mock_db.get_metadata.return_value = None
+            self._patched(mock_db)
             mock_cfg.get_setting.return_value = 20
             result = dr._is_report_green([self._valve(abnormal_state="stuck_open")], services_ok=True)
         self.assertFalse(result)
@@ -582,14 +488,150 @@ class TestIsReportGreen(unittest.TestCase):
     def test_watchdog_alert_active_returns_false(self):
         with patch("daemon.adapters.daily_report.database") as mock_db, \
              patch("daemon.adapters.daily_report.config") as mock_cfg:
-            mock_db.get_metadata.return_value = "1"
+            self._patched(mock_db, watchdog="1")
             mock_cfg.get_setting.return_value = 20
             result = dr._is_report_green([self._valve()], services_ok=True)
         self.assertFalse(result)
 
     def test_no_valves_services_ok_returns_true(self):
-        result = dr._is_report_green([], services_ok=True)
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            self._patched(mock_db)
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([], services_ok=True)
         self.assertTrue(result)
+
+    def test_sensor_battery_low_returns_false(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            self._patched(mock_db, sensor={"battery_pct": 18})
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([], services_ok=True)
+        self.assertFalse(result)
+
+    def test_sensor_watchdog_returns_false(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_metadata.return_value = "1"  # Sensor-Watchdog-Flag aktiv
+            mock_db.get_last_rain_measurement.return_value = {"battery_pct": 100}
+            mock_cfg.get_setting.return_value = 20
+            result = dr._is_report_green([], services_ok=True)
+        self.assertFalse(result)
+
+
+class TestSensorIssues(unittest.TestCase):
+    """Regensensor-Warnungen im Ventil-Format."""
+
+    def test_kein_sensor_keine_issues(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db:
+            mock_db.get_last_rain_measurement.return_value = None
+            self.assertEqual(dr._sensor_issues(), [])
+
+    def test_schwacher_akku(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_last_rain_measurement.return_value = {"battery_pct": 18}
+            mock_db.get_metadata.return_value = None
+            mock_cfg.get_setting.return_value = 20
+            issues = dr._sensor_issues()
+        self.assertEqual(issues, ["🟡 Regensensor: Batterie schwach (18%)"])
+
+    def test_watchdog_signal(self):
+        with patch("daemon.adapters.daily_report.database") as mock_db, \
+             patch("daemon.adapters.daily_report.config") as mock_cfg:
+            mock_db.get_last_rain_measurement.return_value = {"battery_pct": 100}
+            mock_db.get_metadata.return_value = "1"
+            mock_cfg.get_setting.return_value = 20
+            issues = dr._sensor_issues()
+        self.assertIn("⚠️ Regensensor: kein Signal (Watchdog aktiv)", issues)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+class TestFormatGesternAktivitaet(unittest.TestCase):
+    """Aktivitätszeile des Gestern-Blocks: Guss (+ Nebel), Klein-l."""
+
+    def test_ein_guss_ohne_nebel(self):
+        result = dr._format_gestern_aktivitaet(1, 0, 245.0, skip_count=0, nebel_windows=0, nebel_minutes=0.0)
+        self.assertEqual(result, "💧 1× bewässert · 245 l")
+
+    def test_klein_liter(self):
+        result = dr._format_gestern_aktivitaet(1, 0, 245.0, skip_count=0, nebel_windows=0, nebel_minutes=0.0)
+        self.assertIn(" l", result)
+        self.assertNotIn(" L", result)
+
+    def test_mehrere_guesse_mit_nebel(self):
+        result = dr._format_gestern_aktivitaet(2, 0, 410.0, skip_count=0, nebel_windows=5, nebel_minutes=75.0)
+        self.assertIn("2× bewässert", result)
+        self.assertIn("410 l", result)
+        self.assertIn("🌫️", result)
+        self.assertIn("5 Fenster", result)
+        self.assertIn("75 Min", result)
+
+    def test_nicht_bewaessert_mit_nebel(self):
+        result = dr._format_gestern_aktivitaet(0, 0, 0.0, skip_count=0, nebel_windows=4, nebel_minutes=60.0)
+        self.assertIn("nicht bewässert", result)
+        self.assertIn("🌫️ 4 Fenster · 60 Min", result)
+
+    def test_uebersprungen_ohne_doppelte_mm(self):
+        result = dr._format_gestern_aktivitaet(0, 0, 0.0, skip_count=1, nebel_windows=1, nebel_minutes=12.0)
+        self.assertIn("💧 Guss übersprungen (Regen)", result)
+        self.assertNotIn("mm", result)  # mm-Zahl steht auf der Wetterzeile, nicht hier
+
+    def test_mit_fehler(self):
+        result = dr._format_gestern_aktivitaet(2, 1, 410.0, skip_count=0, nebel_windows=0, nebel_minutes=0.0)
+        self.assertIn("1 Fehler", result)
+
+    def test_ohne_nebel_kein_nebel_emoji(self):
+        result = dr._format_gestern_aktivitaet(1, 0, 100.0, skip_count=0, nebel_windows=0, nebel_minutes=0.0)
+        self.assertNotIn("🌫️", result)
+
+
+class TestFormatGesternWetter(unittest.TestCase):
+    """Wetterzeile des Gestern-Blocks: Regen + Temp kombiniert; Quell-Tag nur im Fallback."""
+
+    def test_sensor_ohne_tag(self):
+        result = dr._format_gestern_wetter(3.0, 19.2, 32.0, from_sensor=True)
+        self.assertIn("🌧 3.0 mm", result)
+        self.assertIn("🌡", result)
+        self.assertIn("Ø 19.2 °C", result)
+        self.assertIn("max 32.0 °C", result)
+        self.assertNotIn("Open-Meteo", result)
+
+    def test_fallback_mit_open_meteo_tag(self):
+        result = dr._format_gestern_wetter(1.2, 17.4, 22.1, from_sensor=False)
+        self.assertIn("🌧 1.2 mm", result)
+        self.assertIn("🌡", result)
+        self.assertTrue(result.rstrip().endswith("(Open-Meteo)"))
+
+    def test_kein_doppelasterisk(self):
+        result = dr._format_gestern_wetter(0.0, 24.1, 33.5, from_sensor=True)
+        self.assertNotIn("**", result)
+
+
+class TestFormatHeute(unittest.TestCase):
+    """Heute-Zeile: Emoji aus get_wmo_description, gefaltete Regenmenge."""
+
+    def test_bedeckt_kein_sonnen_emoji(self):
+        # Code 3 = Bedeckt / Bewölkt → ☁️, NICHT ☀️
+        result = dr._format_heute(18, 29, weather_code=3, rain_next=0.0, rain_prob=30)
+        self.assertIn("☁️", result)
+        self.assertNotIn("☀️", result)
+        self.assertIn("18–29 °C", result)
+        self.assertIn("30 % ☂", result)
+
+    def test_regen_menge_gefaltet(self):
+        # Code 61 = Leichter Regen
+        result = dr._format_heute(21, 28, weather_code=61, rain_next=6.2, rain_prob=80)
+        self.assertIn("6.2 mm", result)
+        self.assertIn("(80 % ☂)", result)
+
+    def test_trocken_keine_mm(self):
+        result = dr._format_heute(19, 34, weather_code=0, rain_next=0.0, rain_prob=0)
+        self.assertNotIn("mm", result)
+        self.assertIn("0 % ☂", result)
 
 
 if __name__ == "__main__":

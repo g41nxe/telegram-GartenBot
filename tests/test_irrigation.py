@@ -371,8 +371,8 @@ class TestGardenIrrigation(unittest.TestCase):
             report = generate_daily_report("2026-06-07")
             self.assertIn("07.06.", report)
             self.assertIn("💧", report)  # Wässerungs-Sektion
-            self.assertIn("12–25 °C", report)  # Temperatur-Range (gerundet)
-            self.assertIn("2.0 mm erwartet", report)  # Regen-Info im neuen Format
+            self.assertIn("12–25 °C", report)  # Heute-Temperatur-Range (gerundet)
+            self.assertIn("2.0 mm (80 % ☂)", report)  # Heute-Regen in die Zeile gefaltet
             self.assertIn("alles in Ordnung", report)  # System-OK-Zeile
 
             # 2. Fall: Batterie schwach, Watchdog-Flag gesetzt, abnormaler Zustand (Warnungen)

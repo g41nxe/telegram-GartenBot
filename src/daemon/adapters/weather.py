@@ -216,6 +216,40 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
     return None
 
 
+def get_yesterday_temp_stats(lat: float, lon: float) -> "tuple[float, float] | None":
+    """Gibt (Ø, max) der gestrigen Temperatur von Open-Meteo zurück, oder None.
+
+    Fallback für den Gestern-Block des Tagesberichts, wenn der lokale Regensensor ausfällt.
+    Nutzt die täglichen Open-Meteo-Werte (Mittel + Max) für den Vortag (`past_days=1`).
+    """
+    from datetime import timedelta
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat}&longitude={lon}"
+        f"&daily=temperature_2m_max,temperature_2m_mean"
+        f"&timezone=auto&past_days=1&forecast_days=1"
+    )
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'GardenIrrigationDaemon/1.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        daily = data.get("daily", {})
+        days = daily.get("time", [])
+        maxs = daily.get("temperature_2m_max", [])
+        means = daily.get("temperature_2m_mean", [])
+        yesterday = (datetime.now().date() - timedelta(days=1)).isoformat()
+        for idx, d in enumerate(days):
+            if d == yesterday:
+                if (idx < len(maxs) and idx < len(means)
+                        and maxs[idx] is not None and means[idx] is not None):
+                    return round(float(means[idx]), 1), round(float(maxs[idx]), 1)
+                break
+        return None
+    except Exception as e:
+        logger.warning(f"Gestrige Temperatur von Open-Meteo nicht verfügbar: {e}")
+        return None
+
+
 def _compute_rain_next_eff(hourly_forecast_json: str) -> float:
     """Erwarteter Niederschlag der nächsten 24h: stundenweise mit Wahrscheinlichkeit gewichtet.
 

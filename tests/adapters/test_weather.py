@@ -397,5 +397,28 @@ class TestArchiveIntegration(unittest.TestCase):
         self.assertIsNotNone(res)
         self.assertEqual(len(captured), 1)
 
+
+class TestYesterdayTempStats(unittest.TestCase):
+    """get_yesterday_temp_stats: Ø/max der gestrigen Temperatur (Open-Meteo-Fallback)."""
+
+    @patch("urllib.request.urlopen")
+    def test_returns_mean_and_max_for_yesterday(self, mock_urlopen):
+        yesterday = (datetime.now().date() - timedelta(days=1)).isoformat()
+        today = datetime.now().date().isoformat()
+        payload = json.dumps({"daily": {
+            "time": [yesterday, today],
+            "temperature_2m_max": [22.1, 25.0],
+            "temperature_2m_mean": [17.4, 19.0],
+        }}).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = MagicMock(read=lambda: payload)
+        result = weather.get_yesterday_temp_stats(48.0, 11.0)
+        self.assertEqual(result, (17.4, 22.1))
+
+    @patch("urllib.request.urlopen")
+    def test_returns_none_on_error(self, mock_urlopen):
+        mock_urlopen.side_effect = Exception("network down")
+        self.assertIsNone(weather.get_yesterday_temp_stats(48.0, 11.0))
+
+
 if __name__ == "__main__":
     unittest.main()

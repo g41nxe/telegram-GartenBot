@@ -19,79 +19,26 @@ def _lqi_label(avg_lqi: float) -> str:
     return "Kritisch"
 
 
-def _camera_warnings(camera: dict) -> list[str]:
-    """Gibt Warnungen für eine einzelne Kamera zurück (aktuell: Akkustand)."""
-    warnings = []
-    battery = camera.get("battery")
-    if battery is None:
-        return warnings
-    wish_name = camera["wish_name"]
-    _bat_threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
-    if int(battery) <= _bat_threshold:
-        warnings.append(
-            f"🪫 *Niedriger Akkustand ({wish_name}):* {battery}%"
-            f" (Grenzwert: {_bat_threshold}%)"
-        )
-    return warnings
+def _sensor_issues() -> list:
+    """Regensensor-Warnungen im selben Format wie Ventil-Meldungen.
 
-
-def _valve_warnings(valve: dict) -> list[str]:
-    """Gibt Warnungen für ein einzelnes Ventil zurück."""
-    warnings = []
-    wish_name = valve["wish_name"]
-    battery_raw = valve.get("battery")
-    battery = battery_raw if battery_raw is not None else 100
-    abnormal_state = valve.get("valve_abnormal_state") or "normal"
-
-    _bat_threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
-    if battery <= _bat_threshold:
-        warnings.append(
-            f"🪫 *Niedriger Batteriestand ({wish_name}):* {battery}%"
-            f" (Grenzwert: {_bat_threshold}%)"
-        )
-
-    if abnormal_state != "normal":
-        warnings.append(f"🚨 *Ventil-Anomalie erkannt ({wish_name}):* {abnormal_state}")
-
-    return warnings
-
-
-def _format_morning_report_short(
-    date_display: str,
-    watering_line: str,
-    weather_line: str,
-    rain_extra_line: "str | None",
-) -> str:
-    """Kurzform des Morgen-Berichts (3–4 Zeilen, alles grün)."""
-    parts = [f"🌿 *Guten Morgen, {date_display}!*", ""]
-    parts.append(weather_line)
-    if rain_extra_line:
-        parts.append(rain_extra_line)
-    parts.append(watering_line)
-    parts.append("✅ System: alles in Ordnung")
-    return "\n".join(parts)
-
-
-def _format_morning_report_problem(
-    date_display: str,
-    issues: list,
-    watering_line: str,
-    weather_line: str,
-    rain_extra_line: "str | None",
-) -> str:
-    """Erweiterter Morgen-Bericht mit Problem-Block (sortiert nach Schwere)."""
-    parts = [f"🌿 *Guten Morgen, {date_display}!*", ""]
-    parts.extend(issues)
-    parts.append("")
-    parts.append(weather_line)
-    if rain_extra_line:
-        parts.append(rain_extra_line)
-    parts.append(watering_line)
-    return "\n".join(parts)
+    Leere Liste, wenn kein Regensensor bekannt oder gesund.
+    """
+    issues = []
+    last = database.get_last_rain_measurement()
+    if not last:
+        return issues
+    threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
+    battery = last.get("battery_pct")
+    if battery is not None and int(battery) <= threshold:
+        issues.append(f"🟡 Regensensor: Batterie schwach ({int(battery)}%)")
+    if database.get_metadata("watchdog_alert_active_rain_sensor") == "1":
+        issues.append("⚠️ Regensensor: kein Signal (Watchdog aktiv)")
+    return issues
 
 
 def _is_report_green(valves: list, services_ok: bool) -> bool:
-    """True wenn System und alle Ventile im Normalzustand — Kurzform des Morgen-Berichts wird verwendet."""
+    """True wenn System, alle Ventile und der Regensensor im Normalzustand — Kurzform wird verwendet."""
     if not services_ok:
         return False
     threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
@@ -104,60 +51,63 @@ def _is_report_green(valves: list, services_ok: bool) -> bool:
         flag_key = f"watchdog_alert_active_valve_{valve['id']}"
         if database.get_metadata(flag_key) == "1":
             return False
+    if _sensor_issues():
+        return False
     return True
 
 
-def _format_weather_morning(
-    temp_min: float,
-    temp_max: float,
-    weather_desc: str,
-    rain_next: float,
-    rain_prob: int,
-) -> tuple[str, "str | None"]:
-    """Wetter-Zusammenfassung für den Morgen-Bericht. Gibt (Hauptzeile, optionale Regenzeile) zurück."""
-    if rain_next >= 2.0:
-        emoji = "🌧"
-    elif rain_next >= 0.5:
-        emoji = "🌦"
-    else:
-        emoji = "☀️"
-
-    main = f"{emoji} Heute {temp_min:.0f}–{temp_max:.0f} °C · {weather_desc} ({rain_prob} % ☂)"
-    extra = f"🌧 {rain_next} mm erwartet" if rain_next >= 0.5 else None
-    return main, extra
-
-
-def _format_watering_morning(
-    success_count: int,
-    failed_count: int,
-    total_volume: float,
-    skip_count: int = 0,
-    rain_last: float = 0.0,
+def _format_gestern_aktivitaet(
+    success_count: int, failed_count: int, total_volume: float,
+    skip_count: int, nebel_windows: int, nebel_minutes: float,
 ) -> str:
-    """Bewässerungs-Zusammenfassung für den Morgen-Bericht (eine Zeile)."""
+    """Aktivitätszeile des Gestern-Blocks: Guss (💧) plus Nebel-Intervall (🌫️), `·`-gebündelt."""
     if skip_count > 0 and success_count == 0 and failed_count == 0:
-        return f"🌧 Guss übersprungen · {rain_last} mm gefallen"
-    if success_count == 0 and failed_count == 0:
-        return "💧 Gestern nicht bewässert"
-    if success_count == 1:
-        line = f"💧 Gestern 1× bewässert · {total_volume:.0f} L"
+        line = "💧 Guss übersprungen (Regen)"
+    elif success_count == 0 and failed_count == 0:
+        line = "💧 nicht bewässert"
+    elif success_count == 1:
+        line = f"💧 1× bewässert · {total_volume:.0f} l"
     else:
-        line = f"💧 Gestern {success_count}× bewässert · {total_volume:.0f} L gesamt"
+        line = f"💧 {success_count}× bewässert · {total_volume:.0f} l"
+
     if failed_count == 1:
         line += " · 1 Fehler"
     elif failed_count > 1:
         line += f" · {failed_count} Fehler"
+
+    if nebel_windows > 0:
+        line += f" · 🌫️ {nebel_windows} Fenster · {int(round(nebel_minutes))} Min"
+
     return line
 
 
-def _format_nebel_morning(window_count: int, total_minutes: float) -> "str | None":
-    """Nebel-Intervall-Zusammenfassung für den Morgen-Bericht (eine Zeile). None wenn nicht genebelt."""
-    if window_count <= 0:
-        return None
-    mins = int(round(total_minutes))
-    if window_count == 1:
-        return f"🌫️ Nebel-Intervall: 1 Fenster · ca. {mins} Min"
-    return f"🌫️ Nebel-Intervall: {window_count} Fenster · ca. {mins} Min gesamt"
+def _format_gestern_wetter(
+    rain_mm: float, temp_avg: "float | None", temp_max: "float | None", from_sensor: bool,
+) -> str:
+    """Wetterzeile des Gestern-Blocks: gefallener Regen (🌧) und Temperatur Ø/max (🌡) kombiniert.
+
+    Quell-Tag nur als Ausnahme: ohne Tag = lokaler Sensor; `(Open-Meteo)` bei Sensor-Ausfall
+    (deckt Regen und Temperatur gemeinsam ab).
+    """
+    line = f"🌧 {rain_mm} mm"
+    if temp_avg is not None and temp_max is not None:
+        line += f" · 🌡 Ø {temp_avg} °C, max {temp_max} °C"
+    if not from_sensor:
+        line += " (Open-Meteo)"
+    return line
+
+
+def _format_heute(
+    temp_min: float, temp_max: float, weather_code: int, rain_next: float, rain_prob: int,
+) -> str:
+    """Heute-Zeile (Ausblick): emoji-präfixierte WMO-Beschreibung · Temp-Spanne · Regen/Prob."""
+    desc = get_wmo_description(weather_code)
+    line = f"{desc} · {temp_min:.0f}–{temp_max:.0f} °C · "
+    if rain_next >= 0.5:
+        line += f"{rain_next} mm ({rain_prob} % ☂)"
+    else:
+        line += f"{rain_prob} % ☂"
+    return line
 
 
 _RAIN_DEVIATION_THRESHOLD_MM = 2.0  # DWD-Schwellenwert für signifikante Abweichung
@@ -223,40 +173,6 @@ def _format_weather_section(
     return " ".join(parts)
 
 
-def _format_rain_sensor_line(rain_stats: dict, last_measurement: dict | None) -> str | None:
-    """Regensensor-Zeile für den Tagesbericht. Gibt None zurück wenn kein Sensor bekannt."""
-    if not last_measurement:
-        return None
-    if not rain_stats:
-        offline_h = 0.0
-        try:
-            offline_h = (datetime.now() - datetime.fromisoformat(last_measurement["timestamp"])).total_seconds() / 3600
-        except Exception:
-            pass
-        return f"🌧 Regen — ⚠️ Sensor offline (seit {offline_h:.0f} h), Fallback auf ERA5"
-    rain_sum = rain_stats.get("rain_sum", 0.0)
-    temp_avg = rain_stats.get("temp_avg", 0.0)
-    temp_max = rain_stats.get("temp_max", 0.0)
-    battery = last_measurement.get("battery_pct", 100)
-    bat_label = _get_battery_description_simple(battery)
-    return (
-        f"🌧 Regen — {rain_sum} mm gefallen · "
-        f"Ø {temp_avg} °C, max {temp_max} °C · 🔋 {bat_label}"
-    )
-
-
-def _get_battery_description_simple(battery_pct) -> str:
-    try:
-        b = int(battery_pct)
-    except (TypeError, ValueError):
-        return "unbekannt"
-    if b > 60:
-        return "voll"
-    if b > 20:
-        return "mittel"
-    return "schwach"
-
-
 def _format_valve_line(
     wish_name: str, mqtt_name: str,
     count: int, avg_lqi: float, max_gap_hours: float,
@@ -304,10 +220,8 @@ def generate_daily_report(today_str: str) -> str:
         logger.error(f"Fehler beim Abrufen der Wetterdaten für Morgen-Bericht: {e}")
     if weather_result is not None:
         rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source = weather_result
-        weather_desc = get_wmo_description(weather_code)
     else:
         rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0, "forecast"
-        weather_desc = "Unbekannt"
 
     # 3. Systemzustand
     if mqtt_client.HAS_PAHO:
@@ -332,26 +246,46 @@ def generate_daily_report(today_str: str) -> str:
     except Exception:
         date_display = today_str
 
-    # 6. Gemeinsame Bausteine
-    watering_line = _format_watering_morning(success_count, failed_count, total_volume, skip_count, rain_last)
-    weather_line, rain_extra = _format_weather_morning(temp_min, temp_max, weather_desc, rain_next, rain_prob)
+    # 6. Gestern-Block (Rückblick): Aktivitätszeile + Wetterzeile
+    aktivitaet_line = _format_gestern_aktivitaet(
+        success_count, failed_count, total_volume, skip_count, nebel_windows, nebel_minutes
+    )
+    if rain_sensor_stats:
+        gestern_wetter_line = _format_gestern_wetter(
+            rain_sensor_stats.get("rain_sum", 0.0),
+            rain_sensor_stats.get("temp_avg"),
+            rain_sensor_stats.get("temp_max"),
+            from_sensor=True,
+        )
+    else:
+        # Sensor-Ausfall: Regen vom Wetter-Dienst, gestrige Temperatur via Open-Meteo
+        try:
+            temp_stats = weather.get_yesterday_temp_stats(config.LATITUDE, config.LONGITUDE)
+        except Exception:
+            temp_stats = None
+        y_avg, y_max = temp_stats if temp_stats else (None, None)
+        gestern_wetter_line = _format_gestern_wetter(rain_last, y_avg, y_max, from_sensor=False)
 
-    # 6b. Regensensor-Zeile
-    rain_sensor_line = _format_rain_sensor_line(rain_sensor_stats, rain_sensor_last)
+    # 7. Heute-Block (Ausblick)
+    heute_line = _format_heute(temp_min, temp_max, weather_code, rain_next, rain_prob)
 
-    # 6c. Nebel-Intervall-Zeile (nur wenn genebelt wurde)
-    nebel_line = _format_nebel_morning(nebel_windows, nebel_minutes)
-
-    # 7. Grün-Prüfung → Pfad wählen
+    # 8. Zustands-Block (Abschluss)
     if _is_report_green(valves, services_ok):
-        report = _format_morning_report_short(date_display, watering_line, weather_line, rain_extra)
-        if rain_sensor_line:
-            report += f"\n{rain_sensor_line}"
-        if nebel_line:
-            report += f"\n{nebel_line}"
-        return report
+        zustand = "✅ System: alles in Ordnung"
+    else:
+        issues = _collect_issues(valves, services_ok)
+        zustand = "\n".join(issues) if issues else "✅ System: alles in Ordnung"
 
-    # Problem-Pfad: Issues nach Schwere aufsammeln
+    return (
+        f"🌿 *Guten Morgen, {date_display}!*\n\n"
+        f"*Gestern*\n{aktivitaet_line}\n{gestern_wetter_line}\n\n"
+        f"*Heute*\n{heute_line}\n\n"
+        f"{zustand}"
+    )
+
+
+def _collect_issues(valves: list, services_ok: bool) -> list:
+    """Sammelt die Problem-Meldungen für den Zustands-Block: Dienst, Ventile, Regensensor."""
     threshold = config.get_setting("BATTERY_WARNING_THRESHOLD", 20)
     issues = []
 
@@ -375,12 +309,8 @@ def generate_daily_report(today_str: str) -> str:
         if has_watchdog:
             issues.append(f"⚠️ {wish_name}: kein Signal (Watchdog aktiv)")
 
-    report = _format_morning_report_problem(date_display, issues, watering_line, weather_line, rain_extra)
-    if rain_sensor_line:
-        report += f"\n{rain_sensor_line}"
-    if nebel_line:
-        report += f"\n{nebel_line}"
-    return report
+    issues.extend(_sensor_issues())
+    return issues
 
 
 def send_daily_report(today_str: str):

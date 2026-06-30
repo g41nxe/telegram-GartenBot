@@ -176,12 +176,17 @@
     <div class="bubble" style="padding:0; overflow:hidden">
       <div style="height:80px; background:linear-gradient(135deg,#1f3a5f,#3b6ea5); display:flex; align-items:center; justify-content:center; color:#cfe4ff; font-size:12px;">📈 [ Wetter-Chart ]</div>
     </div>
-    <div class="bubble">🌿 <b>Guten Morgen, Mi 18.06.!</b>
+    <div class="bubble">🌿 <b>Guten Morgen, Di 30.06.!</b>
 
-☀️ Heute 14–27 °C · Leicht bewölkt (12 % ☂)
-💧 Gestern 1× bewässert · 8 L
+<b>Gestern</b>
+💧 2× bewässert · 410 l · 🌫️ 5 Fenster · 75 Min
+🌧 0.0 mm · 🌡 Ø 24.1 °C, max 33.5 °C
+
+<b>Heute</b>
+☁️ Bedeckt · 18–29 °C · 30 % ☂
+
 ✅ System: alles in Ordnung</div>
-    <div class="note">Kurzform nur wenn: Dienste OK, kein Watchdog, keine Anomalie, alle Batterien über Schwellenwert. Problemfall zeigt Issues zuerst (🔴 Systemausfall → 🚨 Anomalie → 🟡 Batterie → ⚠️ Watchdog), dann Wetter + Bewässerung. Kein LQI-Zahlenwert, keine Meldungsanzahl im Bericht. (Feature 0025)</div>
+    <div class="note">Zeitachse <b>Rückblick → Ausblick → Zustand</b> (ADR 0037, Amendment zu ADR 0029). Gestern = zwei kompakte Zeilen: Aktivität (💧 Guss inkl. 🌫️ Nebel) + Wetter (🌧 Regen · 🌡 Ø/max). Heute-Emoji aus <code>get_wmo_description</code> (kein ☀️/Bedeckt-Widerspruch); Regenmenge gefaltet. Quell-Tag nur im Fallback (<code>(Open-Meteo)</code>, deckt Regen + Temp). Zustand am <b>Schluss</b>: grün <code>✅ System: alles in Ordnung</code>, sonst Issues direkt (Regensensor als Issue im Ventil-Format). Wassermenge Klein-<code>l</code>.</div>
   </div>
 
   <div class="phone">
@@ -383,14 +388,17 @@ Die Kamera sendet wieder Bilder.</div>
 
   <div class="phone">
     <div class="cap">Tagesbericht (DailyReportTriggered) — wie /tagesbericht</div>
-    <div class="bubble">🌱 <b>Guten Morgen — dein Tagesbericht</b>
-<i>Mi, 18.06.</i>
+    <div class="bubble">🌿 <b>Guten Morgen, Di 30.06.!</b>
 
-🚿 Gestern nicht gegossen
-🌧 3.6 mm gefallen (lokal gemessen) · heute trocken (8 %)
-🌡 14.1–27.3 °C, leicht bewölkt
+<b>Gestern</b>
+💧 nicht bewässert · 🌫️ 4 Fenster · 60 Min
+🌧 1.2 mm · 🌡 Ø 17.4 °C, max 22.1 °C (Open-Meteo)
 
-🟢 Alles im grünen Bereich</div>
+<b>Heute</b>
+🌧️ Leichter Regen · 21–28 °C · 6.2 mm (80 % ☂)
+
+🟡 Regensensor: Batterie schwach (18%)</div>
+    <div class="note">Identisch zu /tagesbericht. Problemfall: Issues als Zustands-Block am <b>Schluss</b> (ADR 0037); Regensensor als Issue im Ventil-Format. Sensor-Ausfall → <code>(Open-Meteo)</code> auf der Wetterzeile.</div>
   </div>
 
 </div>
