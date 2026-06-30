@@ -1,3 +1,15 @@
+## v1.14.0 — 2026-06-30
+
+### Neu
+- Tagesbericht neu gegliedert: Gestern (Guss · Regen · Nebel) → Heute → Zustand
+- Guss-Vorwarnung nennt jetzt auch die wegen Regen reduzierten Zielwerte
+
+### Geändert
+- Projekt steht jetzt unter der AGPL-3.0-Lizenz
+- Veraltete Slash-Befehle aus README, Bot-Beschreibung und Doku entfernt
+
+---
+
 ## v1.13.0 — 2026-06-29
 
 ### Neu
