@@ -62,6 +62,29 @@ Weitere Leitplanken:
 
 Grundlage: ADR 0034 (Bot-Navigation). Jede Änderung am Befehls-/Menü-Satz aktualisiert zusätzlich die Sitemap (siehe oben).
 
+## Regel: Befehls-Referenzen in der Prosa-Doku synchron halten
+
+Slash-Befehle werden nicht nur in den `docs/design/`-HTMLs dokumentiert, sondern auch in **erzählender, benutzersichtbarer Doku**. Wenn du einen Slash-Befehl **hinzufügst, umbenennst oder entfernst** (siehe De-dup-Regel oben), MUSST du im selben Arbeitsschritt diese **lebenden** Dateien angleichen:
+
+- [`README.md`](../../README.md) — Abschnitte „✨ Highlights", „🤖 Bedienung im Telegram-Bot", Schnellstart und Troubleshooting.
+- [`CONTEXT.md`](../../CONTEXT.md) — Glossar-Einträge, die einen Befehl in Klammern nennen.
+- [`docs/assets/bot_description.md`](../../docs/assets/bot_description.md) — die bei @BotFather hinterlegte Bot-Beschreibung.
+
+Maßgeblich (Single Source of Truth) ist der **Code**: der Dispatcher (`_process_message` in `telegram_ui.py`) plus `register_telegram_commands` in `main.py`. Es existiert nur, was dort vorkommt — derzeit `/start`, `/status`, `/tagesbericht`, `/update`. Alles andere ist ein Tastatur-Button.
+
+Beim Angleichen:
+
+1. **Entfernte Befehle raus:** Ist ein Befehl zum Button geworden, nenne ihn beim **Button-Label** (z. B. „💧 Gießcheck"), nicht mehr als `/befehl`. Verwaiste `/befehl`-Erwähnungen ersatzlos streichen.
+2. **Nur gültige Befehle als `/...`:** In der Prosa darf ein `` `/befehl` `` nur stehen, wenn er im Dispatcher existiert.
+3. **Schnell prüfen:** `grep -rnoE '`/[a-z_]+`' README.md CONTEXT.md docs/assets/bot_description.md` — jeder Treffer außer `/start`, `/status`, `/tagesbericht`, `/update` ist ein Fehler.
+
+**NICHT anfassen** (historische bzw. eigenständig gepflegte Quellen — diese spiegeln bewusst den Stand ihrer Entstehung):
+
+- `docs/adr/*` und `docs/**/completed/*` — Architektur- bzw. Feature-/Plan-Aufzeichnungen.
+- `CHANGELOG.md` — Release-Historie.
+- `.beads/issues.jsonl` — Tracker-Daten.
+- Die `docs/design/`-HTMLs sind die **Soll-Quelle** und werden über die Sitemap-/Nachrichten-Regeln oben gepflegt, nicht über diese.
+
 ## Hinweis für Feature-Arbeit
 
-Plant ein Feature neue Benachrichtigungen oder ändert es die Navigation, gehört die Aktualisierung **beider** Referenzen (`telegram-nachrichten.html` und `telegram-sitemap.html`) zur Definition of Done — analog zur Pflege von `CONTEXT.md` und den ADRs.
+Plant ein Feature neue Benachrichtigungen oder ändert es die Navigation, gehört die Aktualisierung **beider** Referenzen (`telegram-nachrichten.html` und `telegram-sitemap.html`) **sowie der Prosa-Doku** (`README.md`, `CONTEXT.md`, `docs/assets/bot_description.md`, sofern dort Befehle genannt sind) zur Definition of Done — analog zur Pflege von `CONTEXT.md` und den ADRs.

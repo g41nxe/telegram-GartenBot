@@ -2848,12 +2848,20 @@ def _on_watering_rain_warning(event: WateringRainWarning):
     überspringen oder reduzieren würde — mit Möglichkeit zur Regen-Übersteuerung."""
     name = _md_escape(event.schedule_name)
     valves = ", ".join(_md_escape(v) for v in event.valve_names)
-    menge = f" / {event.volume_original} L" if event.volume_original > 0 else ""
+    has_volume = event.volume_original > 0
+    menge_orig = f" / {event.volume_original} L" if has_volume else ""
+    pct = int(round(event.factor * 100))
+    if event.factor <= 0:
+        anpassung = "→ *Komplett übersprungen* (kein Guss)"
+    else:
+        menge_scaled = f" / {event.volume_scaled} L" if has_volume else ""
+        anpassung = f"→ *Reduziert auf {event.duration_scaled} Min{menge_scaled}* ({pct} %)"
     begruendung = f"\n{event.reasons[0]}" if event.reasons else ""
     msg = (
         f"🌧 *Regen voraus — Guss in {config.RAIN_WARNING_LEAD_MINUTES} Min betroffen*\n"
         f"Zeitplan „{name}“ um {event.time} ({valves}) würde regenbedingt angepasst.\n"
-        f"Geplant ohne Regen: {event.duration_original} Min{menge}.{begruendung}\n\n"
+        f"Geplant: {event.duration_original} Min{menge_orig}\n"
+        f"{anpassung}{begruendung}\n\n"
         f"Soll trotzdem voll gegossen werden?"
     )
     markup = {"inline_keyboard": [[
