@@ -21,6 +21,13 @@ class TestGardenIrrigation(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Initialisiert die Testdatenbank und erzwingt den Simulationsmodus."""
+        import tempfile, os
+        # Auf eine temporäre DB umleiten, damit die Integrationstests nicht die echte
+        # garden.db verschmutzen (Ventile/Zeitpläne akkumulierten sonst über Läufe hinweg).
+        fd, cls._tmp_db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        cls._db_patcher = patch.object(database, "DB_PATH", cls._tmp_db_path)
+        cls._db_patcher.start()
         database.init_db()
         mqtt_client.HAS_PAHO = False
 
@@ -38,6 +45,16 @@ class TestGardenIrrigation(unittest.TestCase):
         cls.watering_ctrl = watering_ctrl
         scheduler.set_controller(watering_ctrl)
         cls.db_adapter = DatabaseLoggerAdapter(mqtt_client._global_bus)
+
+    @classmethod
+    def tearDownClass(cls):
+        """Temporäre Test-DB abbauen und DB_PATH-Patch lösen."""
+        import os
+        cls._db_patcher.stop()
+        try:
+            os.unlink(cls._tmp_db_path)
+        except OSError:
+            pass
         
     def test_01_config_defaults(self):
         """Überprüft, ob Standard-Konfigurationswerte korrekt geladen werden."""
@@ -941,9 +958,24 @@ class TestNebelScheduling(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        import tempfile, os
+        # Temporäre DB, damit die echte garden.db nicht mit „Terrassen-Nebel" verschmutzt wird.
+        fd, cls._tmp_db_path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        cls._db_patcher = patch.object(database, "DB_PATH", cls._tmp_db_path)
+        cls._db_patcher.start()
         database.init_db()
         mqtt_client.HAS_PAHO = False
         mqtt_client.start_client()
+
+    @classmethod
+    def tearDownClass(cls):
+        import os
+        cls._db_patcher.stop()
+        try:
+            os.unlink(cls._tmp_db_path)
+        except OSError:
+            pass
 
     def setUp(self):
         from daemon.core.watering_controller import WateringController
