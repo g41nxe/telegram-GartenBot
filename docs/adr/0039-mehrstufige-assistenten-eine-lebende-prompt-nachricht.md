@@ -30,10 +30,14 @@ nächsten Schritt.
   - `message_id` None (getippter Schritt) → räumt das alte Prompt-Keyboard ab und sendet einen
     frischen Prompt.
   - hält in beiden Fällen die Invariante (`state["prompt_msg_id"]`).
-- **`send_message` gibt die `message_id` zurück** (statt nur `bool`), damit der Renderer den frischen
-  Prompt merken kann.
-- Gilt für **alle** mehrstufigen Flows; die bestehenden `edit_message_text`-Aufrufe der Button-Ketten
-  werden auf `show_step` umgestellt. Umsetzung inkrementell (Zeitplan-Wizard als Referenz zuerst).
+- **Dedizierte `send_message_id(...) -> int | None`** liefert die `message_id` aus dem
+  Antwort-Body. Das bestehende `send_message` bleibt unangetastet (Contract `-> bool`,
+  Chunk-Splitting, Markdown-Fallback) — es liest den Body heute nicht und darf Erfolg/Fehler nicht
+  mit der id vermischen. Nur die Assistenten-Prompts nutzen `send_message_id`.
+- Gilt für **alle** mehrstufigen Flows. Reihenfolge nach kritischem Review: zuerst der Bug-Fix
+  (getippte Übergänge + Entry-Prompts über `show_step`), **danach separat** die Konvergenz der
+  bereits sauberen Button-Ketten auf `show_step` (ohne den Fix zu gefährden). Zeitplan-Wizard zuerst
+  als Referenz.
 
 ## Konsequenzen
 

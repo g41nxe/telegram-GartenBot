@@ -55,12 +55,17 @@ das Abräumen den in Feature 0033 eingeführten `edit_message_reply_markup`-Mech
   - `message_id` gesetzt (Button-Schritt) → `edit_message_text` in place; `prompt_msg_id = message_id`.
   - `message_id` None (getippter Schritt) → altes `prompt_msg_id`-Keyboard via
     `edit_message_reply_markup(..., None)` abräumen, frischen Prompt senden, `prompt_msg_id` neu setzen.
-- **`send_message` gibt die `message_id` zurück** (statt nur `bool`), damit der Renderer den frischen
-  Prompt merken kann. Rückwärtskompatibel für bestehende Aufrufer (Rückgabe wird dort ignoriert).
-- **Alle Assistenten-Schritte** rufen künftig `show_step(...)` statt direkt `edit_message_text`/
-  `send_message`. Button-Ketten übergeben die Callback-`message_id`, getippte Schritte lassen sie weg.
-- **Betroffene Flows** (alle in diesem Feature, inkrementell umgesetzt): Zeitplan-Wizard (Referenz
-  zuerst), Nebel-Wizard, Kamera-Kopplung, Ventil-Kopplung, manueller Guss.
+- **Dedizierte `send_message_id(chat_id, text, reply_markup=None) -> int | None`** liefert die
+  `message_id` aus dem Telegram-Antwort-Body. Das bestehende `send_message` bleibt **unangetastet**
+  (Contract `-> bool`, Chunk-Splitting, Markdown-Fallback, ~8 Tests) — kritischer Review-Befund:
+  `send_message` liest den Body heute nicht und mischt Erfolg/Fehler nicht mit der id. Nur die
+  Assistenten-Prompts (Entry-Prompts + getippte Übergänge) nutzen `send_message_id`.
+- **Reihenfolge (Review-Befund Blast-Radius):** Der sichtbare Bug sind **nur** die getippten
+  Übergänge. Daher zuerst der **Bug-Fix** (getippte Übergänge + Entry-Prompts über `show_step`),
+  **danach separat** die reine Konvergenz der bereits sauberen **Button-Ketten** auf `show_step`
+  (jederzeit abbrechbar, ohne den Fix zu gefährden — Button-Schritte lassen ohnehin nichts liegen).
+- **Betroffene Flows** (alle in diesem Feature, inkrementell): Zeitplan-Wizard (Referenz zuerst),
+  Nebel-Wizard, Kamera-Kopplung, Ventil-Kopplung, manueller Guss.
 - **Eingabe-Validierungsfehler** (z. B. „Name darf nicht leer sein", „Zahl 1–25") sind **kein**
   Schritt-Wechsel — sie re-prompten und lassen das aktive Keyboard stehen (der Flow läuft weiter).
 - **Architektur:** rein präsentationsseitig (`ui/telegram_ui.py`, `ui/telegram_client.py`); keine

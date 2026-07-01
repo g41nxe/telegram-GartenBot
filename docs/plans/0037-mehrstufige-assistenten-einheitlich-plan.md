@@ -2,55 +2,64 @@
 
 Referenz: `docs/features/0037-mehrstufige-assistenten-einheitlich.md` · ADR 0039 · ADR 0038
 
-Betroffen: `src/daemon/ui/telegram_client.py` (`send_message` → id), `src/daemon/ui/telegram_ui.py`
-(`show_step` + Umstellung der Assistenten-Schritte), Tests in `tests/ui/test_telegram_client.py`
-und `tests/ui/test_ux_redesign.py`.
+Betroffen: `src/daemon/ui/telegram_client.py` (neue `send_message_id`), `src/daemon/ui/telegram_ui.py`
+(`show_step` + Assistenten-Schritte), Tests in `tests/ui/test_telegram_client.py` und
+`tests/ui/test_ux_redesign.py`.
 
-## Schritt 1 — `send_message` gibt die `message_id` zurück (RED → GREEN)
+**Struktur nach kritischem Review:** `send_message` bleibt unangetastet (Contract `-> bool`,
+Chunk-Splitting, Markdown-Fallback, bestehende Tests). Der sichtbare Bug (Leftover-Keyboards) sitzt
+**nur** in den getippten Übergängen — der wird zuerst behoben (Schritte 1–5). Die reine Konvergenz
+der bereits sauberen **Button-Ketten** auf `show_step` folgt **danach** (Schritt 6) und ist jederzeit
+abbrechbar, ohne den Fix zu gefährden.
 
-- **RED:** Test in `tests/ui/test_telegram_client.py`: bei 200 gibt `send_message` die
-  `result.message_id` aus der Telegram-Antwort zurück; bei Fehler/ohne Token `None`.
-- **GREEN:** Antwort-JSON parsen und `result.message_id` zurückgeben. Rückwärtskompatibel — die
-  vielen bestehenden Aufrufer ignorieren den Rückgabewert.
+## Schritt 1 — `send_message_id` (RED → GREEN)
+
+- **RED:** Test in `tests/ui/test_telegram_client.py`: bei 200 gibt `send_message_id` die
+  `result.message_id` aus dem geparsten Antwort-Body zurück; ohne Token / bei Fehler `None`.
+  Mock liefert einen JSON-Body (`{"ok":true,"result":{"message_id":123}}`).
+- **GREEN:** Dünne, eigenständige Funktion (Wizard-Prompts sind kurz → kein Chunking nötig);
+  Markdown→Klartext-Fallback wie `_send_chunk`. **`send_message` und seine Tests bleiben unberührt.**
 
 ## Schritt 2 — Renderer `show_step` (RED → GREEN)
 
-- **RED:** Dispatcher-nahe Tests für beide Zweige:
-  - Button-Fall (`message_id` gesetzt): `edit_message_text` wird aufgerufen; `state['prompt_msg_id']`
-    == message_id; kein Strip.
-  - Getippt-Fall (`message_id=None`, `state['prompt_msg_id']` vorhanden): altes Keyboard wird via
-    `edit_message_reply_markup(chat_id, alt, None)` abgeräumt, `send_message` gesendet,
+- **RED:** Tests beider Zweige:
+  - Button (`message_id` gesetzt): `edit_message_text` aufgerufen; `state['prompt_msg_id']` ==
+    message_id; kein Strip.
+  - Getippt (`message_id=None`, altes `prompt_msg_id` vorhanden): altes Keyboard via
+    `edit_message_reply_markup(chat_id, alt, None)` abgeräumt; `send_message_id` gesendet;
     `state['prompt_msg_id']` == neue id.
+  - Getippt ohne vorheriges `prompt_msg_id` (Entry-Prompt): kein Strip, id wird gemerkt.
 - **GREEN:** `show_step(chat_id, state, text, keyboard=None, *, message_id=None)` gemäß ADR 0039.
 
-## Schritt 3 — Zeitplan-Wizard umstellen (Referenz) (RED → GREEN)
+## Schritt 3 — Bug-Fix: getippte Übergänge + Entry-Prompts (RED → GREEN)
 
-- **RED:** Durchlauf-Test des Zeitplan-Wizards (`wiz_start` → Modus → Name **getippt** → Stunde →
-  … → Tage): nach dem getippten Namens-Übergang ist das Namens-Prompt-Keyboard entfernt; genau eine
-  lebende Prompt-Nachricht; getippte Eingabe nicht gelöscht.
-- **GREEN:** Alle Schritt-Renderings des Zeitplan-/Nebel-Wizards auf `show_step` umstellen
-  (Button-Schritte mit `message_id`, getippter Namens-/Custom-Schritt ohne). `prompt_msg_id` beim
-  ersten Prompt setzen.
+Nur die Stellen anfassen, die den sichtbaren Bug erzeugen — **je Flow ein Durchlauf-Test**, der
+belegt: nach dem getippten Übergang ist das vorige Prompt-Keyboard entfernt (genau eine lebende
+Prompt-Nachricht).
+- **Zeitplan-Wizard** (Referenz): Name-getippt-Übergang + Custom-Dauer/-Menge über `show_step`.
+- **Nebel-Wizard:** analog.
+- **Kamera-Kopplung:** Entry-Prompt (Name) via `send_message_id`/`show_step`; getippte Schritte
+  (Name, Intervall).
+- **Ventil-Kopplung:** Entry-Prompt (Name).
+- **Manueller Guss:** Custom-Dauer/-Menge; den 0033-`prompt_message_id`-Sonderfall hier auf die
+  einheitliche `prompt_msg_id`/`show_step`-Konvention heben.
 
-## Schritt 4 — Übrige Flows umstellen (je RED → GREEN)
+## Schritt 4 — Validierungsfehler ≠ Schritt-Wechsel
 
-Je Flow ein Durchlauf-Test + Umstellung auf `show_step`:
-- **Nebel-Wizard** (falls nicht schon mit Schritt 3 abgedeckt).
-- **Kamera-Kopplung** (Name/Intervall getippt, Auflösung/Qualität Buttons).
-- **Ventil-Kopplung** (Name getippt).
-- **Manueller Guss** (Ventil/Dauer/Menge; Custom-Dauer/-Menge getippt) — den in Feature 0033
-  eingeführten `prompt_message_id`-Sonderfall auf `show_step`/`prompt_msg_id` vereinheitlichen.
+- Sicherstellen (Test je Beispiel), dass Eingabe-Validierungsfehler (leerer Name, Zahl außerhalb
+  Bereich) **re-prompten** und das aktive Keyboard **stehen lassen** — kein `show_step`-Übergang.
 
-## Schritt 5 — Validierungsfehler nicht als Schritt-Wechsel
-
-- Sicherstellen, dass Eingabe-Validierungsfehler (leerer Name, Zahl außerhalb Bereich) **re-prompten**
-  und das aktive Keyboard **stehen lassen** (kein `show_step`-Übergang). Test je Flow-Beispiel.
-
-## Schritt 6 — Regression & Aufräumen
+## Schritt 5 — Regression (Bug-Fix)
 
 - Bestehende Wizard-/UX-Tests und die Feature-0033-Abbruch-Tests bleiben grün.
-- Doppelte Prompt-`message_id`-Logik aus 0033 (manueller Guss) auf die neue `prompt_msg_id`-
-  Konvention konsolidieren (kein zweiter State-Schlüssel).
+- `send_message`-Tests unberührt (unverändert).
+
+## Schritt 6 — Optional/danach: Button-Ketten auf `show_step` konvergieren
+
+- Reiner Refactor der bereits sauberen Button-Schritt-Renderings (`edit_message_text` →
+  `show_step(..., message_id=…)`), Flow für Flow, jeweils mit grünem Durchlauf-Test.
+- **Abbruchsicher:** Bricht dieser Schritt ab, bleibt der Bug-Fix (Schritte 1–5) vollständig — die
+  Button-Schritte lassen ohnehin nichts liegen. Kein „halb migriert"-Risiko für den Nutzer.
 
 ## Schritt 7 — Doku
 
@@ -63,12 +72,13 @@ Je Flow ein Durchlauf-Test + Umstellung auf `show_step`:
 
 ## Definition of Done
 
-- [ ] `send_message` gibt die `message_id` zurück (+ Test)
-- [ ] `show_step`-Renderer mit Invariante (+ Tests für beide Zweige)
-- [ ] Alle Flows (Zeitplan, Nebel, Kamera-Kopplung, Ventil-Kopplung, manueller Guss) auf `show_step`
-- [ ] Getippte Übergänge räumen das alte Keyboard ab; genau eine lebende Prompt-Nachricht je Flow
+- [ ] `send_message_id` liefert die `message_id` (+ Test); `send_message` unverändert
+- [ ] `show_step`-Renderer mit Invariante (+ Tests für beide Zweige + Entry-Fall)
+- [ ] Getippte Übergänge + Entry-Prompts aller Flows über `show_step`; genau eine lebende
+  Prompt-Nachricht je Flow
 - [ ] Validierungsfehler lassen das aktive Keyboard stehen
-- [ ] 0033-Sonderlogik (Guss-`prompt_message_id`) konsolidiert
+- [ ] 0033-Sonderlogik (Guss-`prompt_message_id`) auf `prompt_msg_id` konsolidiert
+- [ ] (Optional) Button-Ketten auf `show_step` konvergiert
 - [ ] Alle Tests grün, Coverage nicht regriert
 - [ ] `telegram-nachrichten.html` aktualisiert
 - [ ] Beads-Issue geschlossen
