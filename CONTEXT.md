@@ -56,6 +56,10 @@ _Avoid_: geflossene Menge, current_volume, real_time_irrigation_volume (kumulati
 Die konfigurierbare untere Schwelle der durchschnittlichen Flussrate (L/min) eines Gusses, unterhalb derer eine Abschaltung durch das Zeitlimit als Defekt gewertet wird (zu wenig oder kein Wasser — Verstopfung, Druckabfall, defektes Ventil) und als Notfall-Abschaltung gemeldet wird. Liegt die erreichte Flussrate darüber, gilt das Erreichen des Zeitlimits als normaler Abschluss des Kombinierten Gusses. Einstellbar über den Telegram-Bot (`MIN_FLOW_RATE_LPM`, Standard 0,5 L/min).
 _Avoid_: Durchflussschwelle, Min-Flow
 
+**Assistent**:
+Ein mehrstufiger, geführter Eingabe-Dialog im Telegram-Bot (z. B. Zeitplan anlegen, Nebel-Intervall, Ventil-/Kamera-Kopplung, manueller Guss). Ein Assistent führt über genau **eine lebende Prompt-Nachricht**: zu jedem Zeitpunkt gibt es höchstens ein aktives Inline-Keyboard; beim Schritt-Wechsel wird das vorherige Prompt-Keyboard abgeräumt (ADR 0038/0039). Getippte Eingaben des Nutzers bleiben als eigene Nachrichten sichtbar.
+_Avoid_: Wizard, Dialog-Flow, Mehrschritt-Formular.
+
 **Ventil-Kopplung**:
 Der geführte Einrichtungsvorgang im Telegram-Bot, bei dem ein neues Ventil mit dem Funk-Koordinator verbunden wird. Der Benutzer vergibt vorab einen Wunschnamen. Der Bewässerungs-Daemon aktiviert temporär den Koppelmodus des Mittelweg-Dienstes, wartet auf das Beitrittssignal des Ventils, weist ihm einen eindeutigen Systemnamen (`valve_<ieee_address>`) zu und registriert es in der Datenbank.
 _Avoid_: Pairing, Registrierung, Gerät hinzufügen
