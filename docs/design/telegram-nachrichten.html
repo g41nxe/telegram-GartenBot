@@ -67,6 +67,9 @@
     <i>_Text_</i> kursiv, <code>`Text`</code> als Monospace. Eigene Nachrichten (Nutzer-Eingaben) sind blau und rechtsbündig.
     <br><br><b>Dies ist der IST-Stand.</b> Das verbindliche Zielbild (Anrede, Ton-Register, Markdown-Konvention, Garten-Ampel) steht in
     <a href="telegram-design-system.html">telegram-design-system.html (SOLL)</a> — Grundlage ADR 0029.
+    <br><br><b>Inline-Keyboard-Aufräumen (Feature 0033, ADR 0038):</b> Endet ein Inline-Flow — bei Erfolg, Abbruch oder Fehler —
+    wird das Inline-Keyboard der <i>Ursprungsnachricht</i> entfernt; die Abschluss-Nachricht (z. B. <code>❌ Vorgang abgebrochen.</code>)
+    bleibt unverändert. Die permanente Haupttastatur (Reply-Keyboard) ist davon unberührt.
   </div>
 </header>
 

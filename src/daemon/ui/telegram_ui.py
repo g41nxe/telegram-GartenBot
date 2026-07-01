@@ -218,6 +218,17 @@ def get_main_keyboard() -> dict:
         "resize_keyboard": True
     }
 
+def _end_inline_flow(chat_id: int, message_id: int, cb_id: str,
+                     text: str, toast: str = "Abgebrochen") -> None:
+    """Beendet einen Inline-Flow einheitlich (Feature 0033, ADR 0038).
+
+    Quittiert den Klick, entfernt das Inline-Keyboard der Ursprungsnachricht und sendet die
+    Abschluss-Nachricht mit der permanenten Haupttastatur — so bleibt nie ein totes Keyboard.
+    """
+    telegram_client.answer_callback_query(cb_id, toast)
+    telegram_client.edit_message_reply_markup(chat_id, message_id, None)
+    telegram_client.send_message(chat_id, text, get_main_keyboard())
+
 def get_camera_resolution_keyboard() -> dict:
     """Inline-Keyboard für die Auflösungsauswahl im Kamera-Kopplungs-Assistenten."""
     return {
@@ -1480,6 +1491,9 @@ def _process_message(msg_obj: dict):
                     else:
                         success, response = False, "Guss-Steuerung nicht initialisiert."
                     if not success:
+                        pmid = man_state.get("prompt_message_id")
+                        if pmid is not None:
+                            telegram_client.edit_message_reply_markup(chat_id, pmid, None)
                         telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
                 except ValueError:
                     telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl größer als 0 Liter ein:")
@@ -1557,8 +1571,7 @@ def _process_callback_query(cb_obj: dict):
     data = cb_obj["data"]
 
     if data == "cancel":
-        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
-        telegram_client.send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
+        _end_inline_flow(chat_id, message_id, cb_id, "❌ Vorgang abgebrochen.")
     elif data.startswith("rainoverride_"):
         # Regen-Übersteuerung (Feature 0034): Flag für genau diesen Lauf setzen.
         rest = data[len("rainoverride_"):]
@@ -1888,6 +1901,9 @@ def _process_callback_query(cb_obj: dict):
     elif data == "wiz_confirm_save":
         state = _state_get(wizard_states, chat_id)
         if state is not None:
+            # Bestätigungs-Keyboard („✅ Speichern / ❌ Abbrechen") abräumen — bei Erfolg wie
+            # bei DB-Fehler, damit kein doppeltes Speichern möglich ist (Feature 0033).
+            telegram_client.edit_message_reply_markup(chat_id, message_id, None)
             name = state["name"]
             time_str = f"{state['hour']:02d}:{state['minute']:02d}"
             days_str = ",".join(state["days"])
@@ -1923,8 +1939,7 @@ def _process_callback_query(cb_obj: dict):
 
     elif data == "wiz_cancel":
         _state_del(wizard_states, chat_id)
-        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
-        telegram_client.send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
+        _end_inline_flow(chat_id, message_id, cb_id, "❌ Vorgang abgebrochen.")
 
     elif data.startswith("man_dur_"):
         dur_str = data.split("_")[2]
@@ -1956,6 +1971,9 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.answer_callback_query(cb_id)
             if vol_str == "custom":
                 state["step"] = "man_custom_volume"
+                # message_id des Eingabe-Prompts merken, damit der getippte-Menge-Fehlerpfad
+                # (ohne Callback-message_id) sein Keyboard aufräumen kann (Feature 0033).
+                state["prompt_message_id"] = message_id
                 _state_touch(manual_states, chat_id)
                 telegram_client.edit_message_text(
                     chat_id, message_id,
@@ -1973,14 +1991,14 @@ def _process_callback_query(cb_obj: dict):
                 else:
                     success, response = False, "Guss-Steuerung nicht initialisiert."
                 if not success:
+                    telegram_client.edit_message_reply_markup(chat_id, message_id, None)
                     telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
                 else:
                     telegram_client.edit_message_text(chat_id, message_id, f"🟢 *Befehl gesendet:* Bewässerung gestartet ({dur} Min / {vol}l).")
 
     elif data == "man_cancel":
         _state_del(manual_states, chat_id)
-        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
-        telegram_client.send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
+        _end_inline_flow(chat_id, message_id, cb_id, "❌ Vorgang abgebrochen.")
 
     # --- Kamera-Untermenü (Feature 0031) ---
     elif data == "kamera_foto":
@@ -2144,8 +2162,7 @@ def _process_callback_query(cb_obj: dict):
 
     elif data == "nebel_cancel":
         _state_del(manual_states, chat_id)
-        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
-        telegram_client.send_message(chat_id, "❌ Vorgang abgebrochen.", get_main_keyboard())
+        _end_inline_flow(chat_id, message_id, cb_id, "❌ Vorgang abgebrochen.")
 
     # --- Stopp: gezielte Auswahl (Feature 0031) ---
     elif data == "stop_valve_all":
@@ -2194,8 +2211,7 @@ def _process_callback_query(cb_obj: dict):
         )
 
     elif data == "setup_cancel":
-        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
-        telegram_client.send_message(chat_id, "❌ Ventil-Kopplung abgebrochen.", get_main_keyboard())
+        _end_inline_flow(chat_id, message_id, cb_id, "❌ Ventil-Kopplung abgebrochen.")
 
     elif data.startswith("sched_toggle_"):
         sched_id = int(data.split("_")[2])
@@ -2243,8 +2259,7 @@ def _process_callback_query(cb_obj: dict):
         )
 
     elif data == "update_cancel":
-        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
-        telegram_client.send_message(chat_id, "❌ Update abgebrochen.", get_main_keyboard())
+        _end_inline_flow(chat_id, message_id, cb_id, "❌ Update abgebrochen.")
 
     elif data == "camsetup_start":
         telegram_client.answer_callback_query(cb_id)
@@ -2252,8 +2267,7 @@ def _process_callback_query(cb_obj: dict):
 
     elif data == "camsetup_cancel":
         _state_del(wizard_states, chat_id)
-        telegram_client.answer_callback_query(cb_id, "Abgebrochen")
-        telegram_client.send_message(chat_id, "❌ Kamera-Kopplung abgebrochen.", get_main_keyboard())
+        _end_inline_flow(chat_id, message_id, cb_id, "❌ Kamera-Kopplung abgebrochen.")
 
     elif data == "camsetup_settings":
         telegram_client.answer_callback_query(cb_id)
@@ -2432,6 +2446,7 @@ def _process_callback_query(cb_obj: dict):
         if data == "sched_edit_cancel":
             _state_del(edit_states, chat_id)
             telegram_client.answer_callback_query(cb_id, "Bearbeitung abgebrochen.")
+            telegram_client.edit_message_reply_markup(chat_id, message_id, None)
             handle_schedules(chat_id)
         else:
             sched_id = int(data.split("_")[2])

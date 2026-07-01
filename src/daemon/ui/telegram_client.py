@@ -216,6 +216,33 @@ def edit_message_text(chat_id: int, message_id: int, text: str, reply_markup: di
         logger.error(f"Fehler beim Editieren der Nachricht {message_id} für {chat_id}: {e}")
         return False
 
+def edit_message_reply_markup(chat_id: int, message_id: int, reply_markup: dict = None) -> bool:
+    """Entfernt oder ersetzt nur das Inline-Keyboard einer bestehenden Nachricht (Text bleibt).
+
+    Feature 0033: Beim Ende eines Inline-Flows (Abbruch/Fehler) wird das Keyboard der
+    Ursprungsnachricht abgeräumt. `reply_markup=None` entfernt das Keyboard.
+    """
+    if not config.TELEGRAM_BOT_TOKEN:
+        return False
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup"
+    payload = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    try:
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return response.status == 200
+    except Exception as e:
+        logger.error(f"Fehler beim Entfernen des Keyboards von Nachricht {message_id} für {chat_id}: {e}")
+        return False
+
 def answer_callback_query(callback_query_id: str, text: str = None, show_alert: bool = False):
     """Quittiert einen Inline-Button-Klick in Telegram, damit das 'Sanduhr'-Laden verschwindet."""
     if not config.TELEGRAM_BOT_TOKEN:

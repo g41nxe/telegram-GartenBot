@@ -248,5 +248,36 @@ class TestSendMessageSplitting(unittest.TestCase):
         self.assertEqual(len(sent), 1)
 
 
+class TestEditMessageReplyMarkup(unittest.TestCase):
+    """Feature 0033: Inline-Keyboard einer bestehenden Nachricht entfernen/ersetzen."""
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", "")
+    def test_returns_false_without_token(self):
+        self.assertFalse(telegram_client.edit_message_reply_markup(123, 45, None))
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_returns_true_on_200(self, mock_urlopen):
+        mock_urlopen.side_effect = _mock_urlopen_200()
+        self.assertTrue(telegram_client.edit_message_reply_markup(123, 45, None))
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_endpoint_and_payload_without_markup(self, mock_urlopen):
+        captured = {}
+
+        def capture(req, *a, **k):
+            captured["url"] = req.full_url
+            captured["body"] = json.loads(req.data.decode("utf-8"))
+            return _mock_urlopen_200()()
+
+        mock_urlopen.side_effect = capture
+        telegram_client.edit_message_reply_markup(123, 45, None)
+        self.assertIn("editMessageReplyMarkup", captured["url"])
+        self.assertEqual(captured["body"]["chat_id"], 123)
+        self.assertEqual(captured["body"]["message_id"], 45)
+        self.assertNotIn("reply_markup", captured["body"])  # None → Keyboard entfällt
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -400,5 +400,122 @@ class TestStoppSelection(unittest.TestCase):
         mock_water.force_close.assert_called_once_with("beet_valve")
 
 
+class TestInlineKeyboardCleanup(unittest.TestCase):
+    """Feature 0033: Abbruch-/Fehler-Callbacks räumen das Inline-Keyboard der Ursprungsnachricht ab."""
+
+    def _assert_cleanup(self, tc, chat_id=100, msg_id=1):
+        tc.edit_message_reply_markup.assert_called_once_with(chat_id, msg_id, None)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_cancel(self, tc, _db):
+        _process_callback_query(_cb("cancel"))
+        self._assert_cleanup(tc)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_wiz_cancel(self, tc, _db):
+        _process_callback_query(_cb("wiz_cancel"))
+        self._assert_cleanup(tc)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_man_cancel(self, tc, _db):
+        _process_callback_query(_cb("man_cancel"))
+        self._assert_cleanup(tc)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_nebel_cancel(self, tc, _db):
+        _process_callback_query(_cb("nebel_cancel"))
+        self._assert_cleanup(tc)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_setup_cancel(self, tc, _db):
+        _process_callback_query(_cb("setup_cancel"))
+        self._assert_cleanup(tc)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_update_cancel(self, tc, _db):
+        _process_callback_query(_cb("update_cancel"))
+        self._assert_cleanup(tc)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_camsetup_cancel(self, tc, _db):
+        _process_callback_query(_cb("camsetup_cancel"))
+        self._assert_cleanup(tc)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_sched_edit_cancel(self, tc, mock_db):
+        mock_db.get_schedules.return_value = []
+        _process_callback_query(_cb("sched_edit_cancel"))
+        self._assert_cleanup(tc)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_guss_callback_error_cleans_keyboard(self, mock_db, tc, mock_water):
+        """Guss-Fehler im Callback-Flow (Mengen-Button) räumt das Keyboard ab."""
+        _clear_states()
+        mock_db.get_valve_by_id.return_value = _valve(2, "Beet", "beet_valve")
+        mock_water.start_watering.return_value = (False, "Ventil nicht erreichbar")
+        _process_callback_query(_cb("water_valve_2"))
+        _process_callback_query(_cb("man_dur_10"))
+        tc.reset_mock()
+        _process_callback_query(_cb("man_vol_25"))
+        tc.edit_message_reply_markup.assert_called_once_with(100, 1, None)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_guss_typed_volume_error_cleans_prompt_keyboard(self, mock_db, tc, mock_water):
+        """Guss-Fehler nach getippter Menge räumt das Keyboard des gemerkten Prompts ab (message_id aus State)."""
+        _clear_states()
+        mock_db.get_valve_by_id.return_value = _valve(2, "Beet", "beet_valve")
+        mock_water.start_watering.return_value = (False, "Ventil nicht erreichbar")
+        _process_callback_query(_cb("water_valve_2"))
+        _process_callback_query(_cb("man_dur_10"))
+        _process_callback_query(_cb("man_vol_custom", msg_id=77))  # Prompt-message_id 77 wird gemerkt
+        tc.reset_mock()
+        _process_message(_msg("25"))  # getippte Menge, Start scheitert
+        tc.edit_message_reply_markup.assert_called_once_with(100, 77, None)
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_wiz_confirm_save_removes_confirmation_keyboard(self, tc, mock_db):
+        """Erfolgreiches Speichern räumt das Bestätigungs-Keyboard ab (kein Doppel-Speichern)."""
+        from daemon.ui import telegram_ui
+        telegram_ui.wizard_states.clear()
+        telegram_ui._state_set(telegram_ui.wizard_states, 100, {
+            "name": "Rasen", "hour": 6, "minute": 0, "days": ["everyday"],
+            "duration": 12, "volume": 30, "valve_id": None,
+        })
+        mock_db.add_schedule.return_value = 5
+        mock_db.get_schedules.return_value = []
+        _process_callback_query(_cb("wiz_confirm_save"))
+        tc.edit_message_reply_markup.assert_called_once_with(100, 1, None)
+        telegram_ui.wizard_states.clear()
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_guss_success_still_removes_keyboard(self, mock_db, tc, mock_water):
+        """Referenzmuster: Erfolgspfad entfernt das Keyboard weiterhin (edit_message_text ohne Markup)."""
+        _clear_states()
+        mock_db.get_valve_by_id.return_value = _valve(2, "Beet", "beet_valve")
+        mock_water.start_watering.return_value = (True, "ok")
+        _process_callback_query(_cb("water_valve_2"))
+        _process_callback_query(_cb("man_dur_10"))
+        tc.reset_mock()
+        _process_callback_query(_cb("man_vol_25"))
+        args = tc.edit_message_text.call_args
+        markup = args.args[3] if len(args.args) > 3 else args.kwargs.get("reply_markup")
+        self.assertIsNone(markup)
+
+
 if __name__ == "__main__":
     unittest.main()
