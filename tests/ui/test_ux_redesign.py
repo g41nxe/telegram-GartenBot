@@ -400,6 +400,79 @@ class TestStoppSelection(unittest.TestCase):
         mock_water.force_close.assert_called_once_with("beet_valve")
 
 
+class TestShowStep(unittest.TestCase):
+    """Feature 0037: show_step hält die Invariante 'eine lebende Prompt-Nachricht'."""
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_button_step_edits_in_place(self, tc):
+        from daemon.ui.telegram_ui import show_step
+        state = {}
+        kb = {"inline_keyboard": [[{"text": "a", "callback_data": "b"}]]}
+        show_step(100, state, "Schritt X", kb, message_id=5)
+        args = tc.edit_message_text.call_args.args
+        self.assertEqual(args[0], 100)
+        self.assertEqual(args[1], 5)
+        tc.edit_message_reply_markup.assert_not_called()
+        tc.send_message_id.assert_not_called()
+        self.assertEqual(state["prompt_msg_id"], 5)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_typed_step_strips_old_and_sends_new(self, tc):
+        from daemon.ui.telegram_ui import show_step
+        tc.send_message_id.return_value = 99
+        state = {"prompt_msg_id": 5}
+        show_step(100, state, "Schritt Y")
+        tc.edit_message_reply_markup.assert_called_once_with(100, 5, None)
+        tc.send_message_id.assert_called_once()
+        tc.edit_message_text.assert_not_called()
+        self.assertEqual(state["prompt_msg_id"], 99)
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_typed_entry_without_old_keyboard(self, tc):
+        from daemon.ui.telegram_ui import show_step
+        tc.send_message_id.return_value = 42
+        state = {}
+        show_step(100, state, "Erster Prompt")
+        tc.edit_message_reply_markup.assert_not_called()
+        self.assertEqual(state["prompt_msg_id"], 42)
+
+
+class TestWizardSingleMessage(unittest.TestCase):
+    """Feature 0037: getippte Übergänge räumen den vorigen Prompt ab (eine lebende Prompt-Nachricht)."""
+
+    def _clear(self):
+        from daemon.ui import telegram_ui
+        telegram_ui.wizard_states.clear()
+        telegram_ui.manual_states.clear()
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_schedule_name_transition_cleans_prompt(self, mock_db, tc):
+        self._clear()
+        tc.send_message_id.return_value = 200
+        _process_callback_query(_cb("wiz_mode_watering", msg_id=10))  # Name-Prompt = msg 10
+        tc.reset_mock()
+        tc.send_message_id.return_value = 200
+        _process_message(_msg("Rasen"))  # Name getippt → Stunden-Prompt frisch, alter Prompt abgeräumt
+        tc.edit_message_reply_markup.assert_called_once_with(100, 10, None)
+        tc.send_message_id.assert_called_once()
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    @patch("daemon.ui.telegram_ui.database")
+    def test_guss_custom_duration_transition_cleans_prompt(self, mock_db, tc, mock_water):
+        self._clear()
+        mock_db.get_valve_by_id.return_value = _valve(2, "Beet", "beet_valve")
+        tc.send_message_id.return_value = 300
+        _process_callback_query(_cb("water_valve_2"))
+        _process_callback_query(_cb("man_dur_custom", msg_id=20))  # Custom-Dauer-Prompt = msg 20
+        tc.reset_mock()
+        tc.send_message_id.return_value = 300
+        _process_message(_msg("12"))  # Dauer getippt → Mengen-Prompt frisch, Prompt 20 abgeräumt
+        tc.edit_message_reply_markup.assert_called_once_with(100, 20, None)
+        tc.send_message_id.assert_called_once()
+
+
 class TestInlineKeyboardCleanup(unittest.TestCase):
     """Feature 0033: Abbruch-/Fehler-Callbacks räumen das Inline-Keyboard der Ursprungsnachricht ab."""
 

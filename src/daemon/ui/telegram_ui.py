@@ -229,6 +229,24 @@ def _end_inline_flow(chat_id: int, message_id: int, cb_id: str,
     telegram_client.edit_message_reply_markup(chat_id, message_id, None)
     telegram_client.send_message(chat_id, text, get_main_keyboard())
 
+def show_step(chat_id: int, state: dict, text: str, keyboard: dict = None, *, message_id: int = None) -> None:
+    """Rendert einen Assistenten-Schritt in genau EINER lebenden Prompt-Nachricht (Feature 0037, ADR 0039).
+
+    message_id gesetzt (Button-Schritt)   → editiert diese Nachricht in place.
+    message_id None   (getippter Schritt) → räumt das Keyboard des vorherigen Prompts ab
+                                            und sendet einen frischen Prompt.
+    Invariante: state['prompt_msg_id'] zeigt danach auf die lebende Prompt-Nachricht.
+    """
+    if message_id is not None:
+        telegram_client.edit_message_text(chat_id, message_id, text, keyboard)
+        state["prompt_msg_id"] = message_id
+    else:
+        old = state.get("prompt_msg_id")
+        if old is not None:
+            telegram_client.edit_message_reply_markup(chat_id, old, None)
+        state["prompt_msg_id"] = telegram_client.send_message_id(chat_id, text, keyboard)
+
+
 def get_camera_resolution_keyboard() -> dict:
     """Inline-Keyboard für die Auflösungsauswahl im Kamera-Kopplungs-Assistenten."""
     return {
@@ -1410,19 +1428,12 @@ def _process_message(msg_obj: dict):
                     return
                 state["name"] = text
                 state["step"] = 2
-                _state_touch(wizard_states, chat_id)
                 if state.get("mode") == "nebel":
-                    telegram_client.send_message(
-                        chat_id,
-                        f"🌫️ *Nebel-Intervall '{text}'*\n\nZu welcher *Stunde* soll das Nebel-Fenster starten?",
-                        get_hour_keyboard()
-                    )
+                    prompt = f"🌫️ *Nebel-Intervall '{text}'*\n\nZu welcher *Stunde* soll das Nebel-Fenster starten?"
                 else:
-                    telegram_client.send_message(
-                        chat_id,
-                        f"🆕 *Neuen Zeitplan '{text}' (Schritt 2/6)*\n\nZu welcher *Stunde* soll die Bewässerung starten?",
-                        get_hour_keyboard()
-                    )
+                    prompt = f"🆕 *Neuen Zeitplan '{text}' (Schritt 2/6)*\n\nZu welcher *Stunde* soll die Bewässerung starten?"
+                show_step(chat_id, state, prompt, get_hour_keyboard())
+                _state_touch(wizard_states, chat_id)
                 return
             elif step == "custom_duration":
                 try:
@@ -1467,12 +1478,12 @@ def _process_message(msg_obj: dict):
                         raise ValueError
                     man_state["duration"] = dur
                     man_state["step"] = 2
-                    _state_touch(manual_states, chat_id)
-                    telegram_client.send_message(
-                        chat_id,
+                    show_step(
+                        chat_id, man_state,
                         "🚿 *Bewässern starten — Schritt 2/2*\n\nWie viel Wasser soll *maximal* fließen? (Volumenlimit)",
-                        get_volume_wizard_keyboard("man")
+                        get_volume_wizard_keyboard("man"),
                     )
+                    _state_touch(manual_states, chat_id)
                 except ValueError:
                     telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:")
                 return
@@ -1484,16 +1495,17 @@ def _process_message(msg_obj: dict):
                     man_state["volume"] = vol
                     dur = man_state["duration"]
                     mqtt_name = man_state.get("mqtt_name", "garden_valve")
+                    pmid = man_state.get("prompt_msg_id")
                     _state_del(manual_states, chat_id)
+                    # Flow endet — Keyboard des Eingabe-Prompts in beiden Fällen abräumen.
+                    if pmid is not None:
+                        telegram_client.edit_message_reply_markup(chat_id, pmid, None)
 
                     if _watering_ctrl:
                         success, response = _watering_ctrl.start_watering(dur, vol, "manual", mqtt_name=mqtt_name)
                     else:
                         success, response = False, "Guss-Steuerung nicht initialisiert."
                     if not success:
-                        pmid = man_state.get("prompt_message_id")
-                        if pmid is not None:
-                            telegram_client.edit_message_reply_markup(chat_id, pmid, None)
                         telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
                 except ValueError:
                     telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl größer als 0 Liter ein:")
@@ -1606,11 +1618,12 @@ def _process_callback_query(cb_obj: dict):
         _state_set(wizard_states, chat_id, {"step": 1, "mode": mode})
         telegram_client.answer_callback_query(cb_id)
         art = "Nebel-Intervall" if mode == "nebel" else "Zeitplan"
-        telegram_client.edit_message_text(
-            chat_id, message_id,
+        show_step(
+            chat_id, _state_get(wizard_states, chat_id),
             f"🆕 *Neues {art} anlegen — Name*\n\nBitte gib einen *Namen* ein "
             f"(z. B. *{'Terrassen-Nebel' if mode == 'nebel' else 'Rasen morgens'}*):",
-            {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
+            {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]},
+            message_id=message_id,
         )
 
     elif data.startswith("wiz_hour_"):
@@ -1948,12 +1961,13 @@ def _process_callback_query(cb_obj: dict):
         state = _state_get(manual_states, chat_id) or {}
         if dur_str == "custom":
             state["step"] = "man_custom_duration"
-            _state_set(manual_states, chat_id, state)
-            telegram_client.edit_message_text(
-                chat_id, message_id,
+            show_step(
+                chat_id, state,
                 "🚿 *Bewässern starten — Schritt 1/2*\n\nBitte gib die gewünschte Dauer in Minuten über die Tastatur ein (Zahl von 1 bis 25):",
-                {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]}
+                {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]},
+                message_id=message_id,
             )
+            _state_set(manual_states, chat_id, state)  # nach show_step: gespeicherte Kopie enthält prompt_msg_id
         else:
             dur = int(dur_str)
             state.update({"step": 2, "duration": dur})
@@ -1971,14 +1985,14 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.answer_callback_query(cb_id)
             if vol_str == "custom":
                 state["step"] = "man_custom_volume"
-                # message_id des Eingabe-Prompts merken, damit der getippte-Menge-Fehlerpfad
-                # (ohne Callback-message_id) sein Keyboard aufräumen kann (Feature 0033).
-                state["prompt_message_id"] = message_id
                 _state_touch(manual_states, chat_id)
-                telegram_client.edit_message_text(
-                    chat_id, message_id,
+                # prompt_msg_id (via show_step) trägt die id des Eingabe-Prompts, damit der
+                # getippte-Menge-Pfad (ohne Callback-message_id) sein Keyboard aufräumen kann.
+                show_step(
+                    chat_id, state,
                     "🚿 *Bewässern starten — Schritt 2/2*\n\nBitte gib die gewünschte Wassermenge in Litern über die Tastatur ein (Zahl > 0):",
-                    {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]}
+                    {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]},
+                    message_id=message_id,
                 )
             else:
                 vol = int(vol_str)

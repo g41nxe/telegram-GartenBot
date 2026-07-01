@@ -70,6 +70,10 @@
     <br><br><b>Inline-Keyboard-Aufräumen (Feature 0033, ADR 0038):</b> Endet ein Inline-Flow — bei Erfolg, Abbruch oder Fehler —
     wird das Inline-Keyboard der <i>Ursprungsnachricht</i> entfernt; die Abschluss-Nachricht (z. B. <code>❌ Vorgang abgebrochen.</code>)
     bleibt unverändert. Die permanente Haupttastatur (Reply-Keyboard) ist davon unberührt.
+    <br><br><b>Assistenten — eine lebende Prompt-Nachricht (Feature 0037, ADR 0039):</b> Mehrstufige Assistenten (Zeitplan, Nebel,
+    Kamera-/Ventil-Kopplung, manueller Guss) haben zu jedem Zeitpunkt höchstens ein aktives Inline-Keyboard. Nach einer getippten
+    Eingabe erscheint der nächste Schritt als frische Nachricht; das Keyboard des vorigen Prompts wird abgeräumt. Getippte Eingaben
+    des Nutzers bleiben sichtbar (keine gelöschten Nachrichten).
   </div>
 </header>
 

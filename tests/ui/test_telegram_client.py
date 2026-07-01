@@ -248,6 +248,52 @@ class TestSendMessageSplitting(unittest.TestCase):
         self.assertEqual(len(sent), 1)
 
 
+def _mock_resp_200_body(body_bytes):
+    resp = MagicMock()
+    resp.status = 200
+    resp.read.return_value = body_bytes
+    resp.__enter__ = lambda s: s
+    resp.__exit__ = MagicMock(return_value=False)
+    return resp
+
+
+class TestSendMessageId(unittest.TestCase):
+    """Feature 0037: send_message_id liefert die message_id für Assistenten-Prompts."""
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", "")
+    def test_returns_none_without_token(self):
+        self.assertIsNone(telegram_client.send_message_id(123, "hi"))
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_returns_message_id_on_200(self, mock_urlopen):
+        body = json.dumps({"ok": True, "result": {"message_id": 4242}}).encode("utf-8")
+        mock_urlopen.return_value = _mock_resp_200_body(body)
+        self.assertEqual(telegram_client.send_message_id(123, "hi"), 4242)
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_returns_none_on_error(self, mock_urlopen):
+        mock_urlopen.side_effect = urllib.error.HTTPError("url", 403, "Forbidden", {}, None)
+        self.assertIsNone(telegram_client.send_message_id(123, "hi"))
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_markdown_400_falls_back_to_plaintext(self, mock_urlopen):
+        body = json.dumps({"ok": True, "result": {"message_id": 7}}).encode("utf-8")
+        calls = []
+
+        def side(req, *a, **k):
+            calls.append(req)
+            if len(calls) == 1:
+                raise urllib.error.HTTPError("url", 400, "Bad Request", {}, None)
+            return _mock_resp_200_body(body)
+
+        mock_urlopen.side_effect = side
+        self.assertEqual(telegram_client.send_message_id(123, "Zeitplan *"), 7)
+        self.assertEqual(len(calls), 2)  # genau ein Fallback
+
+
 class TestEditMessageReplyMarkup(unittest.TestCase):
     """Feature 0033: Inline-Keyboard einer bestehenden Nachricht entfernen/ersetzen."""
 

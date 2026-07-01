@@ -95,6 +95,51 @@ def send_message(chat_id: int, text: str, reply_markup: dict = None) -> bool:
     return ok
 
 
+def _post_return_id(url: str, payload: dict) -> "int | None":
+    """Sendet ein sendMessage-Payload und liest die message_id aus dem Antwort-Body. Wirft bei HTTP-/Netzfehler."""
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=10) as response:
+        if response.status != 200:
+            return None
+        data = json.loads(response.read().decode("utf-8"))
+        return data.get("result", {}).get("message_id")
+
+
+def send_message_id(chat_id: int, text: str, reply_markup: dict = None) -> "int | None":
+    """Sendet eine (kurze) Assistenten-Prompt-Nachricht und gibt ihre message_id zurück (oder None).
+
+    Feature 0037: Assistenten führen über eine lebende Prompt-Nachricht; der Renderer muss die
+    id des frischen Prompts merken. Bewusst getrennt von send_message (dessen bool-Contract,
+    Chunk-Splitting und Tests bleiben unberührt). Markdown→Klartext-Fallback wie _send_chunk;
+    Prompts sind kurz, daher kein Chunking.
+    """
+    if not config.TELEGRAM_BOT_TOKEN:
+        return None
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "Markdown"}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    try:
+        return _post_return_id(url, payload)
+    except urllib.error.HTTPError as e:
+        if e.code == 400:
+            payload.pop("parse_mode", None)
+            try:
+                return _post_return_id(url, payload)
+            except Exception as e2:
+                logger.error(f"Klartext-Fallback (id) an {chat_id} fehlgeschlagen: {e2}")
+                return None
+        logger.error(f"send_message_id an {chat_id} fehlgeschlagen (HTTP {e.code}).")
+        return None
+    except Exception as e:
+        logger.error(f"send_message_id an {chat_id} fehlgeschlagen: {e}")
+        return None
+
+
 def _send_chunk(chat_id: int, text: str, reply_markup: dict = None) -> bool:
     """Sendet ein einzelnes (bereits längen-begrenztes) Nachrichten-Teilstück inkl. Klartext-Fallback."""
     url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendMessage"
