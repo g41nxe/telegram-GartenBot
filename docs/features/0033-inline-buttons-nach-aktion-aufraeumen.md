@@ -27,13 +27,11 @@ Mechanisch wird die ursprüngliche Nachricht (über die bereits vorhandene `mess
 
 ## Implementierungs-Entscheidungen (Implementation Decisions)
 
-- **Betroffene Schicht:** ausschließlich `ui/telegram_ui.py` (Callback-Handler) und ggf. `ui/telegram_client.py` (neue Hilfsfunktion). Keine Änderung an `core/` oder Adaptern — rein präsentationsseitig.
-- **Aufräum-Mechanik:** Beim Beenden eines Inline-Flows wird die **ursprüngliche** Nachricht über ihre `message_id` bearbeitet (statt `send_message`), sodass das Inline-Keyboard entfällt. Zwei zulässige Wege:
-  - `edit_message_text(chat_id, message_id, <Ergebnistext>)` ohne `reply_markup` — ersetzt Prompt + entfernt Buttons (bevorzugt, wenn ein Ergebnistext sinnvoll ist).
-  - Neue Hilfsfunktion `edit_message_reply_markup(chat_id, message_id, reply_markup=None)` im `telegram_client` — entfernt nur das Keyboard und lässt den Nachrichtentext stehen (für Fälle, in denen der ursprüngliche Text erhalten bleiben soll, etwa quittierte Benachrichtigungen).
-- **Neue Telegram-Client-Schnittstelle:** `edit_message_reply_markup` wird als dünner Wrapper um die Telegram-Methode `editMessageReplyMarkup` ergänzt (stdlib-HTTP, analog zu `edit_message_text`). Sie ist optional je Aufrufstelle; der Default-Aufruf entfernt das Keyboard.
-- **Zu vereinheitlichende Abbruch-Callbacks:** `cancel`, `wiz_cancel`, `man_cancel`, `nebel_cancel`, `setup_cancel`, `update_cancel`, `camsetup_cancel`, `sched_edit_cancel`. Jeder editiert künftig die ursprüngliche Nachricht (Buttons weg) statt eine neue zu senden.
-- **Zu vereinheitlichende Fehlerpfade:** Stellen, die heute bei Fehlschlag `send_message("❌ Fehler …")` aufrufen, während die ursprüngliche Nachricht ein Inline-Keyboard trägt (insb. der manuelle Guss-Abschluss). Diese editieren die ursprüngliche Nachricht oder entfernen zumindest deren Keyboard.
+- **Betroffene Schicht:** ausschließlich `ui/telegram_ui.py` (Callback-Handler) und `ui/telegram_client.py` (neue Hilfsfunktion). Keine Änderung an `core/` oder Adaptern — rein präsentationsseitig. Siehe **ADR 0038**.
+- **Universelles Aufräum-Muster (gegrillt):** Die bestehende Bestätigungs-/Ergebnis-Nachricht bleibt **unverändert**; zusätzlich wird `edit_message_reply_markup(chat_id, message_id, None)` auf der **Ursprungsnachricht** aufgerufen — die Buttons verschwinden, der Text bleibt stehen. Kein Umschreiben von Texten, keine Flow-Änderung, nur **ein Zusatz-Call** je Abschlussstelle. (Die Alternative „Prompt-Text via `edit_message_text` ersetzen" wurde verworfen zugunsten des einheitlichen, minimalen Musters.)
+- **Neue Telegram-Client-Schnittstelle:** `edit_message_reply_markup(chat_id, message_id, reply_markup=None)` als dünner Wrapper um `editMessageReplyMarkup` (stdlib-HTTP, analog zu `edit_message_text`). Wird **jetzt** gebaut (nicht erst mit Feature 0018) — es ist die zentrale Mechanik.
+- **Zu vereinheitlichende Abbruch-Callbacks:** `cancel`, `wiz_cancel`, `man_cancel`, `nebel_cancel`, `setup_cancel`, `update_cancel`, `camsetup_cancel`, `sched_edit_cancel` — je ein Zusatz-Call. `sched_edit_cancel` behält sein `handle_schedules()` (neue Listen-Nachricht) und strippt zusätzlich das alte Bearbeiten-Menü-Keyboard.
+- **Zu vereinheitlichende Fehlerpfade:** Der callback-getriebene manuelle Guss-Fehler (`message_id` vorhanden) wird direkt aufgeräumt. Der **getippte** Custom-Mengen-Fehler läuft in `_process_message` ohne Callback-`message_id`; dafür wird die `message_id` des Eingabe-Prompts im Flow-State (`manual_states`) mitgeführt, sodass auch dieser Pfad sein Keyboard entfernt.
 - **Erfolgspfade bleiben unverändert**, sind aber Referenz: Sie nutzen bereits `edit_message_text` ohne Markup und gelten als das konsistente Zielmuster.
 - **`answer_callback_query`** bleibt für den kurzen Toast erhalten; es entfernt keine Buttons und ist kein Ersatz für das Aufräumen.
 - **Haupttastatur (Reply-Keyboard):** Wo nach Abbruch bisher `get_main_keyboard()` mitgeschickt wurde, bleibt die permanente Tastatur erhalten — sie ist ein Reply-Keyboard und vom Inline-Aufräumen unberührt. Falls eine abschließende Bestätigung als eigene Nachricht gewünscht ist, kann sie zusätzlich gesendet werden; entscheidend ist, dass das **Inline**-Keyboard der ursprünglichen Nachricht entfernt wird.
@@ -55,6 +53,7 @@ Mechanisch wird die ursprüngliche Nachricht (über die bereits vorhandene `mess
 - **Inhaltliche Neugestaltung der Abschluss-/Fehlertexte** (Ton, Wortlaut) — es geht nur um das Entfernen der Buttons, nicht um neue Botschaften.
 - **Aktionsfähige Benachrichtigungen** (Feature 0018) — dieses Feature schafft nur die saubere Grundlage (`edit_message_reply_markup`), implementiert aber keine neuen Button-Aktionen an Broadcast-Nachrichten.
 - **Timeout-/TTL-getriebenes Aufräumen** abgelaufener Wizard-Sessions im Hintergrund (ohne Nutzer-Interaktion) — die `message_id` ist dort nicht zur Hand; bleibt eine mögliche spätere Verfeinerung.
+- **Prompt-`message_id`-Mitführung über den manuellen Guss-Flow hinaus** — andere getippte Eingabe-Flows (z. B. Wizard-Textschritte) räumen ihr Keyboard weiterhin über den regulären Abbruch-/Callback-Weg auf; eine flächendeckende State-Mitführung für alle getippten Fehlerfälle ist nicht Teil dieses Features.
 
 ## Weitere Anmerkungen (Further Notes)
 
