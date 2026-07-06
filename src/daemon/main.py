@@ -20,13 +20,14 @@ def register_telegram_commands():
     """Registriert das native Telegram-Befehlsmenü (sichtbar im '/' Eingabefeld des Chats)."""
     from .ui import telegram_client
     # Feature 0031: De-dup zwischen /-Menü und Tastatur (siehe .agents/rules/telegram_messages.md).
-    # Registriert nur Befehle ohne gleichwertigen Button (/tagesbericht) oder die in Nachrichten
-    # verlinkt sind (/status: Kopplung/OTA/Hinweise · /update: CI-Build). /zeitplaene,
+    # Registriert nur Befehle ohne gleichwertigen Button (/tagesbericht, /diagnose) oder die in
+    # Nachrichten verlinkt sind (/status: Kopplung/OTA/Hinweise · /update: CI-Build). /zeitplaene,
     # /einstellungen und /stopp wurden ganz entfernt (nur noch über ihren Tastatur-Button).
     commands = [
         {"command": "status",        "description": "Systemstatus anzeigen"},
         {"command": "tagesbericht",  "description": "Tagesbericht anzeigen"},
         {"command": "update",        "description": "Software-Update starten"},
+        {"command": "diagnose",      "description": "Diagnose-Paket senden"},
     ]
     telegram_client.set_my_commands(commands)
 

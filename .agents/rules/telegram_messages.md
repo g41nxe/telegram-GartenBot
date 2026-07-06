@@ -70,13 +70,13 @@ Slash-Befehle werden nicht nur in den `docs/design/`-HTMLs dokumentiert, sondern
 - [`CONTEXT.md`](../../CONTEXT.md) — Glossar-Einträge, die einen Befehl in Klammern nennen.
 - [`docs/assets/bot_description.md`](../../docs/assets/bot_description.md) — die bei @BotFather hinterlegte Bot-Beschreibung.
 
-Maßgeblich (Single Source of Truth) ist der **Code**: der Dispatcher (`_process_message` in `telegram_ui.py`) plus `register_telegram_commands` in `main.py`. Es existiert nur, was dort vorkommt — derzeit `/start`, `/status`, `/tagesbericht`, `/update`. Alles andere ist ein Tastatur-Button.
+Maßgeblich (Single Source of Truth) ist der **Code**: der Dispatcher (`_process_message` in `telegram_ui.py`) plus `register_telegram_commands` in `main.py`. Es existiert nur, was dort vorkommt — derzeit `/start`, `/status`, `/tagesbericht`, `/update`, `/diagnose`. Alles andere ist ein Tastatur-Button.
 
 Beim Angleichen:
 
 1. **Entfernte Befehle raus:** Ist ein Befehl zum Button geworden, nenne ihn beim **Button-Label** (z. B. „💧 Gießcheck"), nicht mehr als `/befehl`. Verwaiste `/befehl`-Erwähnungen ersatzlos streichen.
 2. **Nur gültige Befehle als `/...`:** In der Prosa darf ein `` `/befehl` `` nur stehen, wenn er im Dispatcher existiert.
-3. **Schnell prüfen:** `grep -rnoE '`/[a-z_]+`' README.md CONTEXT.md docs/assets/bot_description.md` — jeder Treffer außer `/start`, `/status`, `/tagesbericht`, `/update` ist ein Fehler.
+3. **Schnell prüfen:** `grep -rnoE '`/[a-z_]+`' README.md CONTEXT.md docs/assets/bot_description.md` — jeder Treffer außer `/start`, `/status`, `/tagesbericht`, `/update`, `/diagnose` ist ein Fehler.
 
 **NICHT anfassen** (historische bzw. eigenständig gepflegte Quellen — diese spiegeln bewusst den Stand ihrer Entstehung):
 

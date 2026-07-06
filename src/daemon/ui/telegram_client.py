@@ -185,54 +185,78 @@ def _send_chunk(chat_id: int, text: str, reply_markup: dict = None) -> bool:
         logger.error(f"Fehler beim Senden der Telegram-Nachricht an {chat_id}: {e} | Nachricht: \"{preview}\"")
         return False
 
-def send_photo(chat_id: int, image_bytes: bytes, caption: str = None) -> bool:
-    """Sendet ein PNG-Bild per Multipart-Upload an einen Telegram-Chat."""
-    if not config.TELEGRAM_BOT_TOKEN:
-        logger.warning("Telegram Bot Token nicht konfiguriert. Foto wird nicht gesendet.")
-        return False
+def _multipart_upload(endpoint: str, file_field: str, filename: str, content_type: str,
+                      file_bytes: bytes, fields: dict, timeout: int) -> bool:
+    """Baut einen multipart/form-data-Body mit genau einem Datei-Feld und sendet ihn.
 
-    import email.mime.multipart
-    import email.mime.base
-    import email.encoders
-    import io
-
-    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/sendPhoto"
-
+    Gemeinsame Basis von send_photo und send_document. Der Aufrufer hat den Token
+    bereits geprüft. Wirft bei Netz-/HTTP-Fehler (der Aufrufer fängt und loggt).
+    """
+    url = f"https://api.telegram.org/bot{config.TELEGRAM_BOT_TOKEN}/{endpoint}"
     boundary = b"----TelegramBoundary"
     body_parts = []
-
-    def add_field(name: str, value: str):
+    for name, value in fields.items():
         body_parts.append(
             b"--" + boundary + b"\r\n"
             b'Content-Disposition: form-data; name="' + name.encode() + b'"\r\n\r\n'
             + value.encode("utf-8") + b"\r\n"
         )
-
-    add_field("chat_id", str(chat_id))
-    if caption:
-        add_field("caption", caption)
-        add_field("parse_mode", "Markdown")
-
     body_parts.append(
         b"--" + boundary + b"\r\n"
-        b'Content-Disposition: form-data; name="photo"; filename="chart.png"\r\n'
-        b"Content-Type: image/png\r\n\r\n"
-        + image_bytes + b"\r\n"
+        b'Content-Disposition: form-data; name="' + file_field.encode() + b'"; filename="'
+        + filename.encode("utf-8") + b'"\r\n'
+        b"Content-Type: " + content_type.encode() + b"\r\n\r\n"
+        + file_bytes + b"\r\n"
     )
     body_parts.append(b"--" + boundary + b"--\r\n")
 
-    body = b"".join(body_parts)
+    req = urllib.request.Request(
+        url,
+        data=b"".join(body_parts),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary.decode()}"},
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return response.status == 200
 
+
+def _upload_fields(chat_id: int, caption: str = None) -> dict:
+    fields = {"chat_id": str(chat_id)}
+    if caption:
+        fields["caption"] = caption
+        fields["parse_mode"] = "Markdown"
+    return fields
+
+
+def send_photo(chat_id: int, image_bytes: bytes, caption: str = None) -> bool:
+    """Sendet ein PNG-Bild per Multipart-Upload an einen Telegram-Chat."""
+    if not config.TELEGRAM_BOT_TOKEN:
+        logger.warning("Telegram Bot Token nicht konfiguriert. Foto wird nicht gesendet.")
+        return False
     try:
-        req = urllib.request.Request(
-            url,
-            data=body,
-            headers={"Content-Type": f"multipart/form-data; boundary={boundary.decode()}"},
+        return _multipart_upload(
+            "sendPhoto", "photo", "chart.png", "image/png",
+            image_bytes, _upload_fields(chat_id, caption), timeout=15,
         )
-        with urllib.request.urlopen(req, timeout=15) as response:
-            return response.status == 200
     except Exception as e:
         logger.error(f"Fehler beim Senden des Fotos an {chat_id}: {e}")
+        return False
+
+
+def send_document(chat_id: int, document_bytes: bytes, filename: str, caption: str = None) -> bool:
+    """Sendet ein Dokument (z. B. das Diagnose-Paket als ZIP) per Multipart-Upload."""
+    if not config.TELEGRAM_BOT_TOKEN:
+        logger.warning("Telegram Bot Token nicht konfiguriert. Dokument wird nicht gesendet.")
+        return False
+    # Größenabhängiger Timeout: das schwache WLAN der Steuerzentrale braucht bei
+    # mehreren MB deutlich länger als eine feste Minute. Basis 60 s + 1 s je 50 KB.
+    timeout = 60 + len(document_bytes) // (50 * 1024)
+    try:
+        return _multipart_upload(
+            "sendDocument", "document", filename, "application/zip",
+            document_bytes, _upload_fields(chat_id, caption), timeout=timeout,
+        )
+    except Exception as e:
+        logger.error(f"Fehler beim Senden des Dokuments an {chat_id}: {e}")
         return False
 
 

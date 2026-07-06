@@ -302,6 +302,7 @@ Der Bot bietet ein permanentes Tastenmenü am unteren Bildschirmrand sowie ein n
 
 ### System
 *   **🔄 Software-Update (`/update`):** OTA-Update aus dem neuesten GitHub-Release inkl. Release-Notes und Erfolgs-/Rollback-Meldung.
+*   **🩺 Diagnose-Paket (`/diagnose`):** Sendet ein ZIP mit Journal-Auszügen (Daemon + Mittelweg-Dienst), einem konsistenten Datenbank-Schnappschuss, `garden.conf` und System-Steckbrief in den Chat — Ferndiagnose ohne SSH. Geheimnisse (`.env`) sind nie enthalten; nicht einsammelbare Bausteine werden als Lücken ausgewiesen.
 *   **⚙️ Einstellungen:** Passt Schwellenwerte direkt im Chat an.
 
 ---
@@ -340,6 +341,7 @@ Hintergrund: [ADR 0023](docs/adr/0023-ota-update-via-github-actions-und-releases
 | **Kein Wetter-Skip / Regensensor offline** | Bleibt der Sensor länger als `RAIN_SENSOR_OFFLINE_HOURS` stumm, fällt die Quelle automatisch auf das ERA5-Archiv zurück (im `/status` ausgewiesen). |
 | **Kamera-Upload schlägt fehl** | Bilder > `CAMERA_MAX_UPLOAD_BYTES` oder ungültige JPEGs werden abgewiesen; nicht gekoppelte Kameras erhalten `403`. Port `CAMERA_RECEIVER_PORT` (Standard 8080) muss erreichbar sein. |
 | **`python -m daemon.main` schlägt fehl** | Der korrekte Modulpfad ist `python -m src.daemon.main` (aus dem Repo-Root). |
+| **Logs/Daten nötig, aber kein SSH-Zugriff** | `/diagnose` im Telegram-Bot sendet das Diagnose-Paket (Journale, Datenbank-Schnappschuss, Konfiguration, System-Steckbrief) direkt in den Chat. |
 
 ---
 

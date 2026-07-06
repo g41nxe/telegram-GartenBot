@@ -16,13 +16,13 @@ from daemon.ui.telegram_ui import (
 class TestReadLocalVersion(unittest.TestCase):
 
     def test_reads_version_file(self):
-        with patch("daemon.ui.telegram_ui._VERSION_FILE") as mock_path:
+        with patch("daemon.config.VERSION_FILE") as mock_path:
             mock_path.exists.return_value = True
             mock_path.read_text.return_value = "v1.2.3\n"
             self.assertEqual(_read_local_version(), "v1.2.3")
 
     def test_returns_unbekannt_when_file_missing(self):
-        with patch("daemon.ui.telegram_ui._VERSION_FILE") as mock_path:
+        with patch("daemon.config.VERSION_FILE") as mock_path:
             mock_path.exists.return_value = False
             self.assertEqual(_read_local_version(), "unbekannt")
 
