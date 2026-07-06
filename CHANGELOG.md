@@ -1,3 +1,14 @@
+## v1.15.0 — 2026-07-06
+
+### Neu
+- Diagnose-Paket per /diagnose: Journale, DB-Schnappschuss & Steckbrief als ZIP im Chat
+
+### Geändert
+- Assistenten führen jetzt über eine einzige „lebende" Prompt-Nachricht (weniger Rauschen)
+- Inline-Buttons werden nach der Aktion automatisch aufgeräumt
+
+---
+
 ## v1.14.0 — 2026-06-30
 
 ### Neu
