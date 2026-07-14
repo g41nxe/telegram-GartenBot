@@ -760,6 +760,16 @@ Warst das nicht du, prüf die Leitung — das Hardware-Sicherheits-Timeout schli
       <li>Über den Tageswechsel: <code>📷 Foto um 20:00 · aufgenommen 13.07. um 00:08</code> — liegt die Aufnahme an einem anderen Tag als der Aufnahme-Zeitpunkt, nennt der Hinweis auch das Datum.</li>
     </ul>
 
+    <div class="src">_on_camera_delay_alert · CameraDelayAlertTriggered</div>
+    <div class="bubble">⚠️ <b>Kamera verfehlt ihre Aufnahme-Zeitpunkte:</b> Kamera „Garten01“ lieferte zuletzt 28 Minuten zu spät (Schwelle: 15 Minuten).
+
+Die Fotos kommen an, aber die Kamera erreicht ihre Zeitpunkte nicht mehr — das deutet auf schwaches WLAN oder einen schwachen Akku hin.</div>
+    <div class="note">Zweite Alarmklasse der Kamera-Überwachung (ADR 0041): Die Kamera <em>liefert</em> Bilder, trifft ihre Aufnahme-Zeitpunkte aber nicht mehr. Der Inaktivitäts-Watchdog kann das nicht sehen, weil <code>last_seen</code> dabei frisch bleibt. Gemeldet wird erst beim <b>zweiten</b> Verzug in Folge (ein einzelner WLAN-Wackler soll nicht nachts melden). Ein Aufnahme-Zeitpunkt, der abgelöst wird, ohne je ein Bild erhalten zu haben, gilt als maximal verzögert und löst dieselbe Warnung aus.</div>
+
+    <div class="src">_on_camera_delay_resolved · CameraDelayAlertResolved</div>
+    <div class="bubble">🟢 <b>Kamera wieder pünktlich:</b> Kamera „Garten01“ trifft ihre Aufnahme-Zeitpunkte wieder.</div>
+    <div class="note">Entwarnung, sobald ein Aufnahme-Zeitpunkt wieder innerhalb der Verzugs-Schwelle erfüllt wird.</div>
+
     <div class="src">_on_nebel_interval_started · NebelIntervalStarted</div>
     <div class="bubble">🌫️ <b>Nebel-Intervall gestartet</b>
 „Terrasse“ kühlt bis 18:00 Uhr.

@@ -212,3 +212,30 @@ class TestZustellungFehlgeschlagen(unittest.TestCase):
                 "Ein fehlgeschlagener Versand muss gemeldet werden, sonst ist das Foto still verloren"
         finally:
             os.unlink(fpath)
+
+
+class TestAufnahmeVerzugMeldungen(unittest.TestCase):
+    """Telegram-Nachrichten der zweiten Alarmklasse (ADR 0041)."""
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_warnung_nennt_kamera_und_verzug(self, mock_tc):
+        from daemon.ui import telegram_ui
+        from daemon.core.camera_events import CameraDelayAlertTriggered
+
+        telegram_ui._on_camera_delay_alert(
+            CameraDelayAlertTriggered("AA:BB", "Garten01", 28.0, 15)
+        )
+
+        msg = mock_tc.broadcast_notification.call_args.args[0]
+        assert "Garten01" in msg
+        assert "28" in msg, "Die Warnung muss den Verzug nennen"
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_entwarnung_nennt_die_kamera(self, mock_tc):
+        from daemon.ui import telegram_ui
+        from daemon.core.camera_events import CameraDelayAlertResolved
+
+        telegram_ui._on_camera_delay_resolved(CameraDelayAlertResolved("AA:BB", "Garten01"))
+
+        msg = mock_tc.broadcast_notification.call_args.args[0]
+        assert "Garten01" in msg

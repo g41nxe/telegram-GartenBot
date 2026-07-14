@@ -12,11 +12,18 @@ class EventBus:
         self._lock = threading.Lock()
 
     def subscribe(self, event_type: Type[Event], callback: Callable[[Any], None]):
-        """Registriert einen Listener-Callback für einen bestimmten Event-Typ."""
+        """Registriert einen Listener-Callback für einen bestimmten Event-Typ.
+
+        Idempotent: Derselbe Callback wird pro Ereignis-Typ nur einmal registriert. Ein
+        doppeltes Abonnement würde das Ereignis zweimal zustellen — für zählende Abonnenten
+        (etwa den Verzugs-Zähler der Kamera-Überwachung, ADR 0041) wäre das ein stiller
+        Rechenfehler mit Fehlalarm als Folge.
+        """
         with self._lock:
             if event_type not in self._listeners:
                 self._listeners[event_type] = []
-            self._listeners[event_type].append(callback)
+            if callback not in self._listeners[event_type]:
+                self._listeners[event_type].append(callback)
 
     def unsubscribe(self, event_type: Type[Event], callback: Callable[[Any], None]):
         """Entfernt einen zuvor registrierten Listener-Callback."""

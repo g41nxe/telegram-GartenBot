@@ -636,3 +636,26 @@ class TestFormatHeute(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestKameraVerzugImTagesbericht(unittest.TestCase):
+    """Ein aktiver Aufnahme-Verzug erscheint als Stoerungszeile im Tagesbericht (ADR 0041)."""
+
+    def test_aktiver_verzug_erscheint_als_stoerung(self):
+        from daemon.adapters import daily_report, database
+        from unittest.mock import patch
+
+        cameras = [{"mac_address": "AA:BB", "wish_name": "Garten01"}]
+
+        def fake_metadata(key, default=None):
+            if key == "watchdog_delay_alert_active_camera_AA:BB":
+                return "1"
+            return default
+
+        with patch.object(database, "get_all_cameras", return_value=cameras), \
+             patch.object(database, "get_metadata", side_effect=fake_metadata):
+            issues = daily_report._kamera_issues()
+
+        assert any("Garten01" in i for i in issues), f"Erwartete Stoerungszeile fehlt: {issues}"
+        assert any("Aufnahme-Zeitpunkt" in i for i in issues), \
+            f"Die Zeile muss den Aufnahme-Verzug benennen: {issues}"

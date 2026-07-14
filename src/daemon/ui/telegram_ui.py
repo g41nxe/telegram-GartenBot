@@ -33,7 +33,8 @@ from ..core.scheduler_events import (
 from ..adapters import weather as _weather_adapter
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
 from ..core.camera_events import (CameraInactivityAlertTriggered, CameraInactivityAlertResolved,
-                                  TimedPhotoCaptured, TimedPhotoDeliveryFailed)
+                                  TimedPhotoCaptured, TimedPhotoDeliveryFailed,
+                                  CameraDelayAlertTriggered, CameraDelayAlertResolved)
 from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
@@ -2934,6 +2935,24 @@ def _on_camera_inactivity_resolved(event: CameraInactivityAlertResolved):
     msg = f"🟢 *Kamera-Verbindung wiederhergestellt:* Kamera \"{_md_escape(event.wish_name)}\" sendet wieder Bilder."
     telegram_client.broadcast_notification(msg)
 
+def _on_camera_delay_alert(event: CameraDelayAlertTriggered):
+    """Die Kamera liefert Bilder, trifft ihre Aufnahme-Zeitpunkte aber nicht mehr (ADR 0041)."""
+    msg = (
+        f"⚠️ *Kamera verfehlt ihre Aufnahme-Zeitpunkte:* Kamera \"{_md_escape(event.wish_name)}\" "
+        f"lieferte zuletzt {event.verzug_minuten:.0f} Minuten zu spät "
+        f"(Schwelle: {event.schwelle_minuten} Minuten).\n\n"
+        f"Die Fotos kommen an, aber die Kamera erreicht ihre Zeitpunkte nicht mehr — "
+        f"das deutet auf schwaches WLAN oder einen schwachen Akku hin."
+    )
+    telegram_client.broadcast_notification(msg)
+
+def _on_camera_delay_resolved(event: CameraDelayAlertResolved):
+    msg = (
+        f"🟢 *Kamera wieder pünktlich:* Kamera \"{_md_escape(event.wish_name)}\" "
+        f"trifft ihre Aufnahme-Zeitpunkte wieder."
+    )
+    telegram_client.broadcast_notification(msg)
+
 _RAIN_FLAG_KEY = "rain_sensor_raining_flag"
 
 def _on_rain_sensor_measured(event: RainSensorMeasured):
@@ -3017,5 +3036,7 @@ def subscribe_event_handlers():
     _global_bus.subscribe(UnexpectedValveOpened, _on_unexpected_valve_opened)
     _global_bus.subscribe(UnexpectedValveResolved, _on_unexpected_valve_resolved)
     _global_bus.subscribe(TimedPhotoCaptured, _on_timed_photo_captured)
+    _global_bus.subscribe(CameraDelayAlertTriggered, _on_camera_delay_alert)
+    _global_bus.subscribe(CameraDelayAlertResolved, _on_camera_delay_resolved)
     _global_bus.subscribe(NebelIntervalStarted, _on_nebel_interval_started)
     _global_bus.subscribe(NebelIntervalEnded, _on_nebel_interval_ended)

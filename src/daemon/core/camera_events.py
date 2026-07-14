@@ -43,6 +43,28 @@ class TimedPhotoCaptured(Event):
         self.mac_address = mac_address
 
 
+class CameraDelayAlertTriggered(Event):
+    """Die Garten-Kamera trifft ihre Aufnahme-Zeitpunkte nicht mehr (Aufnahme-Verzug, ADR 0041).
+
+    Zweite Alarmklasse der Kamera-Überwachung neben der Inaktivität: Die Kamera liefert Bilder,
+    ist also nicht still — sie ist unpünktlich. Der Inaktivitäts-Watchdog kann das nicht sehen,
+    weil `last_seen` dabei durchgehend frisch bleibt.
+    """
+    def __init__(self, mac_address: str, wish_name: str, verzug_minuten: float,
+                 schwelle_minuten: int):
+        self.mac_address = mac_address
+        self.wish_name = wish_name
+        self.verzug_minuten = verzug_minuten
+        self.schwelle_minuten = schwelle_minuten
+
+
+class CameraDelayAlertResolved(Event):
+    """Die Garten-Kamera trifft ihre Aufnahme-Zeitpunkte wieder (Entwarnung)."""
+    def __init__(self, mac_address: str, wish_name: str):
+        self.mac_address = mac_address
+        self.wish_name = wish_name
+
+
 class TimedPhotoDeliveryFailed(Event):
     """Der Versand eines erfüllenden Fotos ist gescheitert (Telegram nicht erreichbar).
 

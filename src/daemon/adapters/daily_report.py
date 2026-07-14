@@ -37,6 +37,24 @@ def _sensor_issues() -> list:
     return issues
 
 
+def _kamera_issues() -> list:
+    """Störungen der Garten-Kameras für den Tagesbericht (ADR 0041).
+
+    Der Aufnahme-Verzug ist der Frühindikator: Er steigt, lange bevor Bilder ganz ausbleiben.
+    Die Inaktivität meldet der Watchdog ohnehin sofort per Nachricht — hier steht, was gerade
+    noch offen ist.
+    """
+    issues = []
+    for camera in database.get_all_cameras():
+        mac = camera["mac_address"]
+        name = camera.get("wish_name", "?")
+        if database.get_metadata(f"watchdog_delay_alert_active_camera_{mac}") == "1":
+            issues.append(f"⚠️ Kamera „{name}“: trifft ihre Aufnahme-Zeitpunkte nicht mehr")
+        elif database.get_metadata(f"watchdog_alert_active_camera_{mac}") == "1":
+            issues.append(f"⚠️ Kamera „{name}“: kein Bild (Watchdog aktiv)")
+    return issues
+
+
 def _is_report_green(valves: list, services_ok: bool) -> bool:
     """True wenn System, alle Ventile und der Regensensor im Normalzustand — Kurzform wird verwendet."""
     if not services_ok:
@@ -51,7 +69,7 @@ def _is_report_green(valves: list, services_ok: bool) -> bool:
         flag_key = f"watchdog_alert_active_valve_{valve['id']}"
         if database.get_metadata(flag_key) == "1":
             return False
-    if _sensor_issues():
+    if _sensor_issues() or _kamera_issues():
         return False
     return True
 
@@ -310,6 +328,7 @@ def _collect_issues(valves: list, services_ok: bool) -> list:
             issues.append(f"⚠️ {wish_name}: kein Signal (Watchdog aktiv)")
 
     issues.extend(_sensor_issues())
+    issues.extend(_kamera_issues())
     return issues
 
 

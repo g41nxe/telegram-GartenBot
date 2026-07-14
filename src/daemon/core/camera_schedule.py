@@ -131,6 +131,37 @@ def faelliger_aufnahme_zeitpunkt(
     return best
 
 
+def verpasste_aufnahme_zeitpunkte(
+    now: datetime,
+    schedules: list,
+    photo_times: list,
+    after_offset_minutes: int,
+    zuletzt_zugestellt: datetime | None,
+) -> list:
+    """Aufnahme-Zeitpunkte, die abgelöst wurden, ohne je ein Bild erhalten zu haben (ADR 0041).
+
+    Der jüngste fällige Zeitpunkt zählt nicht dazu: Er ist noch **offen** — das nächste Bild
+    erfüllt ihn. Verpasst ist ein Zeitpunkt erst, wenn ein neuerer ihn abgelöst hat.
+
+    Ohne bekannten Zustand (`zuletzt_zugestellt is None`) wird nichts gemeldet: Nach einem
+    Daemon-Neustart soll keine Alarm-Flut für längst vergangene Zeitpunkte entstehen.
+    """
+    if zuletzt_zugestellt is None:
+        return []
+
+    faellige = sorted(
+        target_dt
+        for target_dt, _caption, _label in (
+            _guss_targets(now, schedules, after_offset_minutes)
+            + _absolute_targets(now, photo_times)
+        )
+        if zuletzt_zugestellt < target_dt <= now
+    )
+
+    # Den jüngsten (noch offenen) Zeitpunkt ausnehmen.
+    return faellige[:-1]
+
+
 def beschriftung_mit_verzug(
     caption: str,
     target_dt: datetime,

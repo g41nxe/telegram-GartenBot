@@ -63,3 +63,27 @@ class TestEventBus(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_doppeltes_abonnement_stellt_nur_einmal_zu():
+    """Derselbe Callback darf pro Ereignis-Typ nur einmal registriert sein.
+
+    Zaehlende Abonnenten (z. B. der Verzugs-Zaehler der Kamera-Ueberwachung) wuerden bei
+    Doppel-Zustellung falsch rechnen und Fehlalarme ausloesen.
+    """
+    from src.daemon.core.event_bus import EventBus, Event
+
+    class Ping(Event):
+        pass
+
+    bus = EventBus()
+    empfangen = []
+
+    def listener(e):
+        empfangen.append(e)
+
+    bus.subscribe(Ping, listener)
+    bus.subscribe(Ping, listener)
+    bus.publish(Ping())
+
+    assert len(empfangen) == 1, f"Erwartet genau eine Zustellung, waren {len(empfangen)}"

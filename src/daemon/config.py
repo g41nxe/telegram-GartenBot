@@ -203,6 +203,13 @@ try:
 except ValueError:
     AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN = 5
 
+# Ab welchem Aufnahme-Verzug die Kamera-Überwachung eine Störung meldet (ADR 0041).
+# Gesund liegt der Verzug unter einer Minute (±60 s Wecker-Quantisierung plus Bootzeit).
+try:
+    AUFNAHME_VERZUG_SCHWELLE_MINUTEN = int(os.getenv("AUFNAHME_VERZUG_SCHWELLE_MINUTEN", "15"))
+except ValueError:
+    AUFNAHME_VERZUG_SCHWELLE_MINUTEN = 15
+
 try:
     CAMERA_AFTER_GUSS_OFFSET_MINUTES = int(os.getenv("CAMERA_AFTER_GUSS_OFFSET_MINUTES", "2"))
 except ValueError:

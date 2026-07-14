@@ -200,3 +200,121 @@ class TestWatchdogCheck(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAufnahmeVerzug(unittest.TestCase):
+    """Zweite Alarmklasse der Kamera-Ueberwachung: Aufnahme-Verzug (ADR 0041)."""
+
+    MAC = "AA:BB:CC:DD:EE:01"
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._db_patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._db_patcher.start()
+        db.init_db()
+        db.add_camera(self.MAC, "Garten01")
+        self.events = []
+        from daemon.core.camera_events import (
+            CameraDelayAlertTriggered, CameraDelayAlertResolved,
+        )
+        _global_bus.subscribe(CameraDelayAlertTriggered, self.events.append)
+        _global_bus.subscribe(CameraDelayAlertResolved, self.events.append)
+
+    def tearDown(self):
+        self._db_patcher.stop()
+        self.db_path.unlink(missing_ok=True)
+
+    def _erfuellt(self, verzug_minuten: int):
+        """Simuliert einen erfuellten Aufnahme-Zeitpunkt mit dem gegebenen Verzug."""
+        from daemon.core.camera_events import TimedPhotoCaptured
+        target = datetime(2026, 7, 14, 8, 0)
+        _global_bus.publish(TimedPhotoCaptured(
+            "Garten01", "/tmp/x.jpg", "📷 Foto um 08:00",
+            target_dt=target,
+            captured_at=target + timedelta(minutes=verzug_minuten),
+            mac_address=self.MAC,
+        ))
+
+    def test_ein_einzelner_verzug_meldet_noch_nicht(self):
+        """Ein WLAN-Wackler soll nicht nachts melden — erst der zweite Verzug in Folge."""
+        watchdog.initialize()
+        self._erfuellt(28)
+
+        assert self.events == [], "Ein einzelner Verzug darf keine Warnung ausloesen"
+
+    def test_zweiter_verzug_in_folge_meldet(self):
+        from daemon.core.camera_events import CameraDelayAlertTriggered
+        watchdog.initialize()
+        self._erfuellt(28)
+        self._erfuellt(16)
+
+        alarme = [e for e in self.events if isinstance(e, CameraDelayAlertTriggered)]
+        assert len(alarme) == 1, f"Erwartet genau eine Warnung, war {len(alarme)}"
+        assert alarme[0].mac_address == self.MAC
+
+    def test_puenktlicher_treffer_entwarnt(self):
+        from daemon.core.camera_events import CameraDelayAlertResolved
+        watchdog.initialize()
+        self._erfuellt(28)
+        self._erfuellt(16)
+        self.events.clear()
+
+        self._erfuellt(0)
+
+        entwarnungen = [e for e in self.events if isinstance(e, CameraDelayAlertResolved)]
+        assert len(entwarnungen) == 1, "Ein puenktlicher Aufnahme-Zeitpunkt muss entwarnen"
+
+
+class TestVerpassteAufnahmeZeitpunkte(unittest.TestCase):
+    """Ein abgeloester Aufnahme-Zeitpunkt ohne Bild gilt als maximal verzoegert (ADR 0041)."""
+
+    MAC = "AA:BB:CC:DD:EE:02"
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._db_patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._db_patcher.start()
+        db.init_db()
+        db.add_camera(self.MAC, "Garten01")
+        # Kamera meldet sich regelmaessig — der Inaktivitaets-Watchdog schweigt also
+        db.update_camera_on_upload(self.MAC)
+        self.events = []
+        from daemon.core.camera_events import CameraDelayAlertTriggered
+        _global_bus.subscribe(CameraDelayAlertTriggered, self.events.append)
+
+    def tearDown(self):
+        self._db_patcher.stop()
+        self.db_path.unlink(missing_ok=True)
+
+    def test_zwei_abgeloeste_zeitpunkte_ohne_bild_melden(self):
+        """Drei faellige Zeitpunkte ohne Bild: zwei sind abgeloest (= verpasst), einer noch offen."""
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        for stunden in (4, 3, 2):
+            t = (now - timedelta(hours=stunden)).replace(second=0, microsecond=0)
+            db.add_photo_time(t.strftime("%H:%M"))
+        # Zuletzt zugestellt: ein Zeitpunkt von vor 5 Stunden
+        zuletzt = (now - timedelta(hours=5)).replace(second=0, microsecond=0)
+        db.set_metadata(f"last_delivered_target:{self.MAC}", zuletzt.isoformat())
+
+        watchdog.run_watchdog_check()
+
+        assert len(self.events) == 1, \
+            f"Zwei abgeloeste Zeitpunkte ohne Bild muessen melden, war {len(self.events)}"
+
+    def test_kein_doppelzaehlen_ueber_mehrere_pruefläufe(self):
+        """Derselbe verpasste Zeitpunkt darf nicht bei jedem stuendlichen Lauf erneut zaehlen."""
+        from datetime import datetime, timedelta
+        now = datetime.now()
+        t1 = (now - timedelta(hours=2)).replace(second=0, microsecond=0)
+        db.add_photo_time(t1.strftime("%H:%M"))
+        db.add_photo_time((now + timedelta(hours=1)).strftime("%H:%M"))  # noch offen
+        zuletzt = (now - timedelta(hours=3)).replace(second=0, microsecond=0)
+        db.set_metadata(f"last_delivered_target:{self.MAC}", zuletzt.isoformat())
+
+        watchdog.run_watchdog_check()
+        watchdog.run_watchdog_check()
+        watchdog.run_watchdog_check()
+
+        assert self.events == [], \
+            "Ein einzelner verpasster Zeitpunkt darf auch nach mehreren Pruefläufen nicht melden"

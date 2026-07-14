@@ -53,9 +53,15 @@ Kamera-Empfänger gilt dasselbe.
    und löst dieselbe Warnung aus. Damit ist **Feature 0040** vollständig abgedeckt; es braucht
    keinen eigenen Mechanismus.
 
-7. **Sichtbarkeit im Tagesbericht** analog ADR 0018, Punkt 5: Der durchschnittliche Aufnahme-Verzug
-   des Tages wird ausgewiesen. Er ist der Frühindikator — er steigt, lange bevor Bilder ganz
-   ausbleiben.
+7. **Sichtbarkeit im Tagesbericht** analog ADR 0018, Punkt 5: Solange der Verzugs-Alarm aktiv ist,
+   erscheint eine Störungszeile („Kamera „Garten01": trifft ihre Aufnahme-Zeitpunkte nicht mehr")
+   und der Bericht gilt nicht mehr als grün.
+
+   **Abweichung von der ursprünglichen Fassung:** Dort war der **durchschnittliche** Aufnahme-Verzug
+   des Tages vorgesehen. Dafür bräuchte es eine Verzugs-Historie — eine neue Tabelle, die es nicht
+   gibt. Der Zustand („trifft die Zeitpunkte nicht mehr") trägt die Entscheidung, die der Nutzer
+   treffen muss, genauso gut; die Zahl wäre Zierrat. Eine Historie lohnt erst, wenn wir Trends
+   auswerten wollen — dann als eigenes Feature, nicht als Beifang.
 
 ## Konsequenzen
 
