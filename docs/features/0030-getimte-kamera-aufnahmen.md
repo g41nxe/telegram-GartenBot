@@ -78,7 +78,7 @@ Steuerzentrale und die Firmware bleiben unverändert.
   wiederverwenden), plus Liste und Einzel-Löschung.
 - **Konfigurationswerte:**
   - ~~`TIMED_PHOTO_TOLERANCE_MINUTES` (`garden.conf`, Default 5) — Toleranzfenster.~~
-    **Entfallen mit ADR 0040 / Feature 0041:** Das Toleranzfenster verwarf verspätete Fotos
+    **Entfallen mit ADR 0040 / Feature 0042:** Das Toleranzfenster verwarf verspätete Fotos
     still. Ein Aufnahme-Zeitpunkt wird jetzt vom ersten Bild nach ihm erfüllt; der Nachfolger
     `AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN` steuert nur noch den Verzugs-Hinweis in der
     Bildunterschrift.

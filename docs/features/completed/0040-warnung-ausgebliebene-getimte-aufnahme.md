@@ -71,7 +71,7 @@ Siehe ADR 0041.
 
 ## Implementierungs-Entscheidungen (Implementation Decisions)
 
-- **Rein serverseitig**, kein Firmware-Eingriff. Setzt Feature 0041 (Zustellung nach
+- **Rein serverseitig**, kein Firmware-Eingriff. Setzt Feature 0042 (Zustellung nach
   Aufnahme-Verzug) voraus, weil erst dort der Verzug überhaupt ermittelt wird.
 
 - **Tatsache und Bewertung getrennt (ADR 0018).** Der `camera_receiver` **ermittelt** den Verzug
@@ -85,7 +85,7 @@ Siehe ADR 0041.
 - **Nicht erfüllter Aufnahme-Zeitpunkt = maximaler Verzug.** Wird ein Aufnahme-Zeitpunkt von
   seinem Nachfolger abgelöst, ohne ein Bild erhalten zu haben, zählt das wie ein Verzug über der
   Schwelle. Erkannt wird das im stündlichen Watchdog-Lauf aus dem zuletzt zugestellten
-  Aufnahme-Zeitpunkt (Feature 0041) gegen die Liste der fälligen Zeitpunkte.
+  Aufnahme-Zeitpunkt (Feature 0042) gegen die Liste der fälligen Zeitpunkte.
 
 - **Vorrang der Inaktivität.** Ist das Inaktivitäts-Flag der Kamera gesetzt, wird keine
   Verzugs-Warnung gesendet (Story 6).
