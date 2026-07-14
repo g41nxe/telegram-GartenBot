@@ -201,23 +201,30 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
 
         if _global_bus:
             _global_bus.publish(CameraImageReceived(mac, wish_name, str(file_path)))
-            caption = camera_schedule.find_matching_photo_target(
+
+            # Ein Aufnahme-Zeitpunkt wird vom ersten Bild erfuellt, das NACH ihm eintrifft
+            # (ADR 0040). Er bleibt offen, bis der naechste ihn abloest — die Kamera trifft
+            # ihn bauartbedingt nie exakt, und ein verworfenes Bild waere ein stiller Verlust.
+            faellig = camera_schedule.faelliger_aufnahme_zeitpunkt(
                 now,
                 database.get_schedules(),
                 database.get_photo_times(),
                 config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
-                config.TIMED_PHOTO_TOLERANCE_MINUTES,
             )
-            if caption:
-                # Dedup: pro Kamera und Aufnahme-Zeitpunkt nur ein Telegram-Foto.
-                # Mehrere Uploads im selben Toleranzfenster (Kamera wacht auf Anflug
-                # UND auf das Ziel) sollen nicht mehrfach gebroadcastet werden. Der
-                # Schluessel enthaelt die MAC, damit mehrere Kameras je eins senden.
-                target_key = f"{now.date().isoformat()}|{caption}"
-                dedup_key = f"last_timed_photo:{mac}"
-                if database.get_metadata(dedup_key) != target_key:
-                    database.set_metadata(dedup_key, target_key)
-                    _global_bus.publish(TimedPhotoCaptured(wish_name, str(file_path), caption))
+            if faellig:
+                target_dt, caption, _label = faellig
+                # Zustand: zuletzt zugestellter Aufnahme-Zeitpunkt, je Kamera. Der Zeitstempel
+                # ist eindeutig — anders als der fruehere Schluessel `Datum|Beschriftung`, der
+                # zwei gleichnamige Zeitplaene kollidieren liess.
+                dedup_key = f"last_delivered_target:{mac}"
+                if database.get_metadata(dedup_key) != target_dt.isoformat():
+                    database.set_metadata(dedup_key, target_dt.isoformat())
+                    caption = camera_schedule.beschriftung_mit_verzug(
+                        caption, target_dt, now, config.AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN
+                    )
+                    _global_bus.publish(
+                        TimedPhotoCaptured(wish_name, str(file_path), caption, target_dt, now)
+                    )
 
         self.send_response(200)
         self.end_headers()

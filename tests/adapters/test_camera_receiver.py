@@ -272,13 +272,24 @@ def test_zwei_kameras_im_selben_fenster_je_ein_timed_photo(running_server, event
     assert {e.wish_name for e in captured} == {"CamEins", "CamZwei"}
 
 
-def test_upload_ausserhalb_toleranz_kein_timed_photo(running_server, event_bus):
-    """/upload weit außerhalb jedes Aufnahme-Zeitpunkts → kein TimedPhotoCaptured."""
+def test_upload_vor_dem_aufnahme_zeitpunkt_erfuellt_ihn_nicht(running_server, event_bus):
+    """Ein Bild VOR dem Aufnahme-Zeitpunkt erfüllt ihn nicht (ADR 0040).
+
+    Die Kamera wacht bauartbedingt bis zu 60 s zu früh auf; ein Bild vor dem Nach-Offset
+    könnte das Beet mitten im Guss zeigen. Sie wacht kurz darauf ohnehin erneut auf.
+    """
+    from datetime import datetime, timedelta
     from src.daemon.core.camera_events import TimedPhotoCaptured
 
     database.add_camera("FC:00:EE:FF:00:11", "NoCam")
-    # Foto-Uhrzeit 2 Stunden entfernt → kein Treffer
-    database.add_photo_time("02:00")  # Mitten in der Nacht
+
+    # Einziger Aufnahme-Zeitpunkt liegt 10 Minuten in der Zukunft
+    target = datetime.now() + timedelta(minutes=10)
+    database.add_photo_time(target.strftime("%H:%M"))
+
+    # Der gleichnamige Zeitpunkt von gestern gilt als bereits zugestellt (Normalbetrieb)
+    gestern = (target - timedelta(days=1)).replace(second=0, microsecond=0)
+    database.set_metadata("last_delivered_target:FC:00:EE:FF:00:11", gestern.isoformat())
 
     captured = []
     event_bus.subscribe(TimedPhotoCaptured, captured.append)
@@ -294,3 +305,94 @@ def test_upload_ausserhalb_toleranz_kein_timed_photo(running_server, event_bus):
         assert resp.status == 200
 
     assert len(captured) == 0
+
+
+def test_ohne_aufnahme_zeitpunkt_keine_zustellung(running_server, event_bus):
+    """Reguläre Intervall-Bilder werden nicht zugestellt (CONTEXT.md: Aufnahme-Zeitpunkt)."""
+    from src.daemon.core.camera_events import TimedPhotoCaptured
+
+    database.add_camera("FC:00:EE:FF:00:22", "IntervalCam")
+
+    captured = []
+    event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+    url = f"http://127.0.0.1:{running_server}/upload"
+    req = urllib.request.Request(
+        url,
+        headers={"X-Camera-MAC": "FC:00:EE:FF:00:22"},
+        data=JPEG_PAYLOAD,
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200
+
+    assert len(captured) == 0
+
+
+# ── Feature 0041: Zustellung nach Aufnahme-Verzug (ADR 0040) ─────────────────
+
+def test_verspaeteter_upload_wird_zugestellt(running_server, event_bus):
+    """Der reale Bug: Ein Upload 28 Minuten nach dem Aufnahme-Zeitpunkt muss zugestellt werden.
+
+    Am 13.07.2026 kam das Bild zum 08:00-Zeitpunkt um 08:28:59 an und wurde still verworfen,
+    weil es das +-5-Minuten-Fenster verfehlte. 5 von 7 getimten Fotos gingen so verloren.
+    """
+    from datetime import datetime, timedelta
+    from src.daemon.core.camera_events import TimedPhotoCaptured
+
+    database.add_camera("FC:00:VE:RZ:UG:01", "VerzugCam")
+
+    # Aufnahme-Zeitpunkt lag vor 28 Minuten
+    target = datetime.now() - timedelta(minutes=28)
+    database.add_photo_time(target.strftime("%H:%M"))
+
+    captured = []
+    event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+    url = f"http://127.0.0.1:{running_server}/upload"
+    req = urllib.request.Request(
+        url,
+        headers={"X-Camera-MAC": "FC:00:VE:RZ:UG:01"},
+        data=JPEG_PAYLOAD,
+        method="POST",
+    )
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200
+
+    assert len(captured) == 1, "Ein um 28 min verspaetetes Bild muss den Aufnahme-Zeitpunkt erfuellen"
+    assert "aufgenommen" in captured[0].caption, "Die Beschriftung muss die echte Aufnahmezeit nennen"
+
+
+def test_zwei_namenlose_zeitplaene_liefern_zwei_guss_fotos(running_server, event_bus):
+    """Alter Dedup-Schluessel war `Datum|Beschriftung` — zwei namenlose Zeitplaene kollidierten,
+    das zweite Guss-Foto des Tages wurde still verschluckt. Der Ziel-Zeitstempel ist eindeutig.
+    """
+    from datetime import datetime, timedelta
+    from src.daemon.core.camera_events import TimedPhotoCaptured
+
+    database.add_camera("FC:00:DU:PL:00:99", "GussCam")
+    now = datetime.now()
+
+    # Zwei namenlose Zeitplaene, deren Aufnahme-Zeitpunkte 40 bzw. 10 Minuten zurueckliegen.
+    # Aufnahme-Zeitpunkt = Startzeit + Dauer + Nach-Offset (2 min), Dauer hier 0.
+    for minuten_her in (40, 10):
+        start = now - timedelta(minutes=minuten_her + 2)
+        database.add_schedule("", start.strftime("%H:%M"), "mo,di,mi,do,fr,sa,so", 0)
+
+    captured = []
+    event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+    url = f"http://127.0.0.1:{running_server}/upload"
+    for _ in range(2):
+        req = urllib.request.Request(
+            url,
+            headers={"X-Camera-MAC": "FC:00:DU:PL:00:99"},
+            data=JPEG_PAYLOAD,
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+
+    # Beide Uploads liegen nach dem juengeren Zeitpunkt -> dieser wird genau einmal erfuellt.
+    assert len(captured) == 1
+    assert captured[0].target_dt is not None

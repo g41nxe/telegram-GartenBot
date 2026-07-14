@@ -36,7 +36,7 @@ def _guss_targets(now: datetime, schedules: list, after_offset_minutes: int):
             if name else "\U0001f4f7 Nach dem Guss"
         )
         label = {"type": "guss", "name": name}
-        for day_offset in (0, 1):
+        for day_offset in (-1, 0, 1):
             base = now.replace(hour=h, minute=m, second=0, microsecond=0)
             base += timedelta(days=day_offset)
             target = base + timedelta(minutes=duration + after_offset_minutes)
@@ -54,7 +54,7 @@ def _absolute_targets(now: datetime, photo_times: list):
         h, m = map(int, pt["time"].split(":"))
         caption = f"📷 Foto um {h:02d}:{m:02d}"
         label = {"type": "fix"}
-        for day_offset in (0, 1):
+        for day_offset in (-1, 0, 1):
             base = now.replace(hour=h, minute=m, second=0, microsecond=0)
             base += timedelta(days=day_offset)
             targets.append((base, caption, label))
@@ -90,34 +90,58 @@ def compute_next_sleep_seconds(
     return max(60, best_seconds)
 
 
-def find_matching_photo_target(
+def faelliger_aufnahme_zeitpunkt(
     now: datetime,
     schedules: list,
     photo_times: list,
     after_offset_minutes: int,
-    tolerance_minutes: int,
-) -> str | None:
-    """Prüft, ob 'now' innerhalb des Toleranzfensters eines Aufnahme-Zeitpunkts liegt.
+) -> tuple | None:
+    """Gibt den jüngsten bereits fälligen Aufnahme-Zeitpunkt zurück: (target_dt, caption, label).
 
-    Gibt die Beschriftung des nächstgelegenen Treffers zurück, oder None.
+    Ein Aufnahme-Zeitpunkt wird vom ersten Bild erfüllt, das NACH ihm eintrifft (ADR 0040);
+    er bleibt offen, bis der nächste ihn ablöst. Ein Upload vor dem Zeitpunkt erfüllt ihn
+    nicht — die Kamera wacht bauartbedingt bis zu 60 s zu früh auf, und ein Bild vor dem
+    Nach-Offset kann das Beet mitten im Guss zeigen.
+
+    Gibt None zurück, wenn heute noch kein Aufnahme-Zeitpunkt fällig war.
     """
-    window = timedelta(minutes=tolerance_minutes)
-    best_delta = None
-    best_caption = None
-
     all_targets = (
         _guss_targets(now, schedules, after_offset_minutes)
         + _absolute_targets(now, photo_times)
     )
 
-    for target_dt, caption, _label in all_targets:
-        delta = abs((now - target_dt).total_seconds())
-        if delta <= window.total_seconds():
-            if best_delta is None or delta < best_delta:
-                best_delta = delta
-                best_caption = caption
+    best = None
+    for target_dt, caption, label in all_targets:
+        if target_dt > now:
+            continue
+        if best is None or target_dt > best[0]:
+            best = (target_dt, caption, label)
 
-    return best_caption
+    return best
+
+
+def beschriftung_mit_verzug(
+    caption: str,
+    target_dt: datetime,
+    captured_at: datetime,
+    hinweis_schwelle_minuten: int,
+) -> str:
+    """Ergänzt die Beschriftung um die echte Aufnahmezeit, sobald der Aufnahme-Verzug auffällt.
+
+    Der Aufnahme-Zeitpunkt ist der Anlass, die Aufnahmezeit die Tatsache: Fallen sie zusammen,
+    ist die Tatsache redundant; weichen sie ab, ist sie die wichtigste Information am Bild
+    (ADR 0040). Liegt die Aufnahme an einem anderen Tag als der Aufnahme-Zeitpunkt, nennt der
+    Hinweis auch das Datum — sonst sähe ein Bild vom Folgetag wie eines vom selben Morgen aus.
+    """
+    verzug = (captured_at - target_dt).total_seconds()
+    if verzug < hinweis_schwelle_minuten * 60:
+        return caption
+
+    if captured_at.date() != target_dt.date():
+        zeit = captured_at.strftime("%d.%m. um %H:%M")
+    else:
+        zeit = captured_at.strftime("%H:%M")
+    return f"{caption} · aufgenommen {zeit}"
 
 
 def next_photo_target(

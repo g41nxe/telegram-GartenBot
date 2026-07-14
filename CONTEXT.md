@@ -146,7 +146,7 @@ _Avoid_: Fotos, Image-Archiv.
 _UI-Ausnahme_: Im Telegram-Button „Fotos löschen" (Kamera-Untermenü) — Platzmangel rechtfertigt die kürzere Form.
 
 **Kamera-Überwachung**:
-Die Erweiterung des Inaktivitäts-Watchdogs, um ausbleibende Bilder einer Garten-Kamera zu erkennen und über den Telegram-Bot zu melden.
+Die Erweiterung des Inaktivitäts-Watchdogs, um Störungen einer Garten-Kamera zu erkennen und über den Telegram-Bot zu melden. Sie kennt zwei Alarmklassen: **Inaktivität** (es kommen überhaupt keine Bilder mehr) und **Aufnahme-Verzug** (Bilder kommen, treffen aber ihre Aufnahme-Zeitpunkte nicht mehr).
 _Avoid_: Kamera-Watchdog, Offline-Check.
 
 **Bild-Puffer**:
@@ -158,9 +158,13 @@ Das konfigurierbare Intervall (in Tagen), nach dem die gesammelten Bilder des Bi
 _Avoid_: GIF-Intervall, Zusammenfassungs-Tage.
 
 **Aufnahme-Zeitpunkt**:
-Ein von der Steuerzentrale berechneter Zeitpunkt, zu dem die Garten-Kamera gezielt für ein Foto geweckt wird — im Gegensatz zum regulären Sende-Intervall (Zeitraffer). Zwei Quellen: nach jedem zeitgesteuerten Guss (Startzeit + Dauer + Nach-Offset) sowie global konfigurierte feste Uhrzeiten. Da die Kamera nur über die dynamisch berechnete Schlafdauer gesteuert werden kann (sie schläft und ist nur beim Aufwachen per `GET /config` erreichbar), nähert sich das Aufwachen dem Aufnahme-Zeitpunkt an. Zu einem Aufnahme-Zeitpunkt entstandene Fotos werden per Telegram-Bot zugestellt; reguläre Intervall-Bilder nicht.
+Ein von der Steuerzentrale berechneter Zeitpunkt, zu dem die Garten-Kamera gezielt für ein Foto geweckt wird — im Gegensatz zum regulären Sende-Intervall (Zeitraffer). Zwei Quellen: nach jedem zeitgesteuerten Guss (Startzeit + Dauer + Nach-Offset) sowie global konfigurierte feste Uhrzeiten. Da die Kamera nur über die dynamisch berechnete Schlafdauer gesteuert werden kann (sie schläft und ist nur beim Aufwachen per `GET /config` erreichbar), nähert sich das Aufwachen dem Aufnahme-Zeitpunkt an — es trifft ihn nie exakt. **Erfüllt** wird ein Aufnahme-Zeitpunkt deshalb vom **ersten Bild, das nach ihm eintrifft**; er bleibt offen, bis der nächste Aufnahme-Zeitpunkt ihn ablöst (ADR 0040). Nur erfüllende Bilder werden per Telegram-Bot zugestellt; reguläre Intervall-Bilder nicht.
 _Avoid_: Foto-Termin, Trigger-Zeit, Schnappschuss-Zeit.
 _UI-Ausnahme_: Im Telegram-Button „Fotozeiten" (Kamera-Untermenü) — Platzmangel rechtfertigt die kürzere Form.
+
+**Aufnahme-Verzug**:
+Die Zeitspanne zwischen einem Aufnahme-Zeitpunkt und dem Bild, das ihn erfüllt. Ein kleiner Verzug ist bauartbedingt normal (der Wecker der Garten-Kamera ist auf ±60 s genau, dazu kommt die Bootzeit). Überschreitet der Verzug die Verzugs-Schwelle, meldet ihn die Kamera-Überwachung als Störung. Ein Aufnahme-Zeitpunkt, der bis zu seiner Ablösung gar kein Bild erhält, gilt als maximal verzögert.
+_Avoid_: Verspätung, Delay, Latenz.
 
 **Guss-Foto**:
 Ein Aufnahme-Zeitpunkt, der sich automatisch aus einem aktiven Bewässerungs-Zeitplan ergibt: Startzeit + Dauer + Nach-Offset. Das daraus entstehende Foto wird mit dem Namen des auslösenden Zeitplans beschriftet („Nach dem Guss „Rasen""). Erscheint im Telegram-Bot read-only unter „Nach Güssen" (folgt dem Zeitplan, nicht einzeln editierbar).

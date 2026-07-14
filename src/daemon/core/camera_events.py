@@ -28,8 +28,15 @@ class CameraRegistered(Event):
         self.wish_name = wish_name
 
 class TimedPhotoCaptured(Event):
-    """Wird gefeuert, wenn ein Upload einem Aufnahme-Zeitpunkt zugeordnet werden konnte."""
-    def __init__(self, wish_name: str, file_path: str, caption: str):
+    """Wird gefeuert, wenn ein Upload einen Aufnahme-Zeitpunkt erfüllt hat (ADR 0040).
+
+    `target_dt` und `captured_at` tragen den Aufnahme-Verzug mit: Die Bildunterschrift nennt
+    ihn, und die Kamera-Überwachung bewertet ihn (ADR 0041).
+    """
+    def __init__(self, wish_name: str, file_path: str, caption: str,
+                 target_dt=None, captured_at=None):
         self.wish_name = wish_name
         self.file_path = file_path
         self.caption = caption
+        self.target_dt = target_dt
+        self.captured_at = captured_at

@@ -1,187 +1,121 @@
-# Feature: Warnung bei ausgebliebener getimter Aufnahme
+# Feature: Warnung bei Aufnahme-Verzug (inkl. ausgebliebener Aufnahme)
+
+> **Überarbeitet nach der Fehleranalyse vom 14.07.2026.** Die ursprüngliche Fassung baute auf
+> dem ±5-Minuten-Zustellfenster auf („Fenster geschlossen, kein Bild → Warnung"). Dieses Fenster
+> entfällt mit ADR 0040 — ein Aufnahme-Zeitpunkt wird künftig vom ersten Bild *nach* ihm erfüllt.
+> Damit ändert sich der Auslöser: Gewarnt wird nicht mehr bei „kein Bild im Fenster", sondern bei
+> **zu großem Aufnahme-Verzug** — und das Ausbleiben ist dessen Grenzfall. Siehe ADR 0041.
 
 ## Problemstellung (Problem Statement)
 
-Bleibt ein erwartetes getimtes Foto aus — ein **Guss-Foto** nach einem Zeitplan oder
-eine **Feste Fotozeit** —, erfährt der Benutzer das heute **nicht zeitnah**. Wacht die
-Garten-Kamera zum Aufnahme-Zeitpunkt nicht auf, kommt sie nicht ins WLAN oder wird ihr
-Upload abgewiesen, kommt schlicht kein Bild an — und niemand meldet das.
+Zwei Störungen der Garten-Kamera bleiben heute unsichtbar:
 
-Der einzige bestehende Sicherungsmechanismus ist die **Kamera-Überwachung** (Erweiterung
-des Inaktivitäts-Watchdogs). Sie schlägt aber erst nach einer dynamischen Stille-Grenze von
-`max(3 · Sende-Intervall, 3600 s)` an — bei einem großen Sende-Intervall also erst nach
-Stunden. Ein konkreter, erwarteter Aufnahme-Zeitpunkt kann so unbemerkt verstreichen: Der
-Bot zeigt „Nächstes Foto 22:17" an, das Bild bleibt aus, und der Benutzer bemerkt es erst
-zufällig, weil er das Guss-Foto erwartet hat.
+1. **Ausbleibende Aufnahme.** Wacht die Garten-Kamera zum Aufnahme-Zeitpunkt nicht auf, kommt sie
+   nicht ins WLAN oder wird ihr Upload abgewiesen, kommt schlicht kein Bild — und niemand meldet
+   das. Die Kamera-Überwachung schlägt erst nach `max(3 · Sende-Intervall, 3600 s)` an, bei einem
+   4-Stunden-Intervall also erst nach zwölf Stunden.
 
-Beobachteter Vorfall: Die Garten-Kamera lieferte zuletzt um 20:00 ein Bild (`last_seen`
-eingefroren auf 20:00), der Akku-Wert im Bot stammte noch vom 20:00-Upload. Das um 22:17
-erwartete Guss-Foto kam nie an — ohne jede Meldung.
+2. **Verspätete Aufnahme.** Mit ADR 0040 wird auch ein 30 Minuten zu spätes Bild zugestellt — der
+   Benutzer bekommt sein Foto. Genau dadurch verschwindet aber das bisher einzige Störungssignal:
+   Dass die Fotos ausblieben, hat den Fehler vom Juli 2026 überhaupt erst sichtbar gemacht. Ohne
+   Ersatz würde eine kranke Kamera künftig unbemerkt Zyklus um Zyklus verheizen, bis der Akku leer
+   ist.
+
+Der bestehende Watchdog kann beides nicht sehen: Er prüft `cameras.last_seen` — und der war
+während der gesamten Störung durchgehend frisch. Die Kamera war ja lebendig. Sie war nur
+unpünktlich.
 
 ## Lösung (Solution)
 
-Der Bewässerungs-Daemon überwacht jeden Aufnahme-Zeitpunkt aktiv: Schließt dessen
-Zustellfenster, ohne dass die Garten-Kamera ein Bild geliefert hat, sendet der Telegram-Bot
-**zeitnah** (innerhalb weniger Minuten nach dem erwarteten Zeitpunkt) genau **eine**
-Warnung. Der Benutzer erfährt so sofort, dass ein erwartetes Foto ausgeblieben ist — statt
-erst Stunden später über die träge Kamera-Überwachung oder gar nicht.
+Die **Kamera-Überwachung** bekommt eine zweite Alarmklasse: den **Aufnahme-Verzug**.
 
-Die Warnung nennt den betroffenen Aufnahme-Zeitpunkt (Beschriftung und Uhrzeit) und wann
-die Garten-Kamera zuletzt gesehen wurde, sodass der Benutzer das Problem einordnen kann
-(Kamera schläft/offline vs. Upload-Fehler).
+- Überschreitet der Verzug die **Verzugs-Schwelle** (Default 15 min) **zweimal in Folge**, meldet
+  der Telegram-Bot eine Störung.
+- Ein Aufnahme-Zeitpunkt, der bis zu seiner Ablösung **gar kein** Bild erhalten hat, gilt als
+  maximal verzögert und löst dieselbe Warnung aus — damit ist die ausgebliebene Aufnahme
+  vollständig abgedeckt.
+- **Entwarnung**, sobald ein Aufnahme-Zeitpunkt wieder innerhalb der Schwelle erfüllt wird.
+- Der **Tagesbericht** weist den durchschnittlichen Aufnahme-Verzug des Tages aus. Er ist der
+  Frühindikator: Er steigt, lange bevor Bilder ganz ausbleiben.
 
-Das Feature ist **rein serverseitig** — Protokoll zwischen Garten-Kamera und Steuerzentrale
-sowie die Firmware bleiben unverändert (wie bei Feature 0030).
+Siehe ADR 0041.
 
 ## User Stories
 
-1. Als Benutzer möchte ich zeitnah gewarnt werden, wenn ein erwartetes **Guss-Foto** nach
-   einem Zeitplan nicht ankommt, um zu erfahren, dass die Garten-Kamera das
-   Bewässerungsergebnis nicht liefern konnte.
-2. Als Benutzer möchte ich zeitnah gewarnt werden, wenn ein Foto zu einer **Festen
-   Fotozeit** ausbleibt, damit auch meine fest konfigurierten Aufnahme-Zeitpunkte überwacht
-   sind.
-3. Als Benutzer möchte ich die Warnung **innerhalb weniger Minuten** nach dem erwarteten
-   Zeitpunkt erhalten, nicht erst Stunden später über die Kamera-Überwachung.
-4. Als Benutzer möchte ich in der Warnung sehen, **welcher** Aufnahme-Zeitpunkt betroffen
-   ist (Beschriftung wie „Nach dem Guss „Rasen"" oder „Foto um 18:00") und um welche
-   **Uhrzeit** er erwartet war.
-5. Als Benutzer möchte ich in der Warnung sehen, **wann die Garten-Kamera zuletzt gesehen**
-   wurde, um einzuschätzen, ob sie schläft, offline ist oder nur ein Upload fehlschlug.
-6. Als Benutzer möchte ich **genau eine** Warnung je erwartetem Foto — kein wiederholtes
-   Nachhaken für denselben Aufnahme-Zeitpunkt.
-7. Als Benutzer möchte ich **keine** Entwarnung, wenn die Kamera später wieder liefert — die
-   ausgebliebene Aufnahme ist die Information, die ich brauche.
-8. Als Benutzer möchte ich bei einem **längeren Ausfall keine Doppel-Meldungen**: Sobald die
-   Kamera-Überwachung die Garten-Kamera bereits als offline gemeldet hat, soll die
-   Foto-Warnung schweigen — der Watchdog hat übernommen.
-9. Als Benutzer möchte ich auch dann gewarnt werden, wenn der zugehörige Guss **regenbedingt
-   übersprungen** wurde — ein fehlendes Foto signalisiert ein Kamera-/Netzwerk-Problem
-   unabhängig davon, ob gegossen wurde.
-10. Als Benutzer möchte ich auch dann eine Warnung, wenn die Kamera zwar aufwachte, aber ihr
-    **Upload abgewiesen** wurde (kein gültiges Bild) — auch dann ist kein Foto angekommen.
-11. Als Betreiber möchte ich nach einem **Daemon-Neustart keine Alarm-Flut** für längst
-    vergangene Aufnahme-Zeitpunkte des Tages.
-12. Als Betreiber möchte ich das Karenzfenster der Erkennung **konfigurieren** können.
+1. Als Benutzer möchte ich gewarnt werden, wenn ein erwartetes **Guss-Foto** oder das Foto zu
+   einer **Festen Fotozeit** ausbleibt.
+2. Als Benutzer möchte ich **auch dann** gewarnt werden, wenn die Fotos zwar kommen, aber
+   regelmäßig **weit nach** ihrem Aufnahme-Zeitpunkt — das ist die Vorstufe des Ausfalls.
+3. Als Benutzer möchte ich in der Warnung sehen, **welcher** Aufnahme-Zeitpunkt betroffen ist,
+   **wie groß** der Verzug war und **wann die Garten-Kamera zuletzt gesehen** wurde, um
+   einzuschätzen, ob sie schläft, offline ist oder ihr Akku schwächelt.
+4. Als Benutzer möchte ich **keine Meldung wegen eines einzelnen Wacklers** — erst der zweite
+   Verzug in Folge meldet.
+5. Als Benutzer möchte ich **genau eine** Warnung je Störung, kein Nachhaken — und eine
+   **Entwarnung**, wenn die Kamera ihre Zeitpunkte wieder trifft.
+6. Als Benutzer möchte ich bei einem **längeren Ausfall keine Doppel-Meldungen**: Hat die
+   Kamera-Überwachung die Garten-Kamera bereits als **inaktiv** gemeldet, schweigt die
+   Verzugs-Warnung — die Inaktivität ist die umfassendere Aussage.
+7. Als Benutzer möchte ich auch dann gewarnt werden, wenn der zugehörige Guss **regenbedingt
+   übersprungen** wurde — ein fehlendes Foto signalisiert ein Kamera-/Netzwerk-Problem unabhängig
+   davon, ob gegossen wurde.
+8. Als Betreiber möchte ich nach einem **Daemon-Neustart keine Alarm-Flut** für längst vergangene
+   Aufnahme-Zeitpunkte des Tages.
+9. Als Betreiber möchte ich die **Verzugs-Schwelle konfigurieren** können.
+
+> **Bewusste Abweichung von der ursprünglichen Fassung:** Dort war „keine Entwarnung" gefordert
+> (Story 7 alt) — die ausgebliebene Aufnahme sei die Information. Mit der Alarmklasse ist das
+> nicht mehr haltbar: Ein Alarm ist ein **Zustand**, und ein Zustand ohne Ende bleibt für immer
+> im Tagesbericht stehen. Die Entwarnung folgt jetzt dem Muster der drei bestehenden Geräte
+> (ADR 0018).
 
 ## Implementierungs-Entscheidungen (Implementation Decisions)
 
-- **Rein serverseitig**, kein Protokoll-/Firmware-Eingriff. Baut direkt auf den
-  Aufnahme-Zeitpunkten aus Feature 0030 auf (Guss-Foto = Startzeit + Dauer + Nach-Offset;
-  Feste Fotozeit = konfigurierte HH:MM).
+- **Rein serverseitig**, kein Firmware-Eingriff. Setzt Feature 0041 (Zustellung nach
+  Aufnahme-Verzug) voraus, weil erst dort der Verzug überhaupt ermittelt wird.
 
-- **Minütliche Prüfung im Scheduler.** Eine neue Prüf-Routine wird — analog zur bestehenden
-  Guss-Vorwarnung — je Minute aus der Scheduler-Schleife aufgerufen. Sie liest den Zustand
-  der Garten-Kameras und die Aufnahme-Zeitpunkte und entscheidet, ob eine Warnung fällig
-  ist.
+- **Tatsache und Bewertung getrennt (ADR 0018).** Der `camera_receiver` **ermittelt** den Verzug
+  beim Upload (er braucht ihn ohnehin für die Bildunterschrift) und schreibt ihn in die
+  `cameras`-Zeile — dort, wo er auch `last_seen` und `battery` fortschreibt. `adapters/watchdog.py`
+  **bewertet** ihn. Keine Alarm-Logik im Transport-Adapter.
 
-- **Erkennung „Fenster gerade geschlossen" als reine Core-Funktion.** In der bestehenden
-  Core-Komponente für getimte Aufnahmen entscheidet eine reine Funktion (keine I/O), welche
-  Aufnahme-Zeitpunkte **gerade** ihr Zustellfenster geschlossen haben — d. h. `Ziel +
-  Toleranz` liegt innerhalb der zurückliegenden Karenz. Eingaben: `now`, Zeitpläne, Feste
-  Fotozeiten, Nach-Offset, Toleranz, Karenz. Ausgabe: Liste aus (Ziel-Zeitpunkt,
-  Beschriftung).
+- **Zwei Zustände in `system_metadata`**, analog zu den bestehenden Watchdog-Flags:
+  `watchdog_delay_alert_active_camera_<mac>` und ein Zähler der aufeinanderfolgenden Verzüge.
 
-- **Zustell-Kriterium über `last_seen`.** Ein Aufnahme-Zeitpunkt gilt als **zugestellt**,
-  wenn die Garten-Kamera innerhalb des Fensters ein Bild hochgeladen hat. Als robustes,
-  zustandsloses Signal dient `last_seen` der Kamera: Liegt es **auf oder nach**
-  Fensterbeginn (`Ziel − Toleranz`), gab es einen Upload im Fenster — und dieser hätte per
-  bestehender Zuordnung (`find_matching_photo_target`) automatisch das getimte Foto
-  zugestellt. Ein **abgewiesener** Upload aktualisiert `last_seen` nicht und wird daher
-  korrekt als „ausgeblieben" erkannt. Die Prüfung vergleicht Zeitstempel konsistent in
-  lokaler Zeit (so wie `last_seen` beim Upload geschrieben wird).
+- **Nicht erfüllter Aufnahme-Zeitpunkt = maximaler Verzug.** Wird ein Aufnahme-Zeitpunkt von
+  seinem Nachfolger abgelöst, ohne ein Bild erhalten zu haben, zählt das wie ein Verzug über der
+  Schwelle. Erkannt wird das im stündlichen Watchdog-Lauf aus dem zuletzt zugestellten
+  Aufnahme-Zeitpunkt (Feature 0041) gegen die Liste der fälligen Zeitpunkte.
 
-- **Verpasst-Bedingung (Entscheidungs-Kern).** Für einen aktiven Aufnahme-Zeitpunkt und eine
-  Garten-Kamera gilt „ausgeblieben" genau dann, wenn alle drei zutreffen:
-  1. `0 ≤ (now − (Ziel + Toleranz)) < Karenz` — Fenster gerade geschlossen (zeitnah &
-     neustart-sicher: alte Ziele fallen aus der Karenz).
-  2. `last_seen < Ziel − Toleranz` — kein Upload im Fenster (bzw. `last_seen` fehlt ganz).
-  3. Für die Kamera ist **kein** Kamera-Überwachungs-Alarm aktiv
-     (`watchdog_alert_active_camera_{mac} != "1"`).
+- **Vorrang der Inaktivität.** Ist das Inaktivitäts-Flag der Kamera gesetzt, wird keine
+  Verzugs-Warnung gesendet (Story 6).
 
-- **Genau ein Alarm je Aufnahme-Zeitpunkt, keine Entwarnung.** Ein einzelner Merker je
-  Garten-Kamera (`last_missed_photo_alert:{mac}` = `{Datum}|{Beschriftung}`) verhindert eine
-  Doppelmeldung über zwei aufeinanderfolgende Minuten-Ticks. Bewusst als **ein** Schlüssel
-  gehalten — exakt gespiegelt am bestehenden `last_timed_photo:{mac}`-Muster (kein
-  Aufräumen, kein Datenmüll). Ein anderer, späterer Aufnahme-Zeitpunkt löst weiterhin seine
-  eigene Warnung aus. Es gibt **kein** Resolved-Ereignis.
+- **Neue Ereignisse** in `core/camera_events.py`: `CameraDelayAlertTriggered`,
+  `CameraDelayAlertResolved`. `telegram_ui` abonniert sie wie die bestehenden Alarme.
 
-- **Übergang zur Kamera-Überwachung.** Sobald die Kamera-Überwachung die Garten-Kamera als
-  offline meldet (ihr Alarm-Flag aktiv), schweigt die Foto-Warnung (Bedingung 3). So gibt es
-  genau eine Foto-Warnung beim ersten verpassten Bild; bei anhaltendem Ausfall übernimmt der
-  Inaktivitäts-Watchdog. Die Kamera-Überwachung selbst bleibt **unverändert**.
+- **Konfiguration:** `AUFNAHME_VERZUG_SCHWELLE_MINUTEN` (Default 15) in `config/garden.conf`.
 
-- **Neues Ereignis im Ereignis-Kanal.** Ein `TimedPhotoMissed`-Ereignis (Wunschname,
-  Beschriftung, Ziel-Uhrzeit, Zuletzt-gesehen-Zeitpunkt) wird von der Scheduler-Prüfung
-  publiziert. Die Präsentationsschicht (Telegram-Bot) abonniert es und sendet die Warnung
-  als Broadcast-Benachrichtigung — Muster wie beim bestehenden Kamera-Inaktivitäts-Alarm.
-  Kein direkter Aufruf zwischen den Schichten.
-
-- **Nachricht (Entwurf).** Stil wie bestehende Kamera-Warnungen, z. B.:
-  „⚠️ *Foto ausgeblieben:* Das erwartete Foto „Nach dem Guss „Rasen"" um **22:17 Uhr** ist
-  nicht angekommen. Garten-Kamera „GartenKamera" zuletzt gesehen: **20:00 Uhr**."
-
-- **Konfiguration.** Toleranzfenster: bestehendes `TIMED_PHOTO_TOLERANCE_MINUTES` (Default
-  5). Neu: `CAMERA_MISSED_PHOTO_GRACE_MINUTES` (Karenz nach Fensterschluss, Default 2) in
-  `config/garden.conf` — nicht-geheim, versioniert (ADR 0030).
-
-- **Mehrere Garten-Kameras.** Die Prüfung läuft je aktiver Garten-Kamera; jede, die einen
-  Aufnahme-Zeitpunkt nicht bedient hat, meldet für sich. (Für den Ein-Kamera-Betrieb ohne
-  Zusatzkosten.)
+- **`docs/design/telegram-nachrichten.html`** wird um Warnung und Entwarnung ergänzt.
 
 ## Test-Entscheidungen (Testing Decisions)
 
-- **Was ein guter Test ist:** beobachtbares Außenverhalten — welche Aufnahme-Zeitpunkte die
-  Core-Funktion als „gerade geschlossen" liefert, und welches Ereignis / welche
-  Telegram-Nachricht die minütliche Prüfung auslöst. Keine internen Felder.
-
-- **Core (rein, ohne I/O):** die neue „Fenster gerade geschlossen"-Funktion —
-  - Ziel, dessen `Ziel + Toleranz` in der Karenz liegt → gelistet;
-  - Ziel noch offen (Fenster nicht geschlossen) oder außerhalb der Karenz (zu alt) → nicht
-    gelistet (Neustart-Sicherheit);
-  - deckt Guss-Foto und Feste Fotozeit ab.
-  Referenz: bestehende `tests/core/test_camera_schedule.py`.
-
-- **Scheduler-Prüfung:** höchste sinnvolle Nahtstelle — die minütliche `check_missed_photos`
-  gegen eine temporäre DB (Muster wie bestehende Scheduler-/Integrationstests). Fälle:
-  - `last_seen` vor Fensterbeginn → `TimedPhotoMissed` wird publiziert;
-  - `last_seen` im Fenster → kein Ereignis;
-  - Kamera-Überwachungs-Flag aktiv → kein Ereignis;
-  - Merker bereits gesetzt (zweiter Tick) → keine erneute Meldung;
-  - Aufnahme-Zeitpunkt von früher am Tag (außerhalb Karenz) → kein Ereignis;
-  - übersprungener Guss → dennoch Ereignis (Entkopplung vom Guss-Ergebnis).
-
-- **Telegram-Bot:** der Handler für `TimedPhotoMissed` sendet die korrekte
-  Broadcast-Benachrichtigung mit Beschriftung, Ziel-Uhrzeit und Zuletzt-gesehen-Zeit.
-  Referenz: bestehende Benachrichtigungs-Tests (Kamera-Inaktivität) in
-  `tests/ui/test_telegram_ui.py`.
-
-- **Pflege:** neue Telegram-Nachricht in `docs/design/telegram-nachrichten.html` nachziehen
-  (Regel `.claude/rules/telegram_messages.md`). Coverage darf nicht regredieren; TDD
-  (Failing-Test zuerst).
+- `tests/adapters/test_watchdog.py`:
+  - Ein Verzug über der Schwelle → **keine** Warnung (Karenz).
+  - Zwei Verzüge in Folge → genau **eine** Warnung.
+  - Danach ein pünktlicher Treffer → **Entwarnung**, Zähler zurückgesetzt.
+  - Aufnahme-Zeitpunkt abgelöst ohne Bild → zählt als Verzug über der Schwelle.
+  - Inaktivitäts-Flag aktiv → Verzugs-Warnung schweigt.
+  - Daemon-Neustart mit vergangenen Zeitpunkten → keine Alarm-Flut.
+- `tests/ui/`: Wortlaut von Warnung und Entwarnung.
 
 ## Nicht im Leistungsumfang (Out of Scope)
 
-- **Entwarnung / Resolved-Meldung**, wenn die Garten-Kamera später wieder liefert.
-- **Unterdrückung bei regenbedingt übersprungenem Guss** — es wird bewusst trotzdem gewarnt.
-- **Änderungen an der Kamera-Überwachung / am Inaktivitäts-Watchdog** — dieser bleibt wie er
-  ist und dient als Auffangnetz bei anhaltendem Ausfall.
-- **Behebung der eigentlichen Aufwach-/Drift-Ursache** (RTC-Drift, WLAN-Abbruch,
-  Brown-out) an der Garten-Kamera — Firmware/Hardware, eigenes Thema.
-- **Wiederholte Erinnerungen** an denselben ausgebliebenen Aufnahme-Zeitpunkt.
-- **Aktuelle Akku-Abfrage** — der angezeigte Akku-Wert stammt weiterhin aus dem letzten
-  Upload; dieses Feature ändert das nicht.
+- Die **Behebung** der Verzugs-Ursache in der Kamera — Feature 0005 im Kamera-Repository.
+- Ein eigener Mechanismus für „ausgebliebene Aufnahme" — er geht in dieser Alarmklasse auf.
 
 ## Weitere Anmerkungen (Further Notes)
 
-- Kernconstraint (aus Feature 0030): Die Garten-Kamera ist batteriebetrieben, schläft per RTC
-  stromlos und ist **nur beim Aufwachen** über `GET /config` erreichbar. Aktives Aufwecken
-  ist unmöglich — deshalb kann der Daemon eine ausbleibende Aufnahme nur **nachträglich**
-  erkennen (nach Fensterschluss), nicht verhindern.
-- Das Feature schließt die Reaktions-Lücke zwischen dem präzisen, aber späten
-  Inaktivitäts-Watchdog und dem Wunsch nach einer sofortigen Rückmeldung zu einem konkret
-  erwarteten Aufnahme-Zeitpunkt.
-- Der `last_seen`-basierte Zustell-Nachweis nutzt bewusst dasselbe zustandslose,
-  neustart-sichere Prinzip wie die Zuordnung beim Upload in Feature 0030 (Zeit-Heuristik,
-  kein gemerkter Zustand zwischen `/config` und `/upload`).
-- Aus dem Debugging-/Brainstorming-Kontext dieser Sitzung erarbeitet.
+Der Aufnahme-Verzug ist die einzige Größe, an der die Steuerzentrale die Gesundheit der
+Garten-Kamera ablesen kann: Gescheiterte Zyklen erreichen sie nie, sie sieht nur, *wann* ein Bild
+ankommt. Genau daraus musste die Störung im Juli 2026 rekonstruiert werden. Diese Rekonstruktion
+soll künftig das System leisten, nicht der Mensch.

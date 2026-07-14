@@ -108,93 +108,6 @@ class TestComputeNextSleepSeconds:
 
 
 # ===========================================================================
-# find_matching_photo_target
-# ===========================================================================
-
-class TestFindMatchingPhotoTarget:
-    def test_kein_treffer_gibt_none(self):
-        """Kein Aufnahme-Zeitpunkt nahe 'now' → None."""
-        result = camera_schedule.find_matching_photo_target(
-            _now(10, 0), [], [], OFFSET, TOLERANCE
-        )
-        assert result is None
-
-    def test_absolutes_ziel_genau_getroffen(self):
-        """now == absolutes Ziel → Treffer mit Beschriftung '📷 Foto um 10:00'."""
-        result = camera_schedule.find_matching_photo_target(
-            _now(10, 0), [], [_photo_time("10:00")], OFFSET, TOLERANCE
-        )
-        assert result == "📷 Foto um 10:00"
-
-    def test_absolutes_ziel_innerhalb_toleranz_vor(self):
-        """now = Ziel − 3 min → innerhalb Toleranz → Treffer."""
-        result = camera_schedule.find_matching_photo_target(
-            _now(9, 57), [], [_photo_time("10:00")], OFFSET, TOLERANCE
-        )
-        assert result is not None
-
-    def test_absolutes_ziel_innerhalb_toleranz_nach(self):
-        """now = Ziel + 4 min → innerhalb Toleranz → Treffer."""
-        result = camera_schedule.find_matching_photo_target(
-            _now(10, 4), [], [_photo_time("10:00")], OFFSET, TOLERANCE
-        )
-        assert result is not None
-
-    def test_absolutes_ziel_ausserhalb_toleranz(self):
-        """now = Ziel + 6 min → außerhalb Toleranz → None."""
-        result = camera_schedule.find_matching_photo_target(
-            _now(10, 6), [], [_photo_time("10:00")], OFFSET, TOLERANCE
-        )
-        assert result is None
-
-    def test_guss_ziel_beschriftung(self):
-        """Treffer durch Zeitplan → Beschriftung nennt den Zeitplan-Namen."""
-        result = camera_schedule.find_matching_photo_target(
-            _now(10, 10), [_schedule("10:00", 8, name="Rasen")], [], OFFSET, TOLERANCE
-        )
-        assert result == "📷 Nach dem Guss „Rasen“"
-
-    def test_guss_ziel_beschriftung_escaped_markdown(self):
-        """Zeitplan-Name mit Markdown-Sonderzeichen wird in der Caption escapt.
-
-        Sonst bricht der Name (z.B. 'Beet_1') die Legacy-Markdown der Foto-Caption
-        und Telegram verwirft das Foto mit HTTP 400.
-        """
-        result = camera_schedule.find_matching_photo_target(
-            _now(10, 10), [_schedule("10:00", 8, name="Beet_1")], [], OFFSET, TOLERANCE
-        )
-        assert result == "📷 Nach dem Guss „Beet\\_1“"
-
-    def test_mehrere_treffer_naechster_gewinnt(self):
-        """Mehrere Aufnahme-Zeitpunkte im Toleranzfenster → nächstgelegener gewinnt."""
-        # Zwei absolute Zeiten: 10:00 (Δ = 0 min) und 09:58 (Δ = 2 min)
-        result = camera_schedule.find_matching_photo_target(
-            _now(10, 0),
-            [],
-            [_photo_time("10:00"), _photo_time("09:58")],
-            OFFSET, TOLERANCE
-        )
-        assert result == "📷 Foto um 10:00"
-
-    def test_absolut_und_guss_beide_im_fenster(self):
-        """Absolutes Ziel und Guss-Ziel im Fenster → nächstgelegener gewinnt (Guss, Δ=0)."""
-        result = camera_schedule.find_matching_photo_target(
-            _now(10, 10),
-            [_schedule("10:00", 8, name="Rasen")],   # Ziel 10:10, Δ=0
-            [_photo_time("10:08")],                   # Ziel 10:08, Δ=2 min
-            OFFSET, TOLERANCE
-        )
-        assert result == "📷 Nach dem Guss „Rasen“"
-
-    def test_inaktiver_zeitplan_kein_treffer(self):
-        """Inaktiver Zeitplan darf kein Matching erzeugen."""
-        result = camera_schedule.find_matching_photo_target(
-            _now(10, 10), [_schedule("10:00", 8, is_active=0)], [], OFFSET, TOLERANCE
-        )
-        assert result is None
-
-
-# ===========================================================================
 # next_photo_target
 # ===========================================================================
 
@@ -261,3 +174,75 @@ class TestNextPhotoTarget:
         assert result is not None
         target_dt, _ = result
         assert target_dt.date() == (_now(10, 0) + timedelta(days=1)).date()
+
+
+# ── Feature 0041: Zustellung nach Aufnahme-Verzug ────────────────────────────
+
+class TestFaelligerAufnahmeZeitpunkt:
+    """Ein Aufnahme-Zeitpunkt wird vom ersten Bild NACH ihm erfuellt (ADR 0040)."""
+
+    def test_verspaeteter_upload_erfuellt_den_zeitpunkt(self):
+        """Der reale Bug: Upload 28 Minuten nach 08:00 gehoert zum 08:00-Zeitpunkt."""
+        now = datetime(2026, 7, 13, 8, 28, 59)
+        photo_times = [{"id": 1, "time": "08:00"}, {"id": 2, "time": "20:00"}]
+
+        result = camera_schedule.faelliger_aufnahme_zeitpunkt(now, [], photo_times, 2)
+
+        assert result is not None, "Ein um 28 min verspaeteter Upload muss den 08:00-Zeitpunkt erfuellen"
+        target_dt, caption, _label = result
+        assert target_dt == datetime(2026, 7, 13, 8, 0)
+        assert "08:00" in caption
+
+    def test_zeitpunkt_des_vortags_bleibt_ueber_mitternacht_offen(self):
+        """Der 20:00-Zeitpunkt wird erst vom 08:00-Zeitpunkt abgeloest — nicht von Mitternacht."""
+        now = datetime(2026, 7, 13, 0, 8, 54)
+        photo_times = [{"id": 1, "time": "08:00"}, {"id": 2, "time": "20:00"}]
+
+        result = camera_schedule.faelliger_aufnahme_zeitpunkt(now, [], photo_times, 2)
+
+        assert result is not None, "Nach Mitternacht ist der 20:00-Zeitpunkt des Vortags noch offen"
+        assert result[0] == datetime(2026, 7, 12, 20, 0)
+
+    def test_letzter_zeitpunkt_bleibt_offen_bis_sein_nachfolger_faellig_wird(self):
+        """Regel A: Mit nur einer Fotozeit loest erst der 08:00 von heute den 08:00 von gestern ab."""
+        now = datetime(2026, 7, 13, 6, 0)
+        photo_times = [{"id": 1, "time": "08:00"}]
+
+        result = camera_schedule.faelliger_aufnahme_zeitpunkt(now, [], photo_times, 2)
+
+        assert result is not None
+        assert result[0] == datetime(2026, 7, 12, 8, 0)
+
+    def test_ohne_aufnahme_zeitpunkte_ist_nichts_faellig(self):
+        now = datetime(2026, 7, 13, 6, 0)
+
+        assert camera_schedule.faelliger_aufnahme_zeitpunkt(now, [], [], 2) is None
+
+
+class TestBeschriftungMitVerzug:
+    """Weicht die Aufnahmezeit nennenswert ab, nennt die Beschriftung sie (ADR 0040, Punkt 4)."""
+
+    def test_puenktlich_bleibt_die_beschriftung_unveraendert(self):
+        target = datetime(2026, 7, 14, 20, 0)
+        captured = datetime(2026, 7, 14, 20, 0, 14)
+
+        text = camera_schedule.beschriftung_mit_verzug("📷 Foto um 20:00", target, captured, 5)
+
+        assert text == "📷 Foto um 20:00"
+
+    def test_verzug_ueber_schwelle_nennt_die_aufnahmezeit(self):
+        target = datetime(2026, 7, 13, 8, 0)
+        captured = datetime(2026, 7, 13, 8, 28, 59)
+
+        text = camera_schedule.beschriftung_mit_verzug("📷 Foto um 08:00", target, captured, 5)
+
+        assert text == "📷 Foto um 08:00 · aufgenommen 08:28"
+
+    def test_verzug_ueber_tageswechsel_nennt_auch_das_datum(self):
+        """Ein Bild vom Folgetag darf nicht wie eines vom selben Morgen aussehen."""
+        target = datetime(2026, 7, 12, 20, 0)
+        captured = datetime(2026, 7, 13, 0, 8, 54)
+
+        text = camera_schedule.beschriftung_mit_verzug("📷 Foto um 20:00", target, captured, 5)
+
+        assert text == "📷 Foto um 20:00 · aufgenommen 13.07. um 00:08"

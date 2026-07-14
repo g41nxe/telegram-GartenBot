@@ -195,10 +195,13 @@ try:
 except ValueError:
     CAMERA_MAX_UPLOAD_BYTES = 512000
 
+# Ab wann die Bildunterschrift den Aufnahme-Verzug ausdrücklich nennt (ADR 0040).
+# Entscheidet NICHT mehr über die Zustellung — ein Aufnahme-Zeitpunkt wird vom ersten
+# Bild nach ihm erfüllt, egal wie spät es kommt.
 try:
-    TIMED_PHOTO_TOLERANCE_MINUTES = int(os.getenv("TIMED_PHOTO_TOLERANCE_MINUTES", "5"))
+    AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN = int(os.getenv("AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN", "5"))
 except ValueError:
-    TIMED_PHOTO_TOLERANCE_MINUTES = 5
+    AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN = 5
 
 try:
     CAMERA_AFTER_GUSS_OFFSET_MINUTES = int(os.getenv("CAMERA_AFTER_GUSS_OFFSET_MINUTES", "2"))
