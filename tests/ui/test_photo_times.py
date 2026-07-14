@@ -223,12 +223,27 @@ class TestAufnahmeVerzugMeldungen(unittest.TestCase):
         from daemon.core.camera_events import CameraDelayAlertTriggered
 
         telegram_ui._on_camera_delay_alert(
-            CameraDelayAlertTriggered("AA:BB", "Garten01", 28.0, 15)
+            CameraDelayAlertTriggered("AA:BB", "Garten01", "verzug", 15, verzug_minuten=28.0)
         )
 
         msg = mock_tc.broadcast_notification.call_args.args[0]
         assert "Garten01" in msg
         assert "28" in msg, "Die Warnung muss den Verzug nennen"
+
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_verpasste_zeitpunkte_melden_stille_statt_verspaetung(self, mock_tc):
+        """Bei einem verpassten Zeitpunkt gibt es kein Bild — von „zu spät" zu reden waere gelogen."""
+        from daemon.ui import telegram_ui
+        from daemon.core.camera_events import CameraDelayAlertTriggered
+
+        telegram_ui._on_camera_delay_alert(
+            CameraDelayAlertTriggered("AA:BB", "Garten01", "verpasst", 15, zeitpunkte=["08:00"])
+        )
+
+        msg = mock_tc.broadcast_notification.call_args.args[0]
+        assert "Garten01" in msg
+        assert "kein Bild" in msg, f"Die Warnung muss die Stille benennen: {msg}"
+        assert "zu spät" not in msg, f"Von Verspaetung zu reden waere hier falsch: {msg}"
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_entwarnung_nennt_die_kamera(self, mock_tc):

@@ -163,8 +163,12 @@ _Avoid_: Foto-Termin, Trigger-Zeit, Schnappschuss-Zeit.
 _UI-Ausnahme_: Im Telegram-Button „Fotozeiten" (Kamera-Untermenü) — Platzmangel rechtfertigt die kürzere Form.
 
 **Aufnahme-Verzug**:
-Die Zeitspanne zwischen einem Aufnahme-Zeitpunkt und dem Bild, das ihn erfüllt. Ein kleiner Verzug ist bauartbedingt normal (der Wecker der Garten-Kamera ist auf ±60 s genau, dazu kommt die Bootzeit). Überschreitet der Verzug die Verzugs-Schwelle, meldet ihn die Kamera-Überwachung als Störung. Ein Aufnahme-Zeitpunkt, der bis zu seiner Ablösung gar kein Bild erhält, gilt als maximal verzögert.
+Die Zeitspanne zwischen einem Aufnahme-Zeitpunkt und dem Bild, das ihn erfüllt. Ein kleiner Verzug ist bauartbedingt normal (der Wecker der Garten-Kamera ist auf ±60 s genau, dazu kommt die Bootzeit). Überschreitet er die Verzugs-Schwelle, meldet ihn die Kamera-Überwachung als Störung: Die Kamera **war da**, aber zu spät — ein Hinweis auf scheiternde Zyklen (schwaches WLAN, schwacher Akku).
 _Avoid_: Verspätung, Delay, Latenz.
+
+**Verpasster Aufnahme-Zeitpunkt**:
+Ein Aufnahme-Zeitpunkt, der von seinem Nachfolger abgelöst wurde, ohne je ein Bild erhalten zu haben. Er hat **keinen** Aufnahme-Verzug — es gibt kein Bild, dessen Aufnahmezeit man messen könnte. Da jeder Upload in seinem Fenster ihn erfüllt hätte, bedeutet er zwingend: Die Garten-Kamera war über das ganze Fenster **stumm**. Er ist damit der schnelle Stille-Melder — der Inaktivitäts-Watchdog schlägt erst nach `max(3 × Schlafintervall, 1 h)` an, bei 4 h Intervall also erst nach zwölf Stunden.
+_Avoid_: Maximaler Verzug, ausgefallene Aufnahme, Foto-Ausfall.
 
 **Guss-Foto**:
 Ein Aufnahme-Zeitpunkt, der sich automatisch aus einem aktiven Bewässerungs-Zeitplan ergibt: Startzeit + Dauer + Nach-Offset. Das daraus entstehende Foto wird mit dem Namen des auslösenden Zeitplans beschriftet („Nach dem Guss „Rasen""). Erscheint im Telegram-Bot read-only unter „Nach Güssen" (folgt dem Zeitplan, nicht einzeln editierbar).

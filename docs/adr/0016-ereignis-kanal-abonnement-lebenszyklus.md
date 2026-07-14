@@ -35,6 +35,16 @@ Ursache war auch, dass der `EventBus` ursprünglich keine `unsubscribe()`-Method
    - **Begründung:** Modulebene-Subscriptions feuern beim ersten Import — auch während der Test-Discovery. Kein `unsubscribe()` ist dennoch erforderlich, weil die Lebensdauer dieser Listener identisch mit der des Daemon-Prozesses ist.
    - **Referenzimplementierungen:** `watchdog.initialize()`, `telegram_ui.subscribe_event_handlers()`.
 
+4. **`EventBus.subscribe()` ist idempotent (Ergänzung 2026-07-14):**
+   - Derselbe Callback wird pro Ereignis-Typ nur **einmal** registriert; ein zweites `subscribe()`
+     ist folgenlos — spiegelbildlich zu Punkt 1, der dasselbe für `unsubscribe()` festhält. Die im
+     Kontext beklagte **asymmetrische API** ist damit vollständig behoben.
+   - **Begründung:** Ein doppeltes Abonnement stellt jedes Ereignis **zweimal** zu. Für alle
+     bisherigen Abonnenten war das folgenlos — sie setzen Flags, und ein Flag zweimal zu setzen
+     ändert nichts. Der Verzugs-Zähler der Kamera-Überwachung (ADR 0041) ist der erste **zählende**
+     Abonnent: Für ihn ist Doppel-Zustellung ein stiller Rechenfehler, der einen Fehlalarm auslöst.
+     Der nächste zählende Abonnent soll diese Zusicherung finden können, statt sie zu entdecken.
+
 ## Konsequenzen
 
 - **Vorteile:**

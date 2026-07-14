@@ -54,7 +54,9 @@ Bild trotzdem, obwohl es vorliegt. Warnung *und* Datenverlust ist die schlechtes
 2a. **Ein gescheiterter Versand öffnet den Aufnahme-Zeitpunkt wieder.** Der Vermerk wird beim
    Empfang gesetzt (sonst sendete jeder weitere Upload dasselbe Foto erneut). Scheitert der
    Telegram-Versand, meldet die UI das über `TimedPhotoDeliveryFailed`; der `DatabaseLoggerAdapter`
-   nimmt den Vermerk zurück, und der nächste Upload erfüllt den Zeitpunkt erneut. Ohne diesen
+   setzt den Vermerk auf eine Sekunde **vor** den Zeitpunkt zurück — nicht auf leer: Der Zeitpunkt
+   ist damit wieder offen, der Anker der Kamera-Überwachung (ADR 0041, Punkt 6a) bleibt aber
+   erhalten. Der nächste Upload erfüllt den Zeitpunkt erneut. Ohne diesen
    Rückweg wäre das Bild endgültig verloren — der `EventBus` verschluckt Ausnahmen seiner
    Abonnenten, der Fehlschlag bliebe also unsichtbar. Das wäre exakt der stille Verlust, den
    dieser ADR beseitigt.

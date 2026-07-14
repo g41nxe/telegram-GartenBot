@@ -36,8 +36,18 @@ class DatabaseLoggerAdapter:
         self.event_bus.subscribe(TimedPhotoDeliveryFailed, self._on_timed_photo_delivery_failed)
 
     def _on_timed_photo_delivery_failed(self, event: TimedPhotoDeliveryFailed):
-        """Nimmt den Zustellvermerk zurück, damit der nächste Upload den Zeitpunkt erneut erfüllt."""
-        database.set_metadata(f"last_delivered_target:{event.mac_address}", "")
+        """Öffnet den Aufnahme-Zeitpunkt wieder, ohne den Anker zu zerstören.
+
+        Der Schlüssel beantwortet zwei Fragen: „Was ist bedient?" (Empfänger) und „Ab wo suche
+        ich nach verpassten Zeitpunkten?" (Kamera-Überwachung). Ihn zu leeren beantwortete die
+        erste richtig und machte die zweite blind — ohne Anker meldet der Prüflauf bewusst
+        nichts (Schutz vor der Alarm-Flut nach Neustart). Wir setzen ihn deshalb auf eine
+        Sekunde VOR den Zeitpunkt: Der Zeitpunkt liegt danach, ist also wieder offen; alles
+        Ältere liegt davor, gilt also weiterhin als erledigt.
+        """
+        from datetime import timedelta
+        anker = event.target_dt - timedelta(seconds=1)
+        database.set_metadata(f"last_delivered_target:{event.mac_address}", anker.isoformat())
         logger.warning(
             f"Aufnahme-Zeitpunkt {event.target_dt} wieder geöffnet — Versand des Fotos gescheitert."
         )

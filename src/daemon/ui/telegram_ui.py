@@ -2936,14 +2936,26 @@ def _on_camera_inactivity_resolved(event: CameraInactivityAlertResolved):
     telegram_client.broadcast_notification(msg)
 
 def _on_camera_delay_alert(event: CameraDelayAlertTriggered):
-    """Die Kamera liefert Bilder, trifft ihre Aufnahme-Zeitpunkte aber nicht mehr (ADR 0041)."""
-    msg = (
-        f"⚠️ *Kamera verfehlt ihre Aufnahme-Zeitpunkte:* Kamera \"{_md_escape(event.wish_name)}\" "
-        f"lieferte zuletzt {event.verzug_minuten:.0f} Minuten zu spät "
-        f"(Schwelle: {event.schwelle_minuten} Minuten).\n\n"
-        f"Die Fotos kommen an, aber die Kamera erreicht ihre Zeitpunkte nicht mehr — "
-        f"das deutet auf schwaches WLAN oder einen schwachen Akku hin."
-    )
+    """Zwei Gründe, zwei Diagnosen — der Text folgt der Tatsache (ADR 0041).
+
+    Bei „verpasst" gibt es kein Bild und damit keinen Verzug: Von „zu spät" zu sprechen wäre
+    schlicht gelogen und schickte den Nutzer auf die falsche Fährte.
+    """
+    name = _md_escape(event.wish_name)
+    if event.grund == "verpasst":
+        msg = (
+            f"⚠️ *Kamera liefert nicht:* Kamera \"{name}\" hat zu zwei Aufnahme-Zeitpunkten "
+            f"in Folge kein Bild geschickt.\n\n"
+            f"Sie war in dieser Zeit stumm — sieh nach, ob sie noch läuft (Akku, Standort)."
+        )
+    else:
+        msg = (
+            f"⚠️ *Kamera kommt zu spät:* Kamera \"{name}\" lieferte zuletzt "
+            f"{event.verzug_minuten:.0f} Minuten nach ihrem Aufnahme-Zeitpunkt "
+            f"(Schwelle: {event.schwelle_minuten} Minuten).\n\n"
+            f"Die Fotos kommen an, aber die Kamera erreicht ihre Zeitpunkte nicht mehr — "
+            f"das deutet auf schwaches WLAN oder einen schwachen Akku hin."
+        )
     telegram_client.broadcast_notification(msg)
 
 def _on_camera_delay_resolved(event: CameraDelayAlertResolved):

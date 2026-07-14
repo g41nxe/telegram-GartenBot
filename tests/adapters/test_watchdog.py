@@ -318,3 +318,52 @@ class TestVerpassteAufnahmeZeitpunkte(unittest.TestCase):
 
         assert self.events == [], \
             "Ein einzelner verpasster Zeitpunkt darf auch nach mehreren Pruefläufen nicht melden"
+
+
+class TestVerpasstEntwarntNie(unittest.TestCase):
+    """Ein verpasster Aufnahme-Zeitpunkt ist keine Puenktlichkeit — er darf nie entwarnen."""
+
+    MAC = "AA:BB:CC:DD:EE:03"
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._db_patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._db_patcher.start()
+        db.init_db()
+        db.add_camera(self.MAC, "Garten01")
+        db.update_camera_on_upload(self.MAC)
+        self.events = []
+        from daemon.core.camera_events import CameraDelayAlertTriggered, CameraDelayAlertResolved
+        _global_bus.subscribe(CameraDelayAlertTriggered, self.events.append)
+        _global_bus.subscribe(CameraDelayAlertResolved, self.events.append)
+
+    def tearDown(self):
+        self._db_patcher.stop()
+        self.db_path.unlink(missing_ok=True)
+
+    def test_kurz_zurueckliegender_verpasster_zeitpunkt_entwarnt_nicht(self):
+        """Zwei dicht beieinander liegende Fotozeiten: der aeltere ist verpasst, aber erst
+        wenige Minuten her. Er darf NICHT als 'puenktlich' durchgehen und den Alarm loeschen.
+        """
+        from datetime import datetime, timedelta
+        from daemon.core.camera_events import CameraDelayAlertResolved
+        now = datetime.now()
+
+        # Ein Verzugs-Alarm laeuft bereits
+        db.set_metadata(f"watchdog_delay_alert_active_camera_{self.MAC}", "1")
+        db.set_metadata(f"watchdog_delay_streak_camera_{self.MAC}", "2")
+
+        # Fotozeiten vor 12 und vor 4 Minuten -> die erste ist abgeloest (verpasst),
+        # ihr Abstand zu jetzt (12 min) liegt UNTER der Schwelle von 15 min.
+        for minuten in (12, 4):
+            t = (now - timedelta(minutes=minuten)).replace(second=0, microsecond=0)
+            db.add_photo_time(t.strftime("%H:%M"))
+        zuletzt = (now - timedelta(minutes=30)).replace(second=0, microsecond=0)
+        db.set_metadata(f"last_delivered_target:{self.MAC}", zuletzt.isoformat())
+
+        watchdog.run_watchdog_check()
+
+        entwarnungen = [e for e in self.events if isinstance(e, CameraDelayAlertResolved)]
+        assert entwarnungen == [], "Ein verpasster Zeitpunkt darf niemals entwarnen"
+        assert db.get_metadata(f"watchdog_delay_alert_active_camera_{self.MAC}") == "1", \
+            "Der Alarm muss bestehen bleiben"

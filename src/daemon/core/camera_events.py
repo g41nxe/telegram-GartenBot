@@ -44,18 +44,28 @@ class TimedPhotoCaptured(Event):
 
 
 class CameraDelayAlertTriggered(Event):
-    """Die Garten-Kamera trifft ihre Aufnahme-Zeitpunkte nicht mehr (Aufnahme-Verzug, ADR 0041).
+    """Die Garten-Kamera erfüllt ihre Aufnahme-Zeitpunkte nicht mehr (ADR 0041).
 
-    Zweite Alarmklasse der Kamera-Überwachung neben der Inaktivität: Die Kamera liefert Bilder,
-    ist also nicht still — sie ist unpünktlich. Der Inaktivitäts-Watchdog kann das nicht sehen,
-    weil `last_seen` dabei durchgehend frisch bleibt.
+    Zweite Alarmklasse der Kamera-Überwachung neben der Inaktivität. Sie hat **zwei Gründe**,
+    die verschiedene Krankheiten benennen — der Text der Warnung muss ihnen folgen:
+
+    - `grund="verzug"`: Die Kamera **war da**, aber zu spät (`verzug_minuten` gesetzt). Deutet
+      auf scheiternde Zyklen hin — schwaches WLAN, schwacher Akku.
+    - `grund="verpasst"`: Der Aufnahme-Zeitpunkt bekam **gar kein Bild** (`zeitpunkte` nennt sie).
+      Das heißt zwingend, dass die Kamera über das ganze Fenster **stumm** war — es gibt keinen
+      Verzug, den man messen könnte.
+
+    Der Inaktivitäts-Watchdog sieht beides nicht: Beim Verzug bleibt `last_seen` frisch, und ein
+    verpasster Zeitpunkt fällt lange vor seinem Timeout auf (bei 4 h Schlafintervall: 12 h).
     """
-    def __init__(self, mac_address: str, wish_name: str, verzug_minuten: float,
-                 schwelle_minuten: int):
+    def __init__(self, mac_address: str, wish_name: str, grund: str, schwelle_minuten: int,
+                 verzug_minuten: float = None, zeitpunkte: list = None):
         self.mac_address = mac_address
         self.wish_name = wish_name
-        self.verzug_minuten = verzug_minuten
+        self.grund = grund
         self.schwelle_minuten = schwelle_minuten
+        self.verzug_minuten = verzug_minuten
+        self.zeitpunkte = zeitpunkte or []
 
 
 class CameraDelayAlertResolved(Event):

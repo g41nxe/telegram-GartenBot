@@ -760,11 +760,17 @@ Warst das nicht du, prüf die Leitung — das Hardware-Sicherheits-Timeout schli
       <li>Über den Tageswechsel: <code>📷 Foto um 20:00 · aufgenommen 13.07. um 00:08</code> — liegt die Aufnahme an einem anderen Tag als der Aufnahme-Zeitpunkt, nennt der Hinweis auch das Datum.</li>
     </ul>
 
-    <div class="src">_on_camera_delay_alert · CameraDelayAlertTriggered</div>
-    <div class="bubble">⚠️ <b>Kamera verfehlt ihre Aufnahme-Zeitpunkte:</b> Kamera „Garten01“ lieferte zuletzt 28 Minuten zu spät (Schwelle: 15 Minuten).
+    <div class="src">_on_camera_delay_alert · CameraDelayAlertTriggered (grund="verzug")</div>
+    <div class="bubble">⚠️ <b>Kamera kommt zu spät:</b> Kamera „Garten01“ lieferte zuletzt 28 Minuten nach ihrem Aufnahme-Zeitpunkt (Schwelle: 15 Minuten).
 
 Die Fotos kommen an, aber die Kamera erreicht ihre Zeitpunkte nicht mehr — das deutet auf schwaches WLAN oder einen schwachen Akku hin.</div>
-    <div class="note">Zweite Alarmklasse der Kamera-Überwachung (ADR 0041): Die Kamera <em>liefert</em> Bilder, trifft ihre Aufnahme-Zeitpunkte aber nicht mehr. Der Inaktivitäts-Watchdog kann das nicht sehen, weil <code>last_seen</code> dabei frisch bleibt. Gemeldet wird erst beim <b>zweiten</b> Verzug in Folge (ein einzelner WLAN-Wackler soll nicht nachts melden). Ein Aufnahme-Zeitpunkt, der abgelöst wird, ohne je ein Bild erhalten zu haben, gilt als maximal verzögert und löst dieselbe Warnung aus.</div>
+    <div class="note">Zweite Alarmklasse der Kamera-Überwachung (ADR 0041). Die Kamera <em>war da</em>, aber zu spät — der Inaktivitäts-Watchdog kann das nicht sehen, weil <code>last_seen</code> dabei frisch bleibt. Gemeldet wird erst beim <b>zweiten</b> Vorfall in Folge (ein einzelner WLAN-Wackler soll nicht nachts melden).</div>
+
+    <div class="src">_on_camera_delay_alert · CameraDelayAlertTriggered (grund="verpasst")</div>
+    <div class="bubble">⚠️ <b>Kamera liefert nicht:</b> Kamera „Garten01“ hat zu zwei Aufnahme-Zeitpunkten in Folge kein Bild geschickt.
+
+Sie war in dieser Zeit stumm — sieh nach, ob sie noch läuft (Akku, Standort).</div>
+    <div class="note">Derselbe Alarm, andere Diagnose: Ein <b>verpasster Aufnahme-Zeitpunkt</b> (CONTEXT.md) hat gar kein Bild — also auch keinen Verzug, den man in Minuten ausdrücken könnte. Da jeder Upload in seinem Fenster ihn erfüllt hätte, war die Kamera nachweislich <b>stumm</b>. Von „zu spät“ zu sprechen wäre hier falsch und schickte den Nutzer auf die falsche Fährte.</div>
 
     <div class="src">_on_camera_delay_resolved · CameraDelayAlertResolved</div>
     <div class="bubble">🟢 <b>Kamera wieder pünktlich:</b> Kamera „Garten01“ trifft ihre Aufnahme-Zeitpunkte wieder.</div>

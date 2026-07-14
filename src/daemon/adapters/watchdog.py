@@ -70,38 +70,66 @@ def _on_timed_photo_captured(event: TimedPhotoCaptured):
     schwelle = config.AUFNAHME_VERZUG_SCHWELLE_MINUTEN
     verzug_minuten = (event.captured_at - event.target_dt).total_seconds() / 60
 
-    _bewerte_verzug(event.mac_address, event.wish_name, verzug_minuten, schwelle)
+    _bewerte_stoerung(
+        event.mac_address, event.wish_name,
+        gestoert=verzug_minuten > schwelle,
+        grund="verzug",
+        verzug_minuten=verzug_minuten,
+    )
 
 
-def _bewerte_verzug(mac: str, wish_name: str, verzug_minuten: float, schwelle: int):
-    """Führt den Verzugs-Zähler fort und schlägt bzw. entwarnt (gemeinsam für Ereignis und Prüflauf)."""
+def _bewerte_stoerung(mac: str, wish_name: str, gestoert: bool, grund: str,
+                      verzug_minuten: float | None = None,
+                      zeitpunkte: list | None = None):
+    """Führt den Störungs-Zähler fort und schlägt bzw. entwarnt (Ereignis- wie Prüflauf-Pfad).
+
+    Die Bewertung nimmt die **Tatsache** entgegen (`gestoert`), nicht eine Zahl, aus der sie
+    erst geschlossen werden müsste. Ein **verpasster** Aufnahme-Zeitpunkt hat gar keine
+    Aufnahmezeit — jede Minutenangabe für ihn wäre erfunden und könnte unter die Schwelle
+    rutschen, womit ein Zeitpunkt ganz ohne Bild als „pünktlich" gälte (ADR 0041).
+
+    Gemeldet wird beim **zweiten** Vorfall in Folge; ein Wechsel der Störungsart zählt mit.
+    """
     streak_key = f"watchdog_delay_streak_camera_{mac}"
     flag_key = f"watchdog_delay_alert_active_camera_{mac}"
+
+    if not gestoert:
+        database.set_metadata(streak_key, "0")
+        if database.get_metadata(flag_key) == "1":
+            database.set_metadata(flag_key, "0")
+            _global_bus.publish(CameraDelayAlertResolved(mac, wish_name))
+            logger.info(
+                f"Watchdog-Entwarnung: Kamera '{wish_name}' trifft ihre Aufnahme-Zeitpunkte wieder."
+            )
+        return
 
     try:
         streak = int(database.get_metadata(streak_key) or 0)
     except ValueError:
         streak = 0
+    streak += 1
+    database.set_metadata(streak_key, str(streak))
 
-    if verzug_minuten > schwelle:
-        streak += 1
-        database.set_metadata(streak_key, str(streak))
-        if streak >= 2 and database.get_metadata(flag_key) != "1":
-            database.set_metadata(flag_key, "1")
-            _global_bus.publish(
-                CameraDelayAlertTriggered(mac, wish_name, verzug_minuten, schwelle)
+    if streak >= 2 and database.get_metadata(flag_key) != "1":
+        database.set_metadata(flag_key, "1")
+        _global_bus.publish(
+            CameraDelayAlertTriggered(
+                mac, wish_name, grund,
+                config.AUFNAHME_VERZUG_SCHWELLE_MINUTEN,
+                verzug_minuten=verzug_minuten,
+                zeitpunkte=zeitpunkte,
             )
+        )
+        if grund == "verpasst":
             logger.warning(
-                f"Watchdog-Alert: Kamera '{wish_name}' verfehlt ihre Aufnahme-Zeitpunkte "
-                f"({verzug_minuten:.0f} min Verzug, Schwelle {schwelle} min)."
+                f"Watchdog-Alert: Kamera '{wish_name}' lieferte zu zwei Aufnahme-Zeitpunkten "
+                f"in Folge kein Bild."
             )
-        return
-
-    database.set_metadata(streak_key, "0")
-    if database.get_metadata(flag_key) == "1":
-        database.set_metadata(flag_key, "0")
-        _global_bus.publish(CameraDelayAlertResolved(mac, wish_name))
-        logger.info(f"Watchdog-Entwarnung: Kamera '{wish_name}' trifft ihre Aufnahme-Zeitpunkte wieder.")
+        else:
+            logger.warning(
+                f"Watchdog-Alert: Kamera '{wish_name}' kommt zu spät "
+                f"({verzug_minuten:.0f} min nach dem Aufnahme-Zeitpunkt)."
+            )
 
 
 def _on_rain_sensor_measurement(event: RainSensorMeasured):
@@ -203,6 +231,10 @@ def run_watchdog_check():
     # Ein Aufnahme-Zeitpunkt, der abgelöst wurde, ohne je ein Bild erhalten zu haben, gilt als
     # maximal verzögert. Der Ereignis-Pfad (_on_timed_photo_captured) sieht nur erfüllte
     # Zeitpunkte — ausgebliebene bemerkt niemand, wenn nicht hier nachgesehen wird.
+    # Zeitpläne und Fotozeiten sind kameraunabhängig — einmal lesen, nicht je Kamera.
+    schedules = database.get_schedules()
+    photo_times = database.get_photo_times()
+
     for camera in database.get_all_cameras():
         mac = camera["mac_address"]
         wish_name = camera["wish_name"]
@@ -217,11 +249,7 @@ def run_watchdog_check():
         )
 
         verpasst = camera_schedule.verpasste_aufnahme_zeitpunkte(
-            now,
-            database.get_schedules(),
-            database.get_photo_times(),
-            config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
-            zuletzt,
+            now, schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES, zuletzt,
         )
 
         for target_dt in verpasst:
@@ -231,12 +259,16 @@ def run_watchdog_check():
                 f"watchdog_delay_last_judged_camera_{mac}", target_dt.isoformat()
             )
             bereits_bewertet = target_dt
-            verzug_minuten = (now - target_dt).total_seconds() / 60
             logger.warning(
                 f"Aufnahme-Zeitpunkt {target_dt:%d.%m. %H:%M} der Kamera '{wish_name}' "
                 f"blieb ohne Bild."
             )
-            _bewerte_verzug(mac, wish_name, verzug_minuten, config.AUFNAHME_VERZUG_SCHWELLE_MINUTEN)
+            # Ein verpasster Zeitpunkt ist IMMER eine Störung: Es gibt kein Bild und damit
+            # keinen Verzug, den man gegen eine Schwelle halten könnte.
+            _bewerte_stoerung(
+                mac, wish_name, gestoert=True, grund="verpasst",
+                zeitpunkte=[f"{target_dt:%H:%M}"],
+            )
 
     # --- Regensensor ---
     last_rain = database.get_last_rain_measurement()

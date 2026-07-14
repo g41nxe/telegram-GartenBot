@@ -154,8 +154,11 @@ class TestTimedPhotoDeliveryFailed(unittest.TestCase):
 
             bus.publish(TimedPhotoDeliveryFailed(mac, target))
 
-            assert not database.get_metadata(f"last_delivered_target:{mac}"), \
-                "Nach einem gescheiterten Versand muss der Aufnahme-Zeitpunkt wieder offen sein"
+            anker = database.get_metadata(f"last_delivered_target:{mac}")
+            assert anker, \
+                "Der Anker darf nicht zerstoert werden — sonst wird die Kamera-Ueberwachung blind"
+            assert datetime.fromisoformat(anker) < target, \
+                "Der Anker muss VOR dem Zeitpunkt liegen, damit dieser wieder offen ist"
         finally:
             database.DB_PATH = orig
             os.unlink(temp_db.name)

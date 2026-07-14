@@ -48,10 +48,12 @@ def _kamera_issues() -> list:
     for camera in database.get_all_cameras():
         mac = camera["mac_address"]
         name = camera.get("wish_name", "?")
-        if database.get_metadata(f"watchdog_delay_alert_active_camera_{mac}") == "1":
-            issues.append(f"⚠️ Kamera „{name}“: trifft ihre Aufnahme-Zeitpunkte nicht mehr")
-        elif database.get_metadata(f"watchdog_alert_active_camera_{mac}") == "1":
+        # Vorrang der Inaktivität (ADR 0041): Eine stumme Kamera trifft ihre Aufnahme-Zeitpunkte
+        # selbstverständlich nicht — die mildere Diagnose würde hier nur in die Irre führen.
+        if database.get_metadata(f"watchdog_alert_active_camera_{mac}") == "1":
             issues.append(f"⚠️ Kamera „{name}“: kein Bild (Watchdog aktiv)")
+        elif database.get_metadata(f"watchdog_delay_alert_active_camera_{mac}") == "1":
+            issues.append(f"⚠️ Kamera „{name}“: erfüllt ihre Aufnahme-Zeitpunkte nicht mehr")
     return issues
 
 

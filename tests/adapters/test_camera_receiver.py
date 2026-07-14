@@ -43,6 +43,21 @@ def running_server(test_db, event_bus):
     camera_receiver.shutdown()
     shutil.rmtree(temp_dir)
 
+def _warte_auf(bedingung, timeout=3.0):
+    """Wartet, bis eine Bedingung eintritt.
+
+    Die Ereignisse werden bewusst erst NACH der HTTP-Antwort veroeffentlicht, damit die Kamera
+    nicht auf den Telegram-Versand warten muss (ADR 0041). Der Test bekommt seine Antwort also,
+    bevor der Handler fertig ist.
+    """
+    ende = time.monotonic() + timeout
+    while time.monotonic() < ende:
+        if bedingung():
+            return True
+        time.sleep(0.02)
+    return False
+
+
 def test_register_camera(running_server):
     database.set_metadata("camera_pairing_active", "1")
     database.set_metadata("camera_pairing_wish_name", "TestCam")
@@ -213,7 +228,7 @@ def test_upload_innerhalb_toleranz_publiziert_timed_photo(running_server, event_
     with urllib.request.urlopen(req) as resp:
         assert resp.status == 200
 
-    assert len(captured) == 1
+    assert _warte_auf(lambda: len(captured) == 1)
     assert captured[0].wish_name == "TolCam"
     assert "Foto um" in captured[0].caption
 
@@ -241,6 +256,7 @@ def test_doppel_upload_im_selben_fenster_nur_ein_timed_photo(running_server, eve
         with urllib.request.urlopen(req) as resp:
             assert resp.status == 200
 
+    time.sleep(0.5)
     assert len(captured) == 1, f"Erwartet genau 1 TimedPhotoCaptured (Dedup), war {len(captured)}"
 
 
@@ -268,7 +284,7 @@ def test_zwei_kameras_im_selben_fenster_je_ein_timed_photo(running_server, event
         with urllib.request.urlopen(req) as resp:
             assert resp.status == 200
 
-    assert len(captured) == 2, f"Erwartet ein Foto je Kamera, war {len(captured)}"
+    assert _warte_auf(lambda: len(captured) == 2), f"Erwartet ein Foto je Kamera, war {len(captured)}"
     assert {e.wish_name for e in captured} == {"CamEins", "CamZwei"}
 
 
@@ -312,6 +328,7 @@ def test_upload_vor_dem_aufnahme_zeitpunkt_erfuellt_ihn_nicht(running_server, ev
     with urllib.request.urlopen(req) as resp:
         assert resp.status == 200
 
+    time.sleep(0.5)
     assert len(captured) == 0
 
 
@@ -334,6 +351,7 @@ def test_ohne_aufnahme_zeitpunkt_keine_zustellung(running_server, event_bus):
     with urllib.request.urlopen(req) as resp:
         assert resp.status == 200
 
+    time.sleep(0.5)
     assert len(captured) == 0
 
 
@@ -367,7 +385,7 @@ def test_verspaeteter_upload_wird_zugestellt(running_server, event_bus):
     with urllib.request.urlopen(req) as resp:
         assert resp.status == 200
 
-    assert len(captured) == 1, "Ein um 28 min verspaetetes Bild muss den Aufnahme-Zeitpunkt erfuellen"
+    assert _warte_auf(lambda: len(captured) == 1), "Ein um 28 min verspaetetes Bild muss den Aufnahme-Zeitpunkt erfuellen"
     assert "aufgenommen" in captured[0].caption, "Die Beschriftung muss die echte Aufnahmezeit nennen"
 
 
@@ -402,7 +420,7 @@ def test_zwei_namenlose_zeitplaene_liefern_zwei_guss_fotos(running_server, event
             assert resp.status == 200
 
     # Beide Uploads liegen nach dem juengeren Zeitpunkt -> dieser wird genau einmal erfuellt.
-    assert len(captured) == 1
+    assert _warte_auf(lambda: len(captured) == 1)
     assert captured[0].target_dt is not None
 
 
@@ -435,4 +453,45 @@ def test_geloeschte_fotozeit_belebt_keinen_alten_zeitpunkt(running_server, event
     with urllib.request.urlopen(req) as resp:
         assert resp.status == 200
 
+    time.sleep(0.5)
     assert len(captured) == 0, "Ein aelterer Aufnahme-Zeitpunkt als der zuletzt zugestellte darf nicht zustellen"
+
+
+def test_kamera_wartet_nicht_auf_telegram(running_server, event_bus):
+    """Die Antwort an die Kamera darf nicht vom Telegram-Versand abhaengen.
+
+    Der EventBus ist synchron: Wird vor dem 200 OK veroeffentlicht, laedt der UI-Handler das
+    Foto (~120 KB) noch waehrend des laufenden /upload-Requests zu Telegram hoch. Die Kamera
+    gibt HTTPClient nur wenige Sekunden — laeuft ihr Timeout ab, wertet sie den Upload als
+    gescheitert, obwohl das Bild laengst auf der Platte liegt, und legt sich in den Backoff.
+    """
+    from datetime import datetime, timedelta
+    from src.daemon.core.camera_events import TimedPhotoCaptured
+
+    mac = "FC:00:LA:NG:SA:M1"
+    database.add_camera(mac, "LangsamCam")
+    target = datetime.now() - timedelta(minutes=20)
+    database.add_photo_time(target.strftime("%H:%M"))
+
+    langsam_fertig = []
+
+    def langsamer_abonnent(event):
+        time.sleep(1.5)  # traeges Telegram
+        langsam_fertig.append(event)
+
+    event_bus.subscribe(TimedPhotoCaptured, langsamer_abonnent)
+
+    url = f"http://127.0.0.1:{running_server}/upload"
+    req = urllib.request.Request(
+        url, headers={"X-Camera-MAC": mac}, data=JPEG_PAYLOAD, method="POST"
+    )
+    start = time.monotonic()
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200
+        resp.read()
+    dauer = time.monotonic() - start
+
+    assert dauer < 1.0, (
+        f"Die Kamera musste {dauer:.1f}s auf die Antwort warten — der Versand blockiert "
+        f"ihren Upload-Request"
+    )

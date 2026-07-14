@@ -216,6 +216,20 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
 
         logger.info(f"Bild von Kamera \"{wish_name}\" empfangen: {len(payload)} Bytes ({filename})")
 
+        # Die Kamera ist fertig, sobald das Bild auf der Platte liegt — alles Weitere ist Sache
+        # der Steuerzentrale. Der Ereignis-Kanal ist synchron: Wird vorher veröffentlicht, lädt
+        # der Telegram-Handler das Foto noch innerhalb dieses Requests hoch, und die Kamera läuft
+        # womöglich in ihr HTTP-Timeout — sie würde den Upload dann als gescheitert werten,
+        # obwohl er ankam, und sich in den Backoff legen (ADR 0041).
+        self.send_response(200)
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"OK")
+        try:
+            self.wfile.flush()  # Ohne Content-Length wartete die Kamera bis zum Verbindungsschluss.
+        except Exception:
+            pass
+
         if _global_bus:
             _global_bus.publish(CameraImageReceived(mac, wish_name, str(file_path)))
 
@@ -243,10 +257,6 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
                         TimedPhotoCaptured(wish_name, str(file_path), caption,
                                            target_dt, now, mac_address=mac)
                     )
-
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
 
 _server_instance = None
 
