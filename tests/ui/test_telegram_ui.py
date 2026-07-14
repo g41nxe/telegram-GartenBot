@@ -807,7 +807,7 @@ class TestTelegramWiringSmoke(unittest.TestCase):
             commands = mock_cmds.call_args[0][0]
             self.assertIsInstance(commands, list)
             cmd_names = [c["command"] for c in commands]
-            self.assertEqual(cmd_names, ["status", "tagesbericht", "update"])
+            self.assertEqual(cmd_names, ["status", "tagesbericht", "update", "diagnose"])
 
 
 
@@ -2243,6 +2243,78 @@ class TestHandleAufnahmen(unittest.TestCase):
         call = self._call(mock_client, mock_db, photo_times=[{"id": 1, "time": "18:00"}])
         text = call[0][1]
         self.assertIn("Feste", text)
+
+
+class TestDiagnoseCommand(unittest.TestCase):
+    """Feature 0041: /diagnose erzeugt das Diagnose-Paket und sendet es an den anfragenden Chat."""
+
+    def _msg(self, text, chat_id=100):
+        return {"chat": {"id": chat_id}, "text": text, "message_id": 1}
+
+    @patch("daemon.ui.telegram_ui.threading.Thread")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_diagnose_sendet_quittung_und_startet_daemon_thread(self, mock_client, mock_thread):
+        _process_message(self._msg("/diagnose"))
+        # Sofortige Quittung an den anfragenden Chat
+        mock_client.send_message.assert_called()
+        args = mock_client.send_message.call_args[0]
+        self.assertEqual(args[0], 100)
+        self.assertIn("Diagnose-Paket", args[1])
+        # Arbeit läuft im Hintergrund-Thread mit daemon=True (Thread-Hygiene-Regel)
+        mock_thread.assert_called_once()
+        self.assertTrue(mock_thread.call_args.kwargs.get("daemon"),
+                        "Diagnose-Thread muss daemon=True sein")
+        mock_thread.return_value.start.assert_called_once()
+
+    @patch("daemon.ui.telegram_ui.diagnose")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_run_diagnose_sendet_dokument_an_anfragenden_chat(self, mock_client, mock_diag):
+        mock_diag.collect_diagnose_paket.return_value = (b"PK\x03\x04zip-bytes", [])
+        mock_client.send_document.return_value = True
+        from daemon.ui.telegram_ui import _run_diagnose
+        _run_diagnose(100)
+        mock_client.send_chat_action.assert_called_with(100, "upload_document")
+        mock_client.send_document.assert_called_once()
+        args, kwargs = mock_client.send_document.call_args
+        self.assertEqual(args[0], 100)
+        self.assertEqual(args[1], b"PK\x03\x04zip-bytes")
+        filename = args[2] if len(args) > 2 else kwargs.get("filename", "")
+        self.assertTrue(filename.startswith("diagnose_"), f"Dateiname unerwartet: {filename}")
+        self.assertTrue(filename.endswith(".zip"), f"Dateiname unerwartet: {filename}")
+
+    @patch("daemon.ui.telegram_ui.diagnose")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_run_diagnose_weist_luecken_aus(self, mock_client, mock_diag):
+        mock_diag.collect_diagnose_paket.return_value = (
+            b"PK\x03\x04zip-bytes", ["journal_daemon.txt: Berechtigung verweigert"])
+        mock_client.send_document.return_value = True
+        from daemon.ui.telegram_ui import _run_diagnose
+        _run_diagnose(100)
+        # Lücken werden dem Nutzer sichtbar gemeldet (Freitext ist Markdown-escapt,
+        # daher auf den sonderzeichenfreien Teil prüfen).
+        all_texts = " ".join(str(c) for c in mock_client.send_message.call_args_list)
+        self.assertIn("Unvollständiges Diagnose-Paket", all_texts)
+        self.assertIn("Berechtigung verweigert", all_texts)
+
+    @patch("daemon.ui.telegram_ui.diagnose")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_run_diagnose_totalausfall_meldet_fehler(self, mock_client, mock_diag):
+        mock_diag.collect_diagnose_paket.return_value = (None, ["Archiv: kaputt"])
+        from daemon.ui.telegram_ui import _run_diagnose
+        _run_diagnose(100)
+        mock_client.send_document.assert_not_called()
+        texts = " ".join(str(c) for c in mock_client.send_message.call_args_list)
+        self.assertIn("konnte nicht erstellt werden", texts)
+
+    @patch("daemon.ui.telegram_ui.diagnose")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_run_diagnose_versandfehler_meldet_fehler(self, mock_client, mock_diag):
+        mock_diag.collect_diagnose_paket.return_value = (b"PK\x03\x04zip-bytes", [])
+        mock_client.send_document.return_value = False
+        from daemon.ui.telegram_ui import _run_diagnose
+        _run_diagnose(100)
+        texts = " ".join(str(c) for c in mock_client.send_message.call_args_list)
+        self.assertIn("Versand fehlgeschlagen", texts)
 
 
 if __name__ == "__main__":

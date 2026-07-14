@@ -277,6 +277,69 @@ class TestSendMessageId(unittest.TestCase):
         mock_urlopen.side_effect = urllib.error.HTTPError("url", 403, "Forbidden", {}, None)
         self.assertIsNone(telegram_client.send_message_id(123, "hi"))
 
+
+_FAKE_ZIP = b"PK\x03\x04fake-zip-bytes"
+
+
+class TestSendDocument(unittest.TestCase):
+    """Feature 0041: Dokument-Versand (Diagnose-Paket) per multipart-Upload."""
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", "")
+    def test_returns_false_without_token(self):
+        result = telegram_client.send_document(chat_id=100, document_bytes=_FAKE_ZIP, filename="diagnose.zip")
+        self.assertFalse(result)
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_returns_true_on_200(self, mock_urlopen):
+        mock_urlopen.side_effect = _mock_urlopen_200()
+        result = telegram_client.send_document(chat_id=100, document_bytes=_FAKE_ZIP, filename="diagnose.zip")
+        self.assertTrue(result)
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen",
+           side_effect=urllib.error.URLError("timeout"))
+    def test_returns_false_on_network_error(self, _):
+        result = telegram_client.send_document(chat_id=100, document_bytes=_FAKE_ZIP, filename="diagnose.zip")
+        self.assertFalse(result)
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_multipart_body_contains_document_and_filename(self, mock_urlopen):
+        captured = {}
+
+        def capture(req, timeout=None):
+            captured["url"] = req.full_url
+            captured["headers"] = req.headers
+            captured["data"] = req.data
+            return _mock_urlopen_200()()
+
+        mock_urlopen.side_effect = capture
+        telegram_client.send_document(chat_id=77, document_bytes=_FAKE_ZIP,
+                                      filename="diagnose_2026-07-06.zip", caption="📦 Diagnose-Paket")
+
+        self.assertIn("sendDocument", captured["url"])
+        self.assertIn("multipart/form-data", captured["headers"].get("Content-type", ""))
+        self.assertIn(b'name="document"', captured["data"])
+        self.assertIn(b'filename="diagnose_2026-07-06.zip"', captured["data"])
+        self.assertIn(_FAKE_ZIP, captured["data"])
+        self.assertIn(b"77", captured["data"])
+
+    @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
+    @patch("daemon.ui.telegram_client.urllib.request.urlopen")
+    def test_timeout_scales_with_document_size(self, mock_urlopen):
+        captured = {}
+
+        def capture(req, timeout=None):
+            captured["timeout"] = timeout
+            return _mock_urlopen_200()()
+
+        mock_urlopen.side_effect = capture
+        # 5 MB Dokument → Timeout deutlich über der 60-s-Basis (schwaches Pi-WLAN)
+        telegram_client.send_document(chat_id=1, document_bytes=b"x" * (5 * 1024 * 1024),
+                                      filename="gross.zip")
+        self.assertGreater(captured["timeout"], 60)
+
     @patch.object(config, "TELEGRAM_BOT_TOKEN", _FAKE_TOKEN)
     @patch("daemon.ui.telegram_client.urllib.request.urlopen")
     def test_markdown_400_falls_back_to_plaintext(self, mock_urlopen):

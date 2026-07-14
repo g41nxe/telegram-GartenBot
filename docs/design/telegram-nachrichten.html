@@ -307,6 +307,27 @@ Möchtest du wirklich alle <b>42</b> Bilder der Kamera <b>'Hochbeet'</b> lösche
     <div class="note">Bei mehreren Kameras erst Auswahl-Keyboard: <code>Von welcher Kamera möchtest du die Bild-Historie löschen?</code> · keine Bilder vorhanden: <code>ℹ️ Für die Kamera 'Hochbeet' sind keine Bilder vorhanden.</code> · keine Kamera gekoppelt: <code>❌ Es sind keine Kameras gekoppelt.</code> · Abbruch: <code>❌ Vorgang abgebrochen.</code></div>
   </div>
 
+  <div class="phone">
+    <div class="src">handle_diagnose() · /diagnose (registriert, Feature 0041) — Diagnose-Paket</div>
+    <div class="bubble">📦 <b>Diagnose-Paket wird erstellt</b>
+Journal, Datenbank-Schnappschuss und System-Steckbrief werden eingesammelt — das Dokument folgt gleich hier im Chat.</div>
+    <div class="bubble" style="padding:0; overflow:hidden">
+      <div class="photo-ph">🗜️ [ diagnose_2026-07-06_0815.zip ]</div>
+      <div style="padding:8px 12px">📦 <b>Diagnose-Paket</b> · 2.4 MB</div>
+    </div>
+    <div class="note">Lücken-Variante (Degradations-Politik — Bausteine, die nicht einsammelbar waren):</div>
+    <div class="bubble">⚠️ <b>Unvollständiges Diagnose-Paket</b> — nicht enthalten:
+• journal_daemon.txt: Berechtigung verweigert
+• garden.db: wegen Übergröße entfernt (Archiv über Versand-Limit)</div>
+    <ul class="variants">
+      <li>Inhalt: <code>journal_daemon.txt</code> (~2000 Zeilen) · <code>journal_zigbee2mqtt.txt</code> (~500 Zeilen) · <code>garden.db</code> (Backup-API-Schnappschuss) · <code>garden.conf</code> · <code>system_info.txt</code></li>
+      <li>Niemals enthalten: <code>.env</code>/Zugangsdaten, Kamera-Bilder (Whitelist-Bauweise)</li>
+      <li>Erstellung fehlgeschlagen: <code>❌ Das Diagnose-Paket konnte nicht erstellt werden. Details stehen im Journal der Steuerzentrale.</code></li>
+      <li>Upload fehlgeschlagen: <code>❌ Versand fehlgeschlagen — das Diagnose-Paket konnte nicht hochgeladen werden.</code></li>
+      <li>Zustellung nur an den anfragenden Chat; Erstellung im Hintergrund (Bot bleibt bedienbar)</li>
+    </ul>
+  </div>
+
 </div>
 
 <!-- ============ ASSISTENTEN ============ -->

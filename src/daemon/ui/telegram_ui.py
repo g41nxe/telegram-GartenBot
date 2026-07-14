@@ -8,10 +8,9 @@ import urllib.error
 from datetime import datetime, timedelta
 from pathlib import Path
 from .. import config
-from ..adapters import database
+from ..adapters import database, diagnose
 from . import telegram_client
 
-_VERSION_FILE = Path(__file__).resolve().parent.parent.parent.parent / "VERSION"
 from ..adapters.daily_report import generate_daily_report as _generate_daily_report
 from ..adapters.mqtt_client import _global_bus
 from ..core.weather_codes import get_wmo_description as _get_wmo_description
@@ -92,9 +91,7 @@ WIZARD_TTL_SECONDS = 600  # 10 minutes of inactivity expires a wizard session
 
 
 def _read_local_version() -> str:
-    if _VERSION_FILE.exists():
-        return _VERSION_FILE.read_text().strip()
-    return "unbekannt"
+    return config.read_version()
 
 
 def _fetch_latest_release_info() -> dict:
@@ -163,6 +160,62 @@ def handle_update(chat_id: int):
             f"Update verfügbar: {local} → {remote_tag}\nJetzt installieren?",
             confirm_kb,
         )
+
+
+def handle_diagnose(chat_id: int):
+    """Feature 0041: erstellt das Diagnose-Paket im Hintergrund und sendet es als Dokument.
+
+    Quittiert sofort und arbeitet dann in einem Hintergrund-Thread, damit der
+    Polling-Thread auf der Single-Core-Steuerzentrale reaktiv bleibt.
+    """
+    telegram_client.send_message(
+        chat_id,
+        "📦 *Diagnose-Paket wird erstellt*\n"
+        "Journal, Datenbank-Schnappschuss und System-Steckbrief werden eingesammelt — "
+        "das Dokument folgt gleich hier im Chat.",
+    )
+    worker = threading.Thread(target=_run_diagnose, args=(chat_id,), daemon=True)
+    worker.start()
+
+
+def _run_diagnose(chat_id: int):
+    """Sammelt und versendet das Diagnose-Paket (läuft im Hintergrund-Thread)."""
+    try:
+        telegram_client.send_chat_action(chat_id, "upload_document")
+        blob, missing = diagnose.collect_diagnose_paket()
+        if blob is None:
+            telegram_client.send_message(
+                chat_id,
+                "❌ Das Diagnose-Paket konnte nicht erstellt werden. "
+                "Details stehen im Journal der Steuerzentrale.",
+            )
+            return
+        filename = f"diagnose_{datetime.now().strftime('%Y-%m-%d_%H%M')}.zip"
+        size_mb = len(blob) / (1024 * 1024)
+        ok = telegram_client.send_document(
+            chat_id, blob, filename,
+            caption=f"📦 *Diagnose-Paket* · {size_mb:.1f} MB",
+        )
+        if not ok:
+            telegram_client.send_message(
+                chat_id,
+                "❌ Versand fehlgeschlagen — das Diagnose-Paket konnte nicht hochgeladen werden.",
+            )
+            return
+        if missing:
+            # Lücken-Texte enthalten rohe Exception-/Pfad-Strings (z. B. mit _ oder *);
+            # ohne Escaping verwirft Telegram die Markdown-Nachricht (HTTP 400).
+            luecken = "\n".join(f"• {_md_escape(m)}" for m in missing)
+            telegram_client.send_message(
+                chat_id,
+                f"⚠️ *Unvollständiges Diagnose-Paket* — nicht enthalten:\n{luecken}",
+            )
+    except Exception as e:
+        logger.error(f"Diagnose-Paket fehlgeschlagen: {e}")
+        try:
+            telegram_client.send_message(chat_id, "❌ Das Diagnose-Paket konnte nicht erstellt werden.")
+        except Exception:
+            pass
 
 
 def _cleanup_expired_states():
@@ -1578,6 +1631,9 @@ def _process_message(msg_obj: dict):
     elif cmd == "/update":
         # /update ist registriert; Ziel der CI-Build-Benachrichtigung.
         handle_update(chat_id)
+    elif cmd == "/diagnose":
+        # /diagnose ist registriert (Rettungswerkzeug ohne Button, Feature 0041).
+        handle_diagnose(chat_id)
     elif text == "🚿 Bewässern":
         handle_bewaessern_start(chat_id)
     elif text == "🛑 Stopp":

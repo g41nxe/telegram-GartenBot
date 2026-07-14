@@ -216,6 +216,22 @@ except ValueError:
     CAMERA_AFTER_GUSS_OFFSET_MINUTES = 2
 
 
+VERSION_FILE = _ROOT / "VERSION"
+
+
+def read_version() -> str:
+    """Liest die installierte Versionskennung aus der VERSION-Datei (oder 'unbekannt').
+
+    Einzige Quelle für die Version — von /update-Anzeige und Diagnose-Steckbrief genutzt.
+    """
+    try:
+        if VERSION_FILE.exists():
+            return VERSION_FILE.read_text().strip()
+    except Exception:
+        pass
+    return "unbekannt"
+
+
 def get_setting(name: str, default=None):
     """Liest einen Konfigurationswert — DB-Override hat Vorrang vor Modulkonstante."""
     try:

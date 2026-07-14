@@ -237,6 +237,18 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
+# Journal-Lesegruppe: erlaubt journalctl ohne sudo (Diagnose-Paket, Feature 0041).
+# Nice-to-have — darf das Setup unter `set -e` niemals abbrechen (daher || warn).
+if getent group systemd-journal >/dev/null 2>&1; then
+    if sudo usermod -aG systemd-journal "$CURRENT_USER"; then
+        ok "Benutzer '$CURRENT_USER' in Gruppe systemd-journal aufgenommen"
+    else
+        warn "Gruppe systemd-journal konnte nicht gesetzt werden — journalctl ggf. nur mit sudo"
+    fi
+else
+    warn "Gruppe systemd-journal nicht vorhanden – Journal-Zugriff ggf. über Gruppe 'adm'"
+fi
+
 # Bewässerungs-Daemon – startet nach Mosquitto UND Zigbee2MQTT
 sudo tee /etc/systemd/system/garden-irrigation.service > /dev/null <<EOF
 [Unit]

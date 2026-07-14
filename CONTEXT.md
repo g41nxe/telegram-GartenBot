@@ -217,3 +217,7 @@ _Avoid_: Nebel-Zeitraum, Kühlphase, Sprüh-Fenster.
 **Sofort-Nebel**:
 Ein manuell über den Telegram-Bot gestartetes Nebel-Intervall außerhalb jedes Zeitplans. Der Benutzer wählt beim Start eine Laufzeit; eine konfigurierte Maximaldauer begrenzt ihn zusätzlich als Backstop. Ein Sofort-Nebel wird **nicht** persistiert und verfällt bei einem Daemon-Neustart.
 _Avoid_: Manuell-Nebel, Ad-hoc-Nebel, Test-Nebel.
+
+**Diagnose-Paket**:
+Ein auf Anfrage über den Telegram-Bot (Befehl `/diagnose`) erzeugtes Archiv zur Ferndiagnose der Steuerzentrale ohne direkten Zugriff. Enthält Journal-Auszüge des Bewässerungs-Daemons und des Mittelweg-Dienstes, einen konsistenten Schnappschuss der Datenbank, die fachliche Konfiguration sowie einen System-Steckbrief (Version, Laufzeit, freier Speicher, Dienst-Zustände). Enthält niemals Geheimnisse (Zugangsdaten). Wird nur an den anfragenden, autorisierten Chat gesendet. Fällt ein Baustein beim Einsammeln aus, entsteht ein unvollständiges Paket mit ausgewiesener Lückenliste — der Befehl scheitert nie im Ganzen, solange mindestens ein Baustein einsammelbar ist.
+_Avoid_: Debug-Dump, Log-Export, Support-Bundle.
