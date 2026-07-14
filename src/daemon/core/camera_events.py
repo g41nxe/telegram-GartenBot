@@ -34,9 +34,24 @@ class TimedPhotoCaptured(Event):
     ihn, und die Kamera-Überwachung bewertet ihn (ADR 0041).
     """
     def __init__(self, wish_name: str, file_path: str, caption: str,
-                 target_dt=None, captured_at=None):
+                 target_dt=None, captured_at=None, mac_address: str = None):
         self.wish_name = wish_name
         self.file_path = file_path
         self.caption = caption
         self.target_dt = target_dt
         self.captured_at = captured_at
+        self.mac_address = mac_address
+
+
+class TimedPhotoDeliveryFailed(Event):
+    """Der Versand eines erfüllenden Fotos ist gescheitert (Telegram nicht erreichbar).
+
+    Der Aufnahme-Zeitpunkt wird beim Empfang sofort als zugestellt vermerkt — sonst würde
+    jeder weitere Upload dasselbe Foto erneut senden. Scheitert der Versand, muss dieser
+    Vermerk zurückgenommen werden, damit der nächste Upload den Zeitpunkt erneut erfüllt.
+    Ohne diesen Rückweg wäre das Bild endgültig verloren — genau der stille Verlust, den
+    ADR 0040 beseitigt.
+    """
+    def __init__(self, mac_address: str, target_dt):
+        self.mac_address = mac_address
+        self.target_dt = target_dt

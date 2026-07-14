@@ -181,3 +181,34 @@ class TestTimedPhotoCapturedHandler(unittest.TestCase):
         telegram_ui._on_timed_photo_captured(event)
 
         mock_tc.broadcast_photo.assert_not_called()
+
+
+class TestZustellungFehlgeschlagen(unittest.TestCase):
+    """Schlaegt der Versand fehl, darf der Aufnahme-Zeitpunkt nicht als erfuellt gelten."""
+
+    @patch("daemon.ui.telegram_ui._global_bus")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_fehlgeschlagener_versand_meldet_das(self, mock_tc, mock_bus):
+        from datetime import datetime
+        from daemon.ui import telegram_ui
+        from daemon.core.camera_events import TimedPhotoCaptured, TimedPhotoDeliveryFailed
+
+        mock_tc.broadcast_photo.return_value = False  # Telegram nicht erreichbar
+
+        import tempfile, os
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
+            f.write(b'\xFF\xD8\xFF' + b'\x00' * 10)
+            fpath = f.name
+
+        try:
+            target = datetime(2026, 7, 14, 8, 0)
+            event = TimedPhotoCaptured("Garten", fpath, "📷 Foto um 08:00",
+                                       target_dt=target, captured_at=target,
+                                       mac_address="AA:BB:CC")
+            telegram_ui._on_timed_photo_captured(event)
+
+            published = [c.args[0] for c in mock_bus.publish.call_args_list]
+            assert any(isinstance(e, TimedPhotoDeliveryFailed) for e in published), \
+                "Ein fehlgeschlagener Versand muss gemeldet werden, sonst ist das Foto still verloren"
+        finally:
+            os.unlink(fpath)

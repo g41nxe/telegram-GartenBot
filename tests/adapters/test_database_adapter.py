@@ -127,3 +127,35 @@ class TestWeatherDataFetchedForwarding(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTimedPhotoDeliveryFailed(unittest.TestCase):
+    """Ein gescheiterter Versand oeffnet den Aufnahme-Zeitpunkt wieder (ADR 0040)."""
+
+    def test_fehlgeschlagene_zustellung_nimmt_den_vermerk_zurueck(self):
+        from datetime import datetime
+        from daemon.adapters import database
+        from daemon.adapters.database_adapter import DatabaseLoggerAdapter
+        from daemon.core.camera_events import TimedPhotoDeliveryFailed
+
+        import tempfile, os
+        temp_db = tempfile.NamedTemporaryFile(delete=False)
+        temp_db.close()
+        orig = database.DB_PATH
+        database.DB_PATH = temp_db.name
+        try:
+            database.init_db()
+            bus = EventBus()
+            DatabaseLoggerAdapter(bus)
+
+            mac = "AA:BB:CC:DD:EE:FF"
+            target = datetime(2026, 7, 14, 8, 0)
+            database.set_metadata(f"last_delivered_target:{mac}", target.isoformat())
+
+            bus.publish(TimedPhotoDeliveryFailed(mac, target))
+
+            assert not database.get_metadata(f"last_delivered_target:{mac}"), \
+                "Nach einem gescheiterten Versand muss der Aufnahme-Zeitpunkt wieder offen sein"
+        finally:
+            database.DB_PATH = orig
+            os.unlink(temp_db.name)

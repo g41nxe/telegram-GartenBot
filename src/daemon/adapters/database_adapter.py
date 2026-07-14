@@ -13,6 +13,7 @@ from .mqtt_client import ValveStatusReported
 from ..core.scheduler_events import WeatherDataFetched
 from ..core.sensor_events import RainSensorMeasured
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
+from ..core.camera_events import TimedPhotoDeliveryFailed
 
 logger = logging.getLogger("garden_database_adapter")
 
@@ -32,6 +33,14 @@ class DatabaseLoggerAdapter:
         self.event_bus.subscribe(RainSensorMeasured, self._on_rain_sensor_measured)
         self.event_bus.subscribe(NebelIntervalStarted, self._on_nebel_started)
         self.event_bus.subscribe(NebelIntervalEnded, self._on_nebel_ended)
+        self.event_bus.subscribe(TimedPhotoDeliveryFailed, self._on_timed_photo_delivery_failed)
+
+    def _on_timed_photo_delivery_failed(self, event: TimedPhotoDeliveryFailed):
+        """Nimmt den Zustellvermerk zurück, damit der nächste Upload den Zeitpunkt erneut erfüllt."""
+        database.set_metadata(f"last_delivered_target:{event.mac_address}", "")
+        logger.warning(
+            f"Aufnahme-Zeitpunkt {event.target_dt} wieder geöffnet — Versand des Fotos gescheitert."
+        )
 
     def _on_cycle_started(self, event: WateringCycleStarted):
         limit_info = f"Zeitlimit: {event.duration} Min"

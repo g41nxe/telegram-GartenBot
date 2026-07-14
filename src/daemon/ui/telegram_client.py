@@ -358,12 +358,20 @@ def broadcast_notification(message: str, reply_markup: dict = None):
     for chat_id in active_chats:
         send_message(chat_id, message, reply_markup)
 
-def broadcast_photo(image_bytes: bytes, caption: str = None):
-    """Sendet ein PNG-Bild an alle bekannten autorisierten Benutzer."""
+def broadcast_photo(image_bytes: bytes, caption: str = None) -> bool:
+    """Sendet ein PNG-Bild an alle bekannten autorisierten Benutzer.
+
+    Gibt True zurück, sobald mindestens ein Empfänger das Bild erhalten hat. Der Aufrufer
+    braucht diese Rückmeldung: Ein getimtes Foto, dessen Versand scheitert, muss erneut
+    zugestellt werden (siehe TimedPhotoDeliveryFailed).
+    """
     for user_id in config.TELEGRAM_ALLOWED_USER_IDS:
         active_chats.add(user_id)
+    zugestellt = False
     for chat_id in active_chats:
-        send_photo(chat_id, image_bytes, caption)
+        if send_photo(chat_id, image_bytes, caption):
+            zugestellt = True
+    return zugestellt
 
 def _polling_loop():
     """Hintergrund-Long-Polling-Schleife zur Abfrage neuer Nachrichten."""

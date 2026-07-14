@@ -246,3 +246,27 @@ class TestBeschriftungMitVerzug:
         text = camera_schedule.beschriftung_mit_verzug("📷 Foto um 20:00", target, captured, 5)
 
         assert text == "📷 Foto um 20:00 · aufgenommen 13.07. um 00:08"
+
+
+class TestNebelZeitplaeneErzeugenKeinGussFoto:
+    """Ein Nebel-Intervall ist kein Guss — es darf keinen Aufnahme-Zeitpunkt erzeugen."""
+
+    def _nebel(self, time_str):
+        return {"time": time_str, "duration_minutes": 0, "is_active": 1,
+                "name": "Terrasse", "mode": "nebel"}
+
+    def test_nebel_intervall_erzeugt_keinen_faelligen_zeitpunkt(self):
+        now = datetime(2026, 7, 14, 22, 30)
+
+        result = camera_schedule.faelliger_aufnahme_zeitpunkt(now, [self._nebel("22:00")], [], 2)
+
+        assert result is None, "Ein Nebel-Intervall darf kein Guss-Foto ausloesen"
+
+    def test_nebel_intervall_weckt_die_kamera_nicht(self):
+        now = datetime(2026, 7, 14, 21, 55)
+
+        sleep = camera_schedule.compute_next_sleep_seconds(
+            now, [self._nebel("22:00")], [], INTERVAL, OFFSET
+        )
+
+        assert sleep == INTERVAL, "Fuer ein Nebel-Intervall darf die Kamera nicht geweckt werden"

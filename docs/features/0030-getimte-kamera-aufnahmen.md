@@ -77,7 +77,11 @@ Steuerzentrale und die Firmware bleiben unverändert.
   Stunden-/Minuten-Inline-Tastaturen (bestehende Keyboards mit eigenem Callback-Prefix
   wiederverwenden), plus Liste und Einzel-Löschung.
 - **Konfigurationswerte:**
-  - `TIMED_PHOTO_TOLERANCE_MINUTES` (`garden.conf`, Default 5) — Toleranzfenster.
+  - ~~`TIMED_PHOTO_TOLERANCE_MINUTES` (`garden.conf`, Default 5) — Toleranzfenster.~~
+    **Entfallen mit ADR 0040 / Feature 0041:** Das Toleranzfenster verwarf verspätete Fotos
+    still. Ein Aufnahme-Zeitpunkt wird jetzt vom ersten Bild nach ihm erfüllt; der Nachfolger
+    `AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN` steuert nur noch den Verzugs-Hinweis in der
+    Bildunterschrift.
   - `CAMERA_AFTER_GUSS_OFFSET_MINUTES` (`garden.conf`, Default 2) — Nach-Guss-Offset.
   - Foto-Uhrzeiten in der DB-Tabelle `camera_photo_times` (über Wizard, kein Deploy nötig).
 

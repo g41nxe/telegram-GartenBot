@@ -1,7 +1,10 @@
 """Reine Core-Funktionen für getimte Kamera-Aufnahmen.
 
-Keine I/O. Eingaben kommen vom camera_receiver-Adapter (DB-Abfragen),
-Ausgaben sind skalare Werte oder Optional[str].
+Keine I/O. Eingaben kommen vom camera_receiver-Adapter (DB-Abfragen), Ausgaben sind
+skalare Werte oder Tupel aus (Aufnahme-Zeitpunkt, Beschriftung, Label).
+
+Die Ziel-Erzeugung deckt Vortag, heute und morgen ab: Ein Aufnahme-Zeitpunkt bleibt offen,
+bis der naechste ihn abloest (ADR 0040) — ueber Mitternacht hinweg also auch der von gestern.
 """
 import re
 from datetime import datetime, timedelta
@@ -20,13 +23,19 @@ def _md_escape(text) -> str:
 
 
 def _guss_targets(now: datetime, schedules: list, after_offset_minutes: int):
-    """Liefert (target_dt, caption, label) für alle aktiven Zeitpläne heute und morgen.
+    """Liefert (target_dt, caption, label) für alle aktiven Guss-Zeitpläne — Vortag, heute, morgen.
+
+    Nur Zeitpläne im Modus „watering" erzeugen ein Guss-Foto. Ein Nebel-Intervall (ADR 0033)
+    liegt in derselben Tabelle, ist aber kein Guss: Es hat keine Guss-Dauer, und ein Foto
+    „Nach dem Guss" wäre schlicht falsch.
 
     label = {"type": "guss", "name": <Zeitplan-Name>}
     """
     targets = []
     for s in schedules:
         if not s.get("is_active", 1):
+            continue
+        if (s.get("mode") or "watering") != "watering":
             continue
         h, m = map(int, s["time"].split(":"))
         duration = s["duration_minutes"]
@@ -45,7 +54,7 @@ def _guss_targets(now: datetime, schedules: list, after_offset_minutes: int):
 
 
 def _absolute_targets(now: datetime, photo_times: list):
-    """Liefert (target_dt, caption, label) für alle absoluten Foto-Uhrzeiten heute und morgen.
+    """Liefert (target_dt, caption, label) für alle festen Fotozeiten — Vortag, heute, morgen.
 
     label = {"type": "fix"}
     """
@@ -103,7 +112,9 @@ def faelliger_aufnahme_zeitpunkt(
     nicht — die Kamera wacht bauartbedingt bis zu 60 s zu früh auf, und ein Bild vor dem
     Nach-Offset kann das Beet mitten im Guss zeigen.
 
-    Gibt None zurück, wenn heute noch kein Aufnahme-Zeitpunkt fällig war.
+    Gibt None zurück, wenn überhaupt kein Aufnahme-Zeitpunkt konfiguriert ist. Ist einer
+    konfiguriert, liegt immer einer in der Vergangenheit — vor der ersten Fotozeit des Tages
+    ist das der Zeitpunkt des Vortags, der bis dahin offen bleibt.
     """
     all_targets = (
         _guss_targets(now, schedules, after_offset_minutes)
@@ -132,6 +143,10 @@ def beschriftung_mit_verzug(
     ist die Tatsache redundant; weichen sie ab, ist sie die wichtigste Information am Bild
     (ADR 0040). Liegt die Aufnahme an einem anderen Tag als der Aufnahme-Zeitpunkt, nennt der
     Hinweis auch das Datum — sonst sähe ein Bild vom Folgetag wie eines vom selben Morgen aus.
+
+    `captured_at` ist die Empfangszeit des Uploads auf der Steuerzentrale, nicht der
+    Auslösezeitpunkt der Kamera — die Kamera meldet ihn nicht. Die Differenz sind Sekunden
+    (Aufnahme, JPEG-Kodierung, Übertragung) und damit klein gegen jeden Verzug, der hier zählt.
     """
     verzug = (captured_at - target_dt).total_seconds()
     if verzug < hinweis_schwelle_minuten * 60:

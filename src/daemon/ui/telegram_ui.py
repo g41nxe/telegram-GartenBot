@@ -32,7 +32,8 @@ from ..core.scheduler_events import (
 )
 from ..adapters import weather as _weather_adapter
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
-from ..core.camera_events import CameraInactivityAlertTriggered, CameraInactivityAlertResolved, TimedPhotoCaptured
+from ..core.camera_events import (CameraInactivityAlertTriggered, CameraInactivityAlertResolved,
+                                  TimedPhotoCaptured, TimedPhotoDeliveryFailed)
 from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
@@ -939,11 +940,23 @@ def handle_aufnahmen(chat_id: int):
 
 
 def _on_timed_photo_captured(event: TimedPhotoCaptured):
-    """Sendet ein getimtes Foto mit Beschriftung an alle Benutzer."""
+    """Sendet ein getimtes Foto mit Beschriftung an alle Benutzer.
+
+    Scheitert der Versand, wird das gemeldet: Der Aufnahme-Zeitpunkt gilt beim Empfang
+    bereits als zugestellt und muss wieder geöffnet werden, sonst ist das Bild verloren.
+    """
     path = Path(event.file_path)
     if not path.exists():
         return
-    telegram_client.broadcast_photo(path.read_bytes(), caption=event.caption)
+
+    zugestellt = telegram_client.broadcast_photo(path.read_bytes(), caption=event.caption)
+
+    if not zugestellt and _global_bus and event.mac_address:
+        logger.warning(
+            f"Getimtes Foto konnte nicht zugestellt werden (Aufnahme-Zeitpunkt {event.target_dt}) "
+            f"— der Zeitpunkt wird wieder geöffnet."
+        )
+        _global_bus.publish(TimedPhotoDeliveryFailed(event.mac_address, event.target_dt))
 
 
 _WEEKDAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]

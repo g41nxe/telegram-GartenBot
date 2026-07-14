@@ -18,6 +18,23 @@ logger = logging.getLogger("garden_camera_receiver")
 
 _global_bus = None
 
+
+def _ist_neuer_zeitpunkt(target_dt: datetime, zuletzt_zugestellt: str | None) -> bool:
+    """Ist `target_dt` jünger als der zuletzt zugestellte Aufnahme-Zeitpunkt?
+
+    Der Vergleich ist bewusst „jünger als" und nicht „ungleich": Ändert der Benutzer seine
+    Fotozeiten, kann ein bereits bedienter, älterer Aufnahme-Zeitpunkt wieder der jüngste
+    fällige werden — er würde sonst ein veraltetes Bild zustellen.
+    """
+    if not zuletzt_zugestellt:
+        return True
+    try:
+        return target_dt > datetime.fromisoformat(zuletzt_zugestellt)
+    except ValueError:
+        # Unlesbarer Zustand (z. B. der alte Schlüssel `Datum|Beschriftung`) → neu zustellen.
+        return True
+
+
 class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed_path = urlparse(self.path)
@@ -217,13 +234,14 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
                 # ist eindeutig — anders als der fruehere Schluessel `Datum|Beschriftung`, der
                 # zwei gleichnamige Zeitplaene kollidieren liess.
                 dedup_key = f"last_delivered_target:{mac}"
-                if database.get_metadata(dedup_key) != target_dt.isoformat():
+                if _ist_neuer_zeitpunkt(target_dt, database.get_metadata(dedup_key)):
                     database.set_metadata(dedup_key, target_dt.isoformat())
                     caption = camera_schedule.beschriftung_mit_verzug(
                         caption, target_dt, now, config.AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN
                     )
                     _global_bus.publish(
-                        TimedPhotoCaptured(wish_name, str(file_path), caption, target_dt, now)
+                        TimedPhotoCaptured(wish_name, str(file_path), caption,
+                                           target_dt, now, mac_address=mac)
                     )
 
         self.send_response(200)

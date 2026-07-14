@@ -47,6 +47,24 @@ Bild trotzdem, obwohl es vorliegt. Warnung *und* Datenverlust ist die schlechtes
    zwei namenlose) Zeitpläne kollidieren ließ und deren zweites Guss-Foto des Tages verschluckte.
    Der Zeitstempel ist eindeutig; die Kollision entfällt.
 
+   Verglichen wird **„jünger als der zuletzt zugestellte"**, nicht „ungleich". Ändert der Benutzer
+   seine Fotozeiten, kann ein längst bedienter, älterer Aufnahme-Zeitpunkt wieder der jüngste
+   fällige werden — bei einem Ungleich-Vergleich würde er ein veraltetes Bild zustellen.
+
+2a. **Ein gescheiterter Versand öffnet den Aufnahme-Zeitpunkt wieder.** Der Vermerk wird beim
+   Empfang gesetzt (sonst sendete jeder weitere Upload dasselbe Foto erneut). Scheitert der
+   Telegram-Versand, meldet die UI das über `TimedPhotoDeliveryFailed`; der `DatabaseLoggerAdapter`
+   nimmt den Vermerk zurück, und der nächste Upload erfüllt den Zeitpunkt erneut. Ohne diesen
+   Rückweg wäre das Bild endgültig verloren — der `EventBus` verschluckt Ausnahmen seiner
+   Abonnenten, der Fehlschlag bliebe also unsichtbar. Das wäre exakt der stille Verlust, den
+   dieser ADR beseitigt.
+
+2b. **Nur Guss-Zeitpläne erzeugen Guss-Fotos.** Ein Nebel-Intervall (ADR 0033) liegt in derselben
+   Tabelle wie die Bewässerungs-Zeitpläne, ist aber kein Guss. Ohne Filter auf `mode='watering'`
+   erzeugt es einen Aufnahme-Zeitpunkt „Nach dem Guss …", der unter der Erfüllungs-Regel
+   **zuverlässig** zugestellt würde (unter dem alten Toleranzfenster fiel er meist durch) — und der
+   zudem einen echten Aufnahme-Zeitpunkt ablöst, dessen Bild dadurch nie ankäme.
+
 3. **Ein Upload *vor* dem Aufnahme-Zeitpunkt erfüllt ihn nicht.** Die Garten-Kamera wacht bis zu
    60 s zu früh auf (Quantisierung des RTC-Countdowns) und nach einem Fehlversuch mitunter
    deutlich früher; ein Bild vor dem Zeitpunkt kann den Nach-Offset des Guss-Fotos unterlaufen und

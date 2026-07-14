@@ -279,6 +279,7 @@ def test_upload_vor_dem_aufnahme_zeitpunkt_erfuellt_ihn_nicht(running_server, ev
     könnte das Beet mitten im Guss zeigen. Sie wacht kurz darauf ohnehin erneut auf.
     """
     from datetime import datetime, timedelta
+    from src.daemon.core import camera_schedule
     from src.daemon.core.camera_events import TimedPhotoCaptured
 
     database.add_camera("FC:00:EE:FF:00:11", "NoCam")
@@ -287,9 +288,16 @@ def test_upload_vor_dem_aufnahme_zeitpunkt_erfuellt_ihn_nicht(running_server, ev
     target = datetime.now() + timedelta(minutes=10)
     database.add_photo_time(target.strftime("%H:%M"))
 
-    # Der gleichnamige Zeitpunkt von gestern gilt als bereits zugestellt (Normalbetrieb)
-    gestern = (target - timedelta(days=1)).replace(second=0, microsecond=0)
-    database.set_metadata("last_delivered_target:FC:00:EE:FF:00:11", gestern.isoformat())
+    # Alles, was jetzt schon faellig ist (der gleichnamige Zeitpunkt des Vortags), gilt als
+    # zugestellt — nicht von Hand ausgerechnet, sonst kippt der Test um Mitternacht.
+    bereits_faellig = camera_schedule.faelliger_aufnahme_zeitpunkt(
+        datetime.now(), database.get_schedules(), database.get_photo_times(),
+        config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
+    )
+    assert bereits_faellig is not None
+    database.set_metadata(
+        "last_delivered_target:FC:00:EE:FF:00:11", bereits_faellig[0].isoformat()
+    )
 
     captured = []
     event_bus.subscribe(TimedPhotoCaptured, captured.append)
@@ -396,3 +404,35 @@ def test_zwei_namenlose_zeitplaene_liefern_zwei_guss_fotos(running_server, event
     # Beide Uploads liegen nach dem juengeren Zeitpunkt -> dieser wird genau einmal erfuellt.
     assert len(captured) == 1
     assert captured[0].target_dt is not None
+
+
+def test_geloeschte_fotozeit_belebt_keinen_alten_zeitpunkt(running_server, event_bus):
+    """Nach dem Loeschen einer Fotozeit darf kein aelterer Aufnahme-Zeitpunkt neu zustellen.
+
+    Der Vergleich muss lauten 'juenger als der zuletzt zugestellte', nicht 'ungleich' —
+    sonst wird ein laengst bedienter Zeitpunkt wieder faellig und stellt ein veraltetes Bild zu.
+    """
+    from datetime import datetime, timedelta
+    from src.daemon.core.camera_events import TimedPhotoCaptured
+
+    mac = "FC:00:AL:T0:00:01"
+    database.add_camera(mac, "AltCam")
+    now = datetime.now()
+
+    # Fotozeit, die vor 2 Stunden faellig war — sie wurde bereits zugestellt.
+    frueher = (now - timedelta(hours=2)).replace(second=0, microsecond=0)
+    zuletzt = (now - timedelta(minutes=30)).replace(second=0, microsecond=0)
+    database.set_metadata(f"last_delivered_target:{mac}", zuletzt.isoformat())
+    database.add_photo_time(frueher.strftime("%H:%M"))
+
+    captured = []
+    event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+    url = f"http://127.0.0.1:{running_server}/upload"
+    req = urllib.request.Request(
+        url, headers={"X-Camera-MAC": mac}, data=JPEG_PAYLOAD, method="POST"
+    )
+    with urllib.request.urlopen(req) as resp:
+        assert resp.status == 200
+
+    assert len(captured) == 0, "Ein aelterer Aufnahme-Zeitpunkt als der zuletzt zugestellte darf nicht zustellen"
