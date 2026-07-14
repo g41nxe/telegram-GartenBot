@@ -1,3 +1,15 @@
+## v1.16.0 — 2026-07-14
+
+### Behoben
+- Getimte Fotos kommen wieder an, auch wenn die Kamera zu spät dran ist
+- Nebel-Intervalle lösten fälschlich „Nach dem Guss"-Fotos aus
+- Kamera wartet beim Upload nicht mehr auf den Telegram-Versand
+
+### Neu
+- Kamera-Überwachung warnt, wenn die Kamera ihre Aufnahme-Zeitpunkte verfehlt — oder zu einem Zeitpunkt gar kein Bild liefert
+
+---
+
 ## v1.15.0 — 2026-07-06
 
 ### Neu
