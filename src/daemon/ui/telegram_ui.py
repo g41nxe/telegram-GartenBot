@@ -14,6 +14,7 @@ from . import telegram_client
 from ..adapters.daily_report import generate_daily_report as _generate_daily_report
 from ..adapters.mqtt_client import _global_bus
 from ..core.weather_codes import get_wmo_description as _get_wmo_description
+from ..core.weather_report import WEATHER_UNAVAILABLE_MESSAGE
 from ..core.camera_schedule import next_photo_target as _next_photo_target
 from ..core.watering_controller import (
     WateringCycleStarted,
@@ -1282,7 +1283,7 @@ def handle_giesscheck(chat_id: int):
         logger.error(f"Fehler beim Laden der Gieß-Empfehlung: {e}")
         telegram_client.send_message(
             chat_id,
-            "❌ Keine Wetterdaten verfügbar. Bitte später erneut versuchen.",
+            WEATHER_UNAVAILABLE_MESSAGE,
             get_main_keyboard(),
         )
         return

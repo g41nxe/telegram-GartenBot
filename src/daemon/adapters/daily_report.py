@@ -3,6 +3,7 @@ from datetime import datetime
 from .. import config
 from . import database, weather, mqtt_client
 from ..core.weather_codes import get_wmo_description
+from ..core.weather_report import resolve_heute_weather, WEATHER_UNAVAILABLE_MESSAGE
 from ..core.scheduler_events import DailyReportTriggered
 from ..adapters.mqtt_client import _global_bus
 
@@ -238,10 +239,9 @@ def generate_daily_report(today_str: str) -> str:
         weather_result = weather.get_weather_data(config.LATITUDE, config.LONGITUDE)
     except Exception as e:
         logger.error(f"Fehler beim Abrufen der Wetterdaten für Morgen-Bericht: {e}")
-    if weather_result is not None:
-        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source = weather_result
-    else:
-        rain_last, rain_next, temp, weather_code, temp_min, temp_max, rain_prob, rain_last_source = 0.0, 0.0, 0.0, 0, 0.0, 0.0, 0, "forecast"
+    # Der Gestern-Block braucht nur den gefallenen Regen; die Vorhersagewerte (Temp, Code,
+    # erwarteter Regen) holt der Heute-Block in Schritt 7 selbst — inkl. Cache-Rückfall (ADR 0042).
+    rain_last = weather_result[0] if weather_result is not None else 0.0
 
     # 3. Systemzustand
     if mqtt_client.HAS_PAHO:
@@ -286,8 +286,19 @@ def generate_daily_report(today_str: str) -> str:
         y_avg, y_max = temp_stats if temp_stats else (None, None)
         gestern_wetter_line = _format_gestern_wetter(rain_last, y_avg, y_max, from_sensor=False)
 
-    # 7. Heute-Block (Ausblick)
-    heute_line = _format_heute(temp_min, temp_max, weather_code, rain_next, rain_prob)
+    # 7. Heute-Block (Ausblick) — bei Live-Ausfall Rückfall auf frischen Cache (ADR 0042)
+    heute_cache = database.get_last_weather() if weather_result is None else None
+    heute = resolve_heute_weather(
+        weather_result, heute_cache, datetime.now(), config.REPORT_WEATHER_MAX_AGE_HOURS
+    )
+    if heute.available:
+        heute_line = _format_heute(
+            heute.temp_min, heute.temp_max, heute.weather_code, heute.rain_next, heute.rain_prob
+        )
+        if heute.stand:
+            heute_line += f"  *(Stand: {heute.stand})*"
+    else:
+        heute_line = WEATHER_UNAVAILABLE_MESSAGE
 
     # 8. Zustands-Block (Abschluss)
     if _is_report_green(valves, services_ok):

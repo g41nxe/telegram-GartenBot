@@ -37,4 +37,6 @@ Beim Lesen wird zusätzlich durch einen Datums-Guard sichergestellt, dass der Sn
 
 **Konsequenz für künftige Architektur-Reviews:** „Lies die Wetterwerte aus dem Cache statt live" ist hier **kein** gültiger Vereinfachungsvorschlag, solange die Berichts-Anzeigewerte fenster-abhängige Skalare sind.
 
-**Auflösungspfad (ADR 0031):** Sobald die Berichts-Anzeigewerte — analog zur graduierten Gieß-Entscheidung — **zur Aufrufzeit** aus den gecachten Rohdaten (`hourly_forecast_json`) gegen `_find_current_index(now)` re-zentriert werden, ist das Fenster stets auf „jetzt" zentriert und der Live-Call kann entfallen. Bis dahin bleibt er erforderlich.
+**Auflösungspfad:** Sobald die Berichts-Anzeigewerte — analog zur graduierten Gieß-Entscheidung — **zur Aufrufzeit** aus den gecachten Rohdaten (`hourly_forecast_json`) gegen `_find_current_index(now)` re-zentriert werden, ist das Fenster stets auf „jetzt" zentriert und der Live-Call kann entfallen. Bis dahin bleibt er erforderlich.
+
+_(Hinweis: Die frühere Fassung verwies hier auf „ADR 0031" — ein Vorwärtsverweis auf eine nie unter dieser Nummer geschriebene ADR; `docs/adr/0031` ist tatsächlich „Graduierte Gieß-Steuerung". ADR 0042 greift das Ausfall-Problem auf, wählt aber bewusst den **Cache-Rückfall** statt der vollständigen Re-Zentrierung — der Live-Call bleibt Primärquelle, die Ablösung oben bleibt offen.)_

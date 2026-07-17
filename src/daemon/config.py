@@ -122,6 +122,13 @@ except ValueError:
 
 DAILY_REPORT_TIME = os.getenv("DAILY_REPORT_TIME", "08:00")
 
+# Maximales Alter (Stunden) des Wetter-Caches, bis zu dem der Heute-Block bei
+# Live-Ausfall darauf zurückfällt; darüber → "nicht verfügbar" (ADR 0042).
+try:
+    REPORT_WEATHER_MAX_AGE_HOURS = float(os.getenv("REPORT_WEATHER_MAX_AGE_HOURS", "3"))
+except ValueError:
+    REPORT_WEATHER_MAX_AGE_HOURS = 3.0
+
 # --- Nebel-Intervall (Terrassen-Kühlung, Feature 0032) ---
 try:
     NEBEL_ON_SECONDS = int(os.getenv("NEBEL_ON_SECONDS", "20"))

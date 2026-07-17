@@ -117,7 +117,7 @@ Der erste Abschnitt des Tagesberichts unter der Überschrift `*Gestern*`. Fasst 
 _Avoid_: Verlauf, History-Block, Rückschau.
 
 **Heute-Block (Ausblick)**:
-Der zweite Abschnitt des Tagesberichts unter der Überschrift `*Heute*`. Einzeilige Wettervorhersage: Bedingungs-Emoji (aus dem WMO-Wettercode) und -Text, Temperatur-Spanne sowie — bei Regen — erwartete Menge und Wahrscheinlichkeit.
+Der zweite Abschnitt des Tagesberichts unter der Überschrift `*Heute*`. Einzeilige Wettervorhersage: Bedingungs-Emoji (aus dem WMO-Wettercode) und -Text, Temperatur-Spanne sowie — bei Regen — erwartete Menge und Wahrscheinlichkeit. Scheitert der Live-Abruf, fällt der Block auf die zuletzt gepollten Cache-Werte zurück und trägt dann — **nur in diesem Ausnahmefall** — den **Wetterdaten-Stand** `(Stand: HH:MM Uhr)`; ist der Cache älter als drei Stunden oder leer, tritt `❌ Keine Wetterdaten verfügbar. Bitte später erneut versuchen.` an die Stelle der Vorhersage (ADR 0042).
 _Avoid_: Vorschau, Forecast-Zeile, Prognose-Block.
 
 **Zustands-Block**:

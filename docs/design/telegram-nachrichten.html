@@ -172,6 +172,7 @@ Fr, 19.06. · 14:32 Uhr
       <li>Gestern-Aktivität: <code>💧 1× bewässert · 45 l</code> / <code>N× …</code> / <code>nicht bewässert</code> / <code>💧 Guss übersprungen (Regen)</code>; Nebel angehängt: <code>· 🌫️ N Fenster · M Min</code></li>
       <li>Gestern-Wetter: <code>🌧 3.0 mm · 🌡 Ø 19.2 °C, max 32.0 °C</code> — Quell-Tag nur im Fallback: <code>(Open-Meteo)</code> bei Sensor-Ausfall (deckt Regen + Temp)</li>
       <li>Heute: Emoji + Text aus <code>get_wmo_description</code>; Regen gefaltet: <code>· 6.2 mm (80 % ☂)</code></li>
+      <li>Heute bei Live-Ausfall (ADR 0042): Rückfall auf frischen Cache mit Wetterdaten-Stand — <code>🌤️ Leicht bewölkt · 18–30 °C · 8 % ☂  <i>(Stand: 07:30 Uhr)</i></code> (Stand <b>nur</b> im Fallback). Cache älter als 3 h oder leer → <code>❌ Keine Wetterdaten verfügbar. Bitte später erneut versuchen.</code> statt der Vorhersagezeile</li>
       <li>Zustand am Schluss: grün <code>✅ System: alles in Ordnung</code>; sonst Issues direkt (Dienst, Ventile, Regensensor im Ventil-Format)</li>
       <li>Wassermenge in Klein-<code>l</code>; LQI-Zahlen/Meldungsanzahlen erscheinen nie im Bericht</li>
     </ul>

@@ -262,6 +262,72 @@ class TestSendDailyReport(unittest.TestCase):
 
         mocks["db"].set_metadata.assert_called_once_with("last_daily_report_date", "2026-06-14")
 
+    def test_heute_block_faellt_bei_live_ausfall_auf_frischen_cache(self):
+        """Live-Abruf None + frischer Cache → Heute-Block zeigt Cache-Werte mit Stand, keine 0-0-Lüge (ADR 0042)."""
+        from datetime import datetime
+        from daemon.adapters.daily_report import generate_daily_report
+
+        mocks = self._make_patches()
+        self._setup_db_mock(mocks)
+        mocks["weather"].get_weather_data.return_value = None
+        mocks["mqtt"].HAS_PAHO = False
+        fresh_ts = datetime.now().replace(microsecond=0).isoformat()
+        mocks["db"].get_last_weather.return_value = {
+            "timestamp": fresh_ts,
+            "rain_last_24h_mm": 1.9, "rain_next_24h_mm": 0.0,
+            "current_temp": 20.3, "weather_code": 2,
+            "temp_min": 18.0, "temp_max": 30.0, "rain_probability": 8,
+            "hourly_forecast_json": "", "rain_last_source": "measured",
+        }
+
+        result = generate_daily_report("2026-07-17")
+
+        self.assertIn("18–30 °C", result)
+        self.assertIn("(Stand:", result)
+        self.assertNotIn("0–0 °C", result)
+
+    def test_heute_block_nicht_verfuegbar_ohne_cache(self):
+        """Live-Abruf None + kein Cache → ehrliche 'nicht verfügbar'-Zeile statt 0-0 (ADR 0042)."""
+        from daemon.adapters.daily_report import generate_daily_report
+
+        mocks = self._make_patches()
+        self._setup_db_mock(mocks)
+        mocks["weather"].get_weather_data.return_value = None
+        mocks["mqtt"].HAS_PAHO = False
+        mocks["db"].get_last_weather.return_value = None
+
+        result = generate_daily_report("2026-07-17")
+
+        self.assertIn("Keine Wetterdaten verfügbar", result)
+        self.assertNotIn("0–0 °C", result)
+
+    def test_heute_block_nicht_verfuegbar_bei_zu_altem_cache(self):
+        """Live-Abruf None + Cache älter als REPORT_WEATHER_MAX_AGE_HOURS → 'nicht verfügbar' (ADR 0042).
+
+        Verdrahtet die 3h-Altersschwelle über generate_daily_report, nicht nur die Core-Funktion.
+        """
+        from datetime import datetime, timedelta
+        from daemon.adapters.daily_report import generate_daily_report
+
+        mocks = self._make_patches()
+        self._setup_db_mock(mocks)
+        mocks["weather"].get_weather_data.return_value = None
+        mocks["mqtt"].HAS_PAHO = False
+        stale_ts = (datetime.now() - timedelta(hours=4)).replace(microsecond=0).isoformat()
+        mocks["db"].get_last_weather.return_value = {
+            "timestamp": stale_ts,
+            "rain_last_24h_mm": 1.9, "rain_next_24h_mm": 0.0,
+            "current_temp": 20.3, "weather_code": 2,
+            "temp_min": 18.0, "temp_max": 30.0, "rain_probability": 8,
+            "hourly_forecast_json": "", "rain_last_source": "measured",
+        }
+
+        result = generate_daily_report("2026-07-17")
+
+        self.assertIn("Keine Wetterdaten verfügbar", result)
+        self.assertNotIn("18–30 °C", result)   # veralteter Cache wird NICHT gezeigt
+        self.assertNotIn("(Stand:", result)
+
 
 class TestDailyReportDesignSystem(unittest.TestCase):
     """Design-System-Konformität des Tagesberichts (Schritt 7 Migration)."""
