@@ -1,3 +1,10 @@
+## v1.16.1 — 2026-07-17
+
+### Behoben
+- Morgen-Bericht: bei kurzem Wetter-Ausfall echte letzte Werte (mit Stand) statt „0–0 °C"
+
+---
+
 ## v1.16.0 — 2026-07-14
 
 ### Behoben
