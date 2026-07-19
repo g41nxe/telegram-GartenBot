@@ -137,6 +137,9 @@ scratch/
 data/camera/*
 !data/camera/.gitkeep
 
+# Vom Pi heruntergeladene Fotos (fetch-photos.ps1, Default-Ziel)
+camera-photos/
+
 # End of file
 # Brainstorming-Begleitserver (ephemer)
 .superpowers/
