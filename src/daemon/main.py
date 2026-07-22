@@ -56,6 +56,7 @@ def main():
     from .core.watering_controller import WateringController
     from .core.nebel_controller import NebelController
     from .adapters.database_adapter import DatabaseLoggerAdapter
+    from .adapters.rain_event_adapter import RainEventAdapter
 
     watering_ctrl = WateringController(mqtt_client._global_bus, mqtt_client.client_instance.publish)
     scheduler.set_controller(watering_ctrl)
@@ -70,6 +71,10 @@ def main():
 
     # Initialisiere den DB-Logger Adapter zur Event-Archivierung
     db_adapter = DatabaseLoggerAdapter(mqtt_client._global_bus)
+
+    # Regenereignis-Zustand mit Karenzzeit (ADR 0043): fasst einzelne Kipps der Regenwippe
+    # zu einem Ereignis zusammen, damit die Meldungen nicht flattern.
+    rain_event_adapter = RainEventAdapter(mqtt_client._global_bus)
         
     # 4. Kamera-Komponenten initialisieren
     logger.info("Initialisiere Kamera-Empfänger und Kopplungslogik...")

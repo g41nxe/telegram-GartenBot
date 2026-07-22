@@ -486,49 +486,10 @@ class TestWatchdogRainSensor(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestTelegramRainNotifications(unittest.TestCase):
-
-    def _patch_ui(self):
-        return [
-            patch("daemon.ui.telegram_ui.database"),
-            patch("daemon.ui.telegram_ui.telegram_client"),
-        ]
-
-    def test_notification_sent_on_rain_start(self):
-        from daemon.ui.telegram_ui import _on_rain_sensor_measured
-        with patch("daemon.ui.telegram_ui.database") as mock_db, \
-             patch("daemon.ui.telegram_ui.telegram_client") as mock_tc:
-            mock_db.get_metadata.return_value = "0"  # not raining
-            _on_rain_sensor_measured(RainSensorMeasured(1.4, 18.2, 21.8, 95, is_raining=True))
-            mock_tc.broadcast_notification.assert_called_once()
-            msg = mock_tc.broadcast_notification.call_args[0][0]
-            self.assertIn("Regen erkannt", msg)
-            self.assertIn("1.4", msg)
-
-    def test_no_duplicate_notification_during_rain(self):
-        from daemon.ui.telegram_ui import _on_rain_sensor_measured
-        with patch("daemon.ui.telegram_ui.database") as mock_db, \
-             patch("daemon.ui.telegram_ui.telegram_client") as mock_tc:
-            mock_db.get_metadata.return_value = "1"  # already raining
-            _on_rain_sensor_measured(RainSensorMeasured(0.8, 19.0, 21.8, 95, is_raining=True))
-            mock_tc.broadcast_notification.assert_not_called()
-
-    def test_rain_stopped_notification(self):
-        from daemon.ui.telegram_ui import _on_rain_sensor_measured
-        with patch("daemon.ui.telegram_ui.database") as mock_db, \
-             patch("daemon.ui.telegram_ui.telegram_client") as mock_tc:
-            mock_db.get_metadata.return_value = "1"  # was raining
-            _on_rain_sensor_measured(RainSensorMeasured(0.0, 20.0, 20.0, 90, is_raining=False))
-            mock_tc.broadcast_notification.assert_called_once()
-            msg = mock_tc.broadcast_notification.call_args[0][0]
-            self.assertIn("Regen vorbei", msg)
-
-    def test_no_notification_when_still_dry(self):
-        from daemon.ui.telegram_ui import _on_rain_sensor_measured
-        with patch("daemon.ui.telegram_ui.database") as mock_db, \
-             patch("daemon.ui.telegram_ui.telegram_client") as mock_tc:
-            mock_db.get_metadata.return_value = "0"  # not raining
-            _on_rain_sensor_measured(RainSensorMeasured(0.0, 5.0, 20.0, 90, is_raining=False))
-            mock_tc.broadcast_notification.assert_not_called()
+    """Die früheren Flankentests der UI entfielen mit ADR 0043: die Zustandslogik liegt
+    jetzt im Kern (tests/core/test_rain_event.py), die Persistenz im Adapter
+    (tests/adapters/test_rain_event_adapter.py), die Texte in
+    tests/ui/test_rain_event_messages.py."""
 
     def test_watering_interrupted_notification(self):
         from daemon.ui.telegram_ui import _on_watering_interrupted

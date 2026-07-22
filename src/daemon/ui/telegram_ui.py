@@ -35,7 +35,7 @@ from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertReso
 from ..core.camera_events import (CameraInactivityAlertTriggered, CameraInactivityAlertResolved,
                                   TimedPhotoCaptured, TimedPhotoDeliveryFailed,
                                   CameraDelayAlertTriggered, CameraDelayAlertResolved)
-from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
+from ..core.sensor_events import RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved, RainEventStarted, RainEventEnded
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
 
@@ -3022,18 +3022,23 @@ def _on_camera_delay_resolved(event: CameraDelayAlertResolved):
     )
     telegram_client.broadcast_notification(msg)
 
-_RAIN_FLAG_KEY = "rain_sensor_raining_flag"
+def _format_rain_duration(minutes: int) -> str:
+    if minutes >= 60:
+        hours, rest = divmod(minutes, 60)
+        return f"{hours} h {rest} Min" if rest else f"{hours} h"
+    return f"{minutes} Min"
 
-def _on_rain_sensor_measured(event: RainSensorMeasured):
-    prev_flag = database.get_metadata(_RAIN_FLAG_KEY, "0")
-    if event.is_raining and prev_flag != "1":
-        database.set_metadata(_RAIN_FLAG_KEY, "1")
-        telegram_client.broadcast_notification(
-            f"🌧 *Regen erkannt* — {event.rainlevel_mm} mm"
-        )
-    elif not event.is_raining and prev_flag == "1":
-        database.set_metadata(_RAIN_FLAG_KEY, "0")
-        telegram_client.broadcast_notification("🌤 *Regen vorbei*")
+
+def _on_rain_event_started(event: RainEventStarted):
+    # Ohne Menge: die Zahl wäre stets die 0,5 mm des ersten Kipps (ADR 0043).
+    telegram_client.broadcast_notification("🌧 *Regen erkannt*")
+
+
+def _on_rain_event_ended(event: RainEventEnded):
+    msg = f"🌤 *Regen vorbei* — insgesamt {event.total_mm} mm"
+    if event.duration_minutes > 0:   # bei nur einem Kipp entfällt die Dauer
+        msg += f" in {_format_rain_duration(event.duration_minutes)}"
+    telegram_client.broadcast_notification(msg)
 
 def _resolve_wish_name(mqtt_name, fallback=None):
     """Löst den Wunschnamen eines Ventils aus der DB auf; Fallback bei unbekanntem Ventil."""
@@ -3098,7 +3103,8 @@ def subscribe_event_handlers():
     _global_bus.subscribe(InactivityAlertResolved, _on_inactivity_resolved)
     _global_bus.subscribe(CameraInactivityAlertTriggered, _on_camera_inactivity_alert)
     _global_bus.subscribe(CameraInactivityAlertResolved, _on_camera_inactivity_resolved)
-    _global_bus.subscribe(RainSensorMeasured, _on_rain_sensor_measured)
+    _global_bus.subscribe(RainEventStarted, _on_rain_event_started)
+    _global_bus.subscribe(RainEventEnded, _on_rain_event_ended)
     _global_bus.subscribe(WateringCycleInterrupted, _on_watering_interrupted)
     _global_bus.subscribe(RainSensorInactivityAlertTriggered, _on_rain_sensor_inactivity_alert)
     _global_bus.subscribe(RainSensorInactivityAlertResolved, _on_rain_sensor_inactivity_resolved)

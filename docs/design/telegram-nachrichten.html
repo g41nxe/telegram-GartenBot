@@ -739,13 +739,13 @@ Fehler beim Ansteuern des Ventils über MQTT.</div>
   </div>
 
   <div class="phone">
-    <div class="src">_on_rain_sensor_measured · RainSensorMeasured (Flankensteuerung: trocken → Regen)</div>
-    <div class="bubble">🌧 <b>Regen erkannt</b> — 1.4 mm</div>
-    <div class="note">Nur bei Zustandswechsel (trocken → nass). Wiederholte Messungen bei laufendem Regen lösen keine weitere Benachrichtigung aus.</div>
+    <div class="src">_on_rain_event_started · RainEventStarted</div>
+    <div class="bubble">🌧 <b>Regen erkannt</b></div>
+    <div class="note">Beim ersten Kipp der Regenwippe. <b>Ohne Menge</b> — die Zahl wäre stets die 0,5 mm des ersten Kipps und sagt nichts über den Schauer (ADR 0043).</div>
 
-    <div class="src">_on_rain_sensor_measured · RainSensorMeasured (Flankensteuerung: Regen → trocken)</div>
-    <div class="bubble">🌤 <b>Regen vorbei</b></div>
-    <div class="note">Nur bei Zustandswechsel (nass → trocken).</div>
+    <div class="src">_on_rain_event_ended · RainEventEnded</div>
+    <div class="bubble">🌤 <b>Regen vorbei</b> — insgesamt 4.5 mm in 2 h 10 Min</div>
+    <div class="note">Erst wenn die <b>Karenzzeit</b> (Standard 45 Min) ohne weiteren Kipp verstrichen ist — das verhindert das frühere Melde-Flattern bei leichtem Regen. Dauer = letzter Kipp − erster Kipp (ohne Karenzzeit). Varianten: kurzes Ereignis <code>… in 20 Min</code>; nur ein Kipp → Dauer entfällt: <code>🌤 <b>Regen vorbei</b> — insgesamt 0.5 mm</code>.</div>
 
     <div class="src">_on_watering_interrupted · WateringCycleInterrupted</div>
     <div class="bubble">🌧 <b>Regen übernimmt — Guss gestoppt</b>

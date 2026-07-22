@@ -377,6 +377,9 @@ def broadcast_notification(message: str, reply_markup: dict = None):
     """Sendet eine Push-Meldung an alle bekannten autorisierten Benutzer.
 
     Optionales reply_markup hängt ein Inline-Keyboard an (z. B. Guss-Vorwarnung)."""
+    # Meldungstext ins Journal: sonst ist das Melde-Verhalten nachträglich nicht
+    # nachvollziehbar (ADR 0043 — die Regen-Analyse musste über die DB rekonstruiert werden).
+    logger.info(f"Benachrichtigung: {message.replace(chr(10), ' | ')}")
     for user_id in config.TELEGRAM_ALLOWED_USER_IDS:
         active_chats.add(user_id)
     for chat_id in active_chats:

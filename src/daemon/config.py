@@ -176,6 +176,12 @@ try:
     RAIN_SENSOR_MM_PER_TICK = float(os.getenv("RAIN_SENSOR_MM_PER_TICK", "0.5"))
 except ValueError:
     RAIN_SENSOR_MM_PER_TICK = 0.5
+# Karenzzeit (Minuten) ohne Kipp, nach der ein Regenereignis als beendet gilt (ADR 0043).
+# Bei ~13,5 Min Melde-Intervall entsprechen 45 Min drei ausgefallenen Meldungen.
+try:
+    RAIN_EVENT_GRACE_MINUTES = float(os.getenv("RAIN_EVENT_GRACE_MINUTES", "45"))
+except ValueError:
+    RAIN_EVENT_GRACE_MINUTES = 45.0
 # `battery` ist verbrauchte Kapazität in mAs. Rest-% = 100·(1 − verbraucht/Kapazität).
 # Standard: 2× AAA LiFeS2 (Energizer L92), nutzbare Kapazität bis zur Geräte-Abschaltung
 # (2,9 V Pack = 1,45 V/Zelle) ≈ 1200 mAh laut Hersteller-Batteriereport (~2,3 Jahre Laufzeit).
