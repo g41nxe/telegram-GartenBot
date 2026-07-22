@@ -182,6 +182,18 @@ _Avoid_: Absolute Fotozeit, Fix-Uhrzeit.
 Der batteriebetriebene, WLAN-basierte Niederschlagsmesser (Aqua Scope RANWIE01), der Regenmengen und Temperatur lokal im Garten erfasst und per MQTT an die Steuerzentrale sendet. Er ist die primäre Quelle für gemessene Niederschlagsmengen; die ERA5-Reanalyse des Wetter-Dienstes dient als automatischer Fallback bei Ausfall.
 _Avoid_: Wetterstation, Regenmesser, Sensor-Modul.
 
+**Regen-Messung**:
+Eine einzelne Meldung des Regensensors. `rainlevel` ist der **Zuwachs seit der letzten Meldung** in 0,5-mm-Kipps der Regenwippe (nicht kumulativ; `raintotal` ist der Lebenszeit-Zähler des Geräts). Auf die Messung reagiert die **Guss-Steuerung** — sie unterbricht beim ersten Kipp.
+_Avoid_: Regenwert, Messpunkt.
+
+**Regenereignis**:
+Der zusammenhängende Schauer als **Zustand**: beginnt mit dem ersten Kipp und endet erst, wenn die **Karenzzeit** ohne weiteren Kipp verstrichen ist. Trägt Startzeit, Zeitpunkt des letzten Kipps und die aufsummierte Menge; daran hängen die Benachrichtigungen (ADR 0043). Abzugrenzen von der einzelnen **Regen-Messung**.
+_Avoid_: Regenphase, Schauer (als Fachbegriff), Regen-Session.
+
+**Karenzzeit**:
+Die Zeitspanne ohne Kipp, nach der ein **Regenereignis** als beendet gilt (Standard 45 Minuten). Sie verhindert, dass Lücken zwischen einzelnen Kipps — bei leichtem Regen regelmäßig länger als das Melde-Intervall — fälschlich als Regenende gelten. Sie zählt nicht zur gemeldeten Regendauer.
+_Avoid_: Timeout, Cooldown, Nachlaufzeit.
+
 **Regenmessung**:
 Das vom Regensensor per MQTT gesendete Datenpaket mit der Niederschlagsmenge des letzten Intervalls (mm), der kumulierten Gesamtmenge, der Temperatur (°C) und dem Batteriestand (%). Wird bei Regen sofort, sonst alle 6 Stunden gesendet.
 _Avoid_: Sensor-Signal, Telemetrie-Paket, Messwert.
