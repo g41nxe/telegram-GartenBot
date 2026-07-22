@@ -1,3 +1,14 @@
+## v1.17.0 — 2026-07-19
+
+### Behoben
+- Regen-Meldungen flattern nicht mehr — ein Schauer meldet sich genau einmal
+
+### Neu
+- „Regen vorbei" nennt jetzt Gesamtmenge und Dauer des Regens
+- Benachrichtigungen landen im Journal (macht Melde-Verhalten nachvollziehbar)
+
+---
+
 ## v1.16.1 — 2026-07-17
 
 ### Behoben
