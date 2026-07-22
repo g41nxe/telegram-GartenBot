@@ -26,3 +26,19 @@ class RainSensorInactivityAlertTriggered(Event):
 
 class RainSensorInactivityAlertResolved(Event):
     pass
+
+
+class RainEventStarted(Event):
+    """Ein Regenereignis hat begonnen (erster Kipp der Regenwippe, ADR 0043)."""
+    pass
+
+
+class RainEventEnded(Event):
+    """Ein Regenereignis ist beendet — Karenzzeit ohne weiteren Kipp verstrichen.
+
+    total_mm: aufsummierte Menge des Ereignisses.
+    duration_minutes: letzter Kipp minus erster Kipp (ohne Karenzzeit).
+    """
+    def __init__(self, total_mm: float, duration_minutes: int):
+        self.total_mm = total_mm
+        self.duration_minutes = duration_minutes
