@@ -1,0 +1,85 @@
+- generic [active] [ref=f6e1]:
+  - link "Skip to content" [ref=f6e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=f6e3]:
+    - generic [ref=f6e4]:
+      - link "Matthew Freed" [ref=f6e5] [cursor=pointer]:
+        - /url: /
+      - navigation "Main" [ref=f6e6]:
+        - link "Collections" [ref=f6e7] [cursor=pointer]:
+          - /url: /collections
+        - link "Events" [ref=f6e8] [cursor=pointer]:
+          - /url: /events
+        - link "About" [ref=f6e9] [cursor=pointer]:
+          - /url: /about/
+        - link "Contact" [ref=f6e10] [cursor=pointer]:
+          - /url: /contact
+        - link "Shop" [ref=f6e11] [cursor=pointer]:
+          - /url: https://shop.matthewfreed.net/collections/all/
+  - main [ref=f6e12]:
+    - generic [ref=f6e13]:
+      - paragraph [ref=f6e14]: About Matthew
+      - heading "A love affair with clay, thirty years on" [level=1] [ref=f6e15]
+      - paragraph [ref=f6e16]: My love affair with clay began in the early 1990s when I began taking lessons at a local stoneware studio in Winnipeg. Although there were some heavy duty sparks between us initially, we sadly parted ways when I moved to Montreal to study and then work in the marketing field.
+    - generic [ref=f6e17]:
+      - img "Matthew throwing a cup" [ref=f6e20]
+      - generic [ref=f6e21]:
+        - paragraph [ref=f6e22]: We toyed with the idea, but neither of us was into the long distance relationship thing at the time. We were young and not terribly interested in long-term commitments.
+        - paragraph [ref=f6e23]: I moved to Vancouver in 1998 and have since made it my home. It is here that I have gotten reacquainted with pottery. We were casually seeing each other for a few years while I continued to work as a marketer.
+        - paragraph [ref=f6e24]: I kept pottery as a hobby but soon came to a realization that it was a passion that I wanted as a central fixture in my life. It was time to make a lifetime commitment to one another.
+    - blockquote [ref=f6e26]: Pottery can be somewhat unpredictable and moody — so we fight on occasion. But our foundation is strong and we always patch things up.
+    - generic [ref=f6e27]:
+      - img "Matthew throwing a cup" [ref=f6e30]
+      - generic [ref=f6e31]:
+        - paragraph [ref=f6e32]: It was a frightening leap to make, but I got down on one knee and we got engaged. Soon after we moved in together (a natural progression of our relationship), and have blossomed as a pair over the past 18 years.
+        - paragraph [ref=f6e33]: My how time flies. For the most part we still get along extremely well - but pottery can be somewhat unpredictable and moody - so we fight on occasion. But our foundation is strong and we always patch things up. Over the years we’ve made so many friends who are kind enough to support us and appreciate us.
+        - paragraph [ref=f6e34]: We were even honored with a significant honour - the Gold Medal for Excellence in Craft by Circle Craft. So onward we proceed on this life journey together - slowly working our way to being old and gray and sitting on the front porch swing where we can reminisce about our long lifetime journey together.
+    - generic [ref=f6e36]:
+      - img [ref=f6e37]
+      - paragraph [ref=f6e40]:
+        - text: "Gold Medal for Excellence in Craft — Circle Craft. The story ends where the shop begins:"
+        - link "see what we've made together" [ref=f6e41] [cursor=pointer]:
+          - /url: https://shop.matthewfreed.net/collections/all/
+        - text: .
+  - region "Newsletter" [ref=f6e42]:
+    - generic [ref=f6e43]:
+      - generic [ref=f6e44]:
+        - heading "First to know about firings and markets" [level=2] [ref=f6e45]
+        - paragraph [ref=f6e46]: One email a month, no clutter.
+      - generic [ref=f6e47]:
+        - generic [ref=f6e48]: Email address
+        - textbox "Email address" [ref=f6e49]:
+          - /placeholder: you@email.com
+        - button "Sign up" [ref=f6e50]
+  - contentinfo [ref=f6e51]:
+    - generic [ref=f6e52]:
+      - generic [ref=f6e53]:
+        - paragraph [ref=f6e54]: Matthew Freed Pottery
+        - paragraph [ref=f6e55]:
+          - text: 740 Jackson Avenue
+          - text: Vancouver, B.C., V6A 3B9
+          - text: Canada
+        - paragraph [ref=f6e56]:
+          - text: Send me an
+          - link "email" [ref=f6e57] [cursor=pointer]:
+            - /url: mailto:mfreed74@gmail.com
+          - text: or give me a
+          - link "call" [ref=f6e58] [cursor=pointer]:
+            - /url: tel:1-778-829-4526
+      - navigation "Footer" [ref=f6e59]:
+        - link "Retail stores" [ref=f6e60] [cursor=pointer]:
+          - /url: /retail-stores
+        - link "FAQ" [ref=f6e61] [cursor=pointer]:
+          - /url: /faq
+        - link "My process" [ref=f6e62] [cursor=pointer]:
+          - /url: /about/process
+        - link "Privacy" [ref=f6e63] [cursor=pointer]:
+          - /url: /privacy-statement
+      - generic [ref=f6e64]:
+        - link "Instagram" [ref=f6e65] [cursor=pointer]:
+          - /url: https://www.instagram.com/matthewfreedpottery/
+          - img [ref=f6e66]
+        - link "Facebook" [ref=f6e70] [cursor=pointer]:
+          - /url: https://www.facebook.com/matthewfreedpottery/
+          - img [ref=f6e71]
+    - generic [ref=f6e73]: © Matthew Freed Pottery

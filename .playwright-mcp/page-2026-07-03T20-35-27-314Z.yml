@@ -1,0 +1,127 @@
+- generic [active] [ref=f2e1]:
+  - link "Skip to content" [ref=f2e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=f2e3]:
+    - generic [ref=f2e4]:
+      - link "Matthew Freed Pottery" [ref=f2e5] [cursor=pointer]:
+        - /url: /
+      - navigation "Main" [ref=f2e6]:
+        - link "Collections" [ref=f2e7] [cursor=pointer]:
+          - /url: /collections.html
+        - link "Events" [ref=f2e8] [cursor=pointer]:
+          - /url: /events.html
+        - link "About" [ref=f2e9] [cursor=pointer]:
+          - /url: /about/
+        - link "Contact" [ref=f2e10] [cursor=pointer]:
+          - /url: /contact.html
+        - link "Shop" [ref=f2e11] [cursor=pointer]:
+          - /url: https://shop.matthewfreed.net/collections/all/
+  - main [ref=f2e12]:
+    - generic [ref=f2e13]:
+      - paragraph [ref=f2e14]: Events
+      - heading "Where to find me" [level=1] [ref=f2e15]
+    - generic [ref=f2e16]:
+      - generic [ref=f2e17]:
+        - paragraph [ref=f2e18]: Market schedule
+        - article [ref=f2e19]:
+          - generic [ref=f2e20]:
+            - heading "Kitsilano Farmer's Market" [level=2] [ref=f2e21]
+            - link "Directions" [ref=f2e22] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=Kitsilano%20Farmer's%20Market
+          - paragraph [ref=f2e23]: Kitsilano Community Center · 10 a.m. to 2 p.m.
+          - paragraph [ref=f2e24]: Weekly Farmer's market
+          - generic [ref=f2e25]:
+            - generic "Next date" [ref=f2e26]: Jul 5
+            - generic [ref=f2e27]: Jul 12
+            - generic [ref=f2e28]: Sep 27
+            - generic [ref=f2e29]: Oct 18
+        - article [ref=f2e30]:
+          - generic [ref=f2e31]:
+            - heading "Trout Lake Farmer's Market" [level=2] [ref=f2e32]
+            - link "Directions" [ref=f2e33] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=Trout%20Lake%20John%20Hendry%20Park%2C%20Vancouver%2C%20BC%20V5N%202C4%2C%20Canada
+          - paragraph [ref=f2e34]: Trout Lake John Hendry Park · 9 a.m. to 2 p.m.
+          - paragraph [ref=f2e35]: Weekly Farmer's market
+          - generic [ref=f2e36]:
+            - generic "Next date" [ref=f2e37]: Jul 18
+            - generic [ref=f2e38]: Sep 26
+            - generic [ref=f2e39]: Oct 17
+        - article [ref=f2e40]:
+          - generic [ref=f2e41]:
+            - heading "Ladner Village Market" [level=2] [ref=f2e42]
+            - link "Directions" [ref=f2e43] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=5028A%2048%20Avenue%2C%20Delta%2C%20BC
+          - paragraph [ref=f2e44]: 48th Ave (between Delta and Elliott Streets) · 10 a.m. to 4 p.m.
+          - paragraph [ref=f2e45]: Bi-weekly summer market
+          - generic [ref=f2e46]:
+            - generic "Next date" [ref=f2e47]: Jul 19
+            - generic [ref=f2e48]: Sep 20
+        - article [ref=f2e49]:
+          - generic [ref=f2e50]:
+            - heading "West End Farmer's Market" [level=2] [ref=f2e51]
+            - link "Directions" [ref=f2e52] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=1100%20Comox%20St%20btw.%20Bute%20%26%20Thurlow%2C%20Vancouver%20BC
+          - paragraph [ref=f2e53]: 1100 Comox St btw. Bute & Thurlow, Vancouver BC · 9 a.m. to 2 p.m.
+          - paragraph [ref=f2e54]: Weekly Farmer's market
+          - generic [ref=f2e55]:
+            - generic "Next date" [ref=f2e56]: Sep 19
+            - generic [ref=f2e57]: Oct 3
+      - generic [ref=f2e58]:
+        - paragraph [ref=f2e59]: The studio
+        - generic [ref=f2e60]:
+          - figure "Say hello at the next market." [ref=f2e61]:
+            - img "Matthew Freed at his market booth, surrounded by his pottery" [ref=f2e63]
+            - generic [ref=f2e64]: Say hello at the next market.
+          - complementary [ref=f2e65]:
+            - heading "Visit the studio" [level=2] [ref=f2e66]
+            - paragraph [ref=f2e67]: Between events, the studio opens by appointment — send a note and come see where the work happens.
+            - link "Get in touch" [ref=f2e68] [cursor=pointer]:
+              - /url: /contact.html
+            - paragraph [ref=f2e69]: Can't make it? The newsletter announces every market and firing.
+          - complementary [ref=f2e70]:
+            - paragraph [ref=f2e71]: The yearly rhythm
+            - paragraph [ref=f2e72]: "The annual rhythm: farmers markets through the summer, then the Eastside Culture Crawl and Circle Craft Holiday Market each November."
+  - region "Newsletter" [ref=f2e73]:
+    - generic [ref=f2e74]:
+      - generic [ref=f2e75]:
+        - heading "First to know about firings and markets" [level=2] [ref=f2e76]
+        - paragraph [ref=f2e77]: One email a month, no clutter.
+      - generic [ref=f2e78]:
+        - generic [ref=f2e79]: Email address
+        - textbox "Email address" [ref=f2e80]:
+          - /placeholder: you@email.com
+        - button "Sign up" [ref=f2e81]
+  - contentinfo [ref=f2e82]:
+    - generic [ref=f2e83]:
+      - generic [ref=f2e84]:
+        - paragraph [ref=f2e85]:
+          - img [ref=f2e87]
+          - text: Matthew Freed Pottery
+        - paragraph [ref=f2e93]:
+          - text: 740 Jackson Avenue
+          - text: Vancouver, B.C., V6A 3B9
+          - text: Canada
+        - paragraph [ref=f2e94]:
+          - text: Send me an
+          - link "email" [ref=f2e95] [cursor=pointer]:
+            - /url: mailto:mfreed74@gmail.com
+          - text: or give me a
+          - link "call" [ref=f2e96] [cursor=pointer]:
+            - /url: tel:1-778-829-4526
+      - navigation "Footer" [ref=f2e97]:
+        - link "Retail stores" [ref=f2e98] [cursor=pointer]:
+          - /url: /retail-stores.html
+        - link "FAQ" [ref=f2e99] [cursor=pointer]:
+          - /url: /faq.html
+        - link "My process" [ref=f2e100] [cursor=pointer]:
+          - /url: /about/process.html
+        - link "Privacy" [ref=f2e101] [cursor=pointer]:
+          - /url: /privacy-statement.html
+      - generic [ref=f2e102]:
+        - link "Instagram" [ref=f2e103] [cursor=pointer]:
+          - /url: https://www.instagram.com/matthewfreedpottery/
+          - img [ref=f2e104]
+        - link "Facebook" [ref=f2e106] [cursor=pointer]:
+          - /url: https://www.facebook.com/matthewfreedpottery/
+          - img [ref=f2e107]
+    - generic [ref=f2e109]: © Matthew Freed Pottery

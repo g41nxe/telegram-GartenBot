@@ -1,0 +1,109 @@
+- generic [active] [ref=f4e1]:
+  - link "Skip to content" [ref=f4e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=f4e3]:
+    - generic [ref=f4e4]:
+      - link "Matthew Freed Pottery" [ref=f4e5] [cursor=pointer]:
+        - /url: /
+      - navigation "Main" [ref=f4e6]:
+        - link "Collections" [ref=f4e7] [cursor=pointer]:
+          - /url: /collections.html
+        - link "Events" [ref=f4e8] [cursor=pointer]:
+          - /url: /events.html
+        - link "About" [ref=f4e9] [cursor=pointer]:
+          - /url: /about/
+        - link "Contact" [ref=f4e10] [cursor=pointer]:
+          - /url: /contact.html
+        - link "Shop" [ref=f4e11] [cursor=pointer]:
+          - /url: https://shop.matthewfreed.net/collections/all/
+  - main [ref=f4e12]:
+    - generic [ref=f4e13]:
+      - paragraph [ref=f4e14]: Stockists
+      - heading "Find my work in person" [level=1] [ref=f4e15]
+      - paragraph [ref=f4e16]: These galleries and shops carry a rotating selection of my glaze lines across British Columbia. Call ahead for current stock.
+      - img "Display of Matthew Freed's pottery at a gallery gift shop" [ref=f4e19]
+      - list [ref=f4e20]:
+        - listitem [ref=f4e21]:
+          - generic [ref=f4e22]:
+            - link "Arts Off Main" [ref=f4e23] [cursor=pointer]:
+              - /url: http://www.artsoffmain.ca/
+              - text: Arts Off Main
+              - generic [ref=f4e24]: ↗
+            - generic [ref=f4e25]: Vancouver
+          - paragraph [ref=f4e26]: 1704 Charles Street
+          - link "Directions" [ref=f4e27] [cursor=pointer]:
+            - /url: https://www.google.com/maps/search/?api=1&query=1704%20Charles%20Street%2C%20Vancouver%2C%20BC
+        - listitem [ref=f4e28]:
+          - generic [ref=f4e29]:
+            - link "Circle Craft" [ref=f4e30] [cursor=pointer]:
+              - /url: http://ww1.circlecraft.net/
+              - text: Circle Craft
+              - generic [ref=f4e31]: ↗
+            - generic [ref=f4e32]: Vancouver
+          - paragraph [ref=f4e33]: 1666 Johnston Street, Granville Island
+          - link "Directions" [ref=f4e34] [cursor=pointer]:
+            - /url: https://www.google.com/maps/search/?api=1&query=1666%20Johnston%20Street%2C%20Granville%20Island%2C%20Vancouver%2C%20BC
+        - listitem [ref=f4e35]:
+          - generic [ref=f4e36]:
+            - link "Seymour Art Gallery Gift Shop" [ref=f4e37] [cursor=pointer]:
+              - /url: https://www.seymourartgallery.com/
+              - text: Seymour Art Gallery Gift Shop
+              - generic [ref=f4e38]: ↗
+            - generic [ref=f4e39]: North Vancouver
+          - paragraph [ref=f4e40]: 4360 Gallant Avenue
+          - link "Directions" [ref=f4e41] [cursor=pointer]:
+            - /url: https://www.google.com/maps/search/?api=1&query=4360%20Gallant%20Avenue%2C%20North%20Vancouver%2C%20BC
+        - listitem [ref=f4e42]:
+          - generic [ref=f4e43]:
+            - link "Side Street Studio" [ref=f4e44] [cursor=pointer]:
+              - /url: https://www.sidestreetstudio.com/
+              - text: Side Street Studio
+              - generic [ref=f4e45]: ↗
+            - generic [ref=f4e46]: Victoria
+          - paragraph [ref=f4e47]: 204 - 2250 Oak Bay Avenue
+          - link "Directions" [ref=f4e48] [cursor=pointer]:
+            - /url: https://www.google.com/maps/search/?api=1&query=204%20-%202250%20Oak%20Bay%20Avenue%2C%20Victoria%2C%20BC
+  - region "Newsletter" [ref=f4e49]:
+    - generic [ref=f4e50]:
+      - generic [ref=f4e51]:
+        - heading "First to know about firings and markets" [level=2] [ref=f4e52]
+        - paragraph [ref=f4e53]: One email a month, no clutter.
+      - generic [ref=f4e54]:
+        - generic [ref=f4e55]: Email address
+        - textbox "Email address" [ref=f4e56]:
+          - /placeholder: you@email.com
+        - button "Sign up" [ref=f4e57]
+  - contentinfo [ref=f4e58]:
+    - generic [ref=f4e59]:
+      - generic [ref=f4e60]:
+        - paragraph [ref=f4e61]:
+          - img [ref=f4e63]
+          - text: Matthew Freed Pottery
+        - paragraph [ref=f4e69]:
+          - text: 740 Jackson Avenue
+          - text: Vancouver, B.C., V6A 3B9
+          - text: Canada
+        - paragraph [ref=f4e70]:
+          - text: Send me an
+          - link "email" [ref=f4e71] [cursor=pointer]:
+            - /url: mailto:mfreed74@gmail.com
+          - text: or give me a
+          - link "call" [ref=f4e72] [cursor=pointer]:
+            - /url: tel:1-778-829-4526
+      - navigation "Footer" [ref=f4e73]:
+        - link "Retail stores" [ref=f4e74] [cursor=pointer]:
+          - /url: /retail-stores.html
+        - link "FAQ" [ref=f4e75] [cursor=pointer]:
+          - /url: /faq.html
+        - link "My process" [ref=f4e76] [cursor=pointer]:
+          - /url: /about/process.html
+        - link "Privacy" [ref=f4e77] [cursor=pointer]:
+          - /url: /privacy-statement.html
+      - generic [ref=f4e78]:
+        - link "Instagram" [ref=f4e79] [cursor=pointer]:
+          - /url: https://www.instagram.com/matthewfreedpottery/
+          - img [ref=f4e80]
+        - link "Facebook" [ref=f4e82] [cursor=pointer]:
+          - /url: https://www.facebook.com/matthewfreedpottery/
+          - img [ref=f4e83]
+    - generic [ref=f4e85]: © Matthew Freed Pottery

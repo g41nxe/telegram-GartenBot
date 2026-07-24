@@ -1,0 +1,183 @@
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - link "Matthew Freed" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - navigation "Main" [ref=e6]:
+        - link "Collections" [ref=e7] [cursor=pointer]:
+          - /url: /collections.html
+        - link "Events" [ref=e8] [cursor=pointer]:
+          - /url: /events.html
+        - link "About" [ref=e9] [cursor=pointer]:
+          - /url: /about/
+        - link "Contact" [ref=e10] [cursor=pointer]:
+          - /url: /contact.html
+        - link "Shop" [ref=e11] [cursor=pointer]:
+          - /url: https://shop.matthewfreed.net/collections/all/
+  - main [ref=e12]:
+    - generic [ref=e13]:
+      - paragraph [ref=e14]: Events
+      - heading "Where to find me" [level=1] [ref=e15]
+    - generic [ref=e16]:
+      - generic [ref=e17]:
+        - article [ref=e18]:
+          - generic [ref=e19]:
+            - generic [ref=e20]: Jul
+            - generic [ref=e21]: "5"
+          - generic [ref=e22]:
+            - heading "Kitsilano Farmer's Market" [level=2] [ref=e23]
+            - paragraph [ref=e24]: Kitsilano Community Center · 10 a.m. to 2 p.m.
+            - paragraph [ref=e25]: Weekly Farmer's market
+            - link "Directions" [ref=e26] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=Kitsilano%20Farmer's%20Market
+        - article [ref=e27]:
+          - generic [ref=e28]:
+            - generic [ref=e29]: Jul
+            - generic [ref=e30]: "12"
+          - generic [ref=e31]:
+            - heading "Kitsilano Farmer's Market" [level=2] [ref=e32]
+            - paragraph [ref=e33]: Kitsilano Community Center · 10 a.m. to 2 p.m.
+            - paragraph [ref=e34]: Weekly Farmer's market
+            - link "Directions" [ref=e35] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=Kitsilano%20Farmer's%20Market
+        - article [ref=e36]:
+          - generic [ref=e37]:
+            - generic [ref=e38]: Jul
+            - generic [ref=e39]: "18"
+          - generic [ref=e40]:
+            - heading "Trout Lake Farmer's Market" [level=2] [ref=e41]
+            - paragraph [ref=e42]: Trout Lake John Hendry Park · 9 a.m. to 2 p.m.
+            - paragraph [ref=e43]: Weekly Farmer's market
+            - link "Directions" [ref=e44] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=Trout%20Lake%20John%20Hendry%20Park%2C%20Vancouver%2C%20BC%20V5N%202C4%2C%20Canada
+        - article [ref=e45]:
+          - generic [ref=e46]:
+            - generic [ref=e47]: Jul
+            - generic [ref=e48]: "19"
+          - generic [ref=e49]:
+            - heading "Ladner Village Market" [level=2] [ref=e50]
+            - paragraph [ref=e51]: 48th Ave (between Delta and Elliott Streets) · 10 a.m. to 4 p.m.
+            - paragraph [ref=e52]: Bi-weekly summer market
+            - link "Directions" [ref=e53] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=5028A%2048%20Avenue%2C%20Delta%2C%20BC
+        - article [ref=e54]:
+          - generic [ref=e55]:
+            - generic [ref=e56]: Sep
+            - generic [ref=e57]: "19"
+          - generic [ref=e58]:
+            - heading "West End Farmer's Market" [level=2] [ref=e59]
+            - paragraph [ref=e60]: 1100 Comox St btw. Bute & Thurlow, Vancouver BC · 9 a.m. to 2 p.m.
+            - paragraph [ref=e61]: Weekly Farmer's market
+            - link "Directions" [ref=e62] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=1100%20Comox%20St%20btw.%20Bute%20%26%20Thurlow%2C%20Vancouver%20BC
+        - article [ref=e63]:
+          - generic [ref=e64]:
+            - generic [ref=e65]: Sep
+            - generic [ref=e66]: "20"
+          - generic [ref=e67]:
+            - heading "Ladner Village Market" [level=2] [ref=e68]
+            - paragraph [ref=e69]: 48th Ave (between Delta and Elliott Streets) · 10 a.m. to 4 p.m.
+            - paragraph [ref=e70]: Bi-weekly summer market
+            - link "Directions" [ref=e71] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=5028A%2048%20Avenue%2C%20Delta%2C%20BC
+        - article [ref=e72]:
+          - generic [ref=e73]:
+            - generic [ref=e74]: Sep
+            - generic [ref=e75]: "26"
+          - generic [ref=e76]:
+            - heading "Trout Lake Farmer's Market" [level=2] [ref=e77]
+            - paragraph [ref=e78]: Trout Lake John Hendry Park · 9 a.m. to 2 p.m.
+            - paragraph [ref=e79]: Weekly Farmer's market
+            - link "Directions" [ref=e80] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=Trout%20Lake%20John%20Hendry%20Park%2C%20Vancouver%2C%20BC%20V5N%202C4%2C%20Canada
+        - article [ref=e81]:
+          - generic [ref=e82]:
+            - generic [ref=e83]: Sep
+            - generic [ref=e84]: "27"
+          - generic [ref=e85]:
+            - heading "Kitsilano Farmer's Market" [level=2] [ref=e86]
+            - paragraph [ref=e87]: Kitsilano Community Center · 10 a.m. to 2 p.m. .
+            - paragraph [ref=e88]: Weekly Farmer's market
+            - link "Directions" [ref=e89] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=Kitsilano%20Farmer's%20Market
+        - article [ref=e90]:
+          - generic [ref=e91]:
+            - generic [ref=e92]: Oct
+            - generic [ref=e93]: "3"
+          - generic [ref=e94]:
+            - heading "West End Farmer's Market" [level=2] [ref=e95]
+            - paragraph [ref=e96]: 1100 Comox St btw. Bute & Thurlow, Vancouver BC · 9 a.m. to 2 p.m.
+            - paragraph [ref=e97]: Weekly Farmer's market
+            - link "Directions" [ref=e98] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=1100%20Comox%20St%20btw.%20Bute%20%26%20Thurlow%2C%20Vancouver%20BC
+        - article [ref=e99]:
+          - generic [ref=e100]:
+            - generic [ref=e101]: Oct
+            - generic [ref=e102]: "17"
+          - generic [ref=e103]:
+            - heading "Trout Lake Farmer's Market" [level=2] [ref=e104]
+            - paragraph [ref=e105]: Trout Lake John Hendry Park · 9 a.m. to 2 p.m.
+            - paragraph [ref=e106]: Weekly Farmer's market
+            - link "Directions" [ref=e107] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=Trout%20Lake%20John%20Hendry%20Park%2C%20Vancouver%2C%20BC%20V5N%202C4%2C%20Canada
+        - article [ref=e108]:
+          - generic [ref=e109]:
+            - generic [ref=e110]: Oct
+            - generic [ref=e111]: "18"
+          - generic [ref=e112]:
+            - heading "Kitsilano Farmer's Market" [level=2] [ref=e113]
+            - paragraph [ref=e114]: Kitsilano Community Center · 10 a.m. to 2 p.m. .
+            - paragraph [ref=e115]: Weekly Farmer's market
+            - link "Directions" [ref=e116] [cursor=pointer]:
+              - /url: https://www.google.com/maps/search/?api=1&query=Kitsilano%20Farmer's%20Market
+        - paragraph [ref=e117]: "The annual rhythm: farmers markets through the summer, then the Eastside Culture Crawl and Circle Craft Holiday Market each November."
+      - complementary [ref=e118]:
+        - heading "Visit the studio" [level=2] [ref=e119]
+        - paragraph [ref=e120]: Between events, the studio opens by appointment — send a note and come see where the work happens.
+        - link "Get in touch" [ref=e121] [cursor=pointer]:
+          - /url: /contact.html
+        - paragraph [ref=e122]: Can't make it? The newsletter announces every market and firing.
+  - region "Newsletter" [ref=e123]:
+    - generic [ref=e124]:
+      - generic [ref=e125]:
+        - heading "First to know about firings and markets" [level=2] [ref=e126]
+        - paragraph [ref=e127]: One email a month, no clutter.
+      - generic [ref=e128]:
+        - generic [ref=e129]: Email address
+        - textbox "Email address" [ref=e130]:
+          - /placeholder: you@email.com
+        - button "Sign up" [ref=e131]
+  - contentinfo [ref=e132]:
+    - generic [ref=e133]:
+      - generic [ref=e134]:
+        - paragraph [ref=e135]: Matthew Freed Pottery
+        - paragraph [ref=e136]:
+          - text: 740 Jackson Avenue
+          - text: Vancouver, B.C., V6A 3B9
+          - text: Canada
+        - paragraph [ref=e137]:
+          - text: Send me an
+          - link "email" [ref=e138] [cursor=pointer]:
+            - /url: mailto:mfreed74@gmail.com
+          - text: or give me a
+          - link "call" [ref=e139] [cursor=pointer]:
+            - /url: tel:1-778-829-4526
+      - navigation "Footer" [ref=e140]:
+        - link "Retail stores" [ref=e141] [cursor=pointer]:
+          - /url: /retail-stores.html
+        - link "FAQ" [ref=e142] [cursor=pointer]:
+          - /url: /faq.html
+        - link "My process" [ref=e143] [cursor=pointer]:
+          - /url: /about/process.html
+        - link "Privacy" [ref=e144] [cursor=pointer]:
+          - /url: /privacy-statement.html
+      - generic [ref=e145]:
+        - link "Instagram" [ref=e146] [cursor=pointer]:
+          - /url: https://www.instagram.com/matthewfreedpottery/
+          - img [ref=e147]
+        - link "Facebook" [ref=e151] [cursor=pointer]:
+          - /url: https://www.facebook.com/matthewfreedpottery/
+          - img [ref=e152]
+    - generic [ref=e154]: © Matthew Freed Pottery

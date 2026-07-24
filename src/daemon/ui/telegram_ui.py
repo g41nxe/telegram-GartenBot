@@ -1295,6 +1295,35 @@ def handle_giesscheck(chat_id: int):
         get_main_keyboard(),
     )
 
+
+def _maybe_confirm_manual_watering(chat_id: int, dur: int, vol: int, mqtt_name: str) -> bool:
+    """Feature 0020: Kontextsensible Rückfrage vor manuellem Guss.
+
+    Nutzt die bestehende Gieß-Empfehlung (evaluate_watering_factor, ADR 0020). Spricht der
+    Kontext klar dagegen (decision.skip), wird die gewählte Menge gemerkt und eine Rückfrage
+    gesendet — Rückgabe True (kein Sofortstart). Sonst False (Aufrufer startet wie bisher).
+    Fällt die Bewertung aus, wird der Guss nicht blockiert (False).
+    """
+    try:
+        decision = _weather_adapter.evaluate_watering_factor()
+    except Exception as e:
+        logger.warning(f"Kontextprüfung vor manuellem Guss fehlgeschlagen: {e} — starte ohne Rückfrage.")
+        return False
+    if not getattr(decision, "skip", False):
+        return False
+    _state_set(manual_states, chat_id, {"pending_water": {"dur": dur, "vol": vol, "mqtt_name": mqtt_name}})
+    reason_text = "\n".join(f"• {r}" for r in decision.reasons)
+    telegram_client.send_message(
+        chat_id,
+        f"🌧 *Kontext-Hinweis*\n\n{decision.verdict}\n\n{reason_text}\n\nTrotzdem gießen?",
+        {"inline_keyboard": [[
+            {"text": "🚿 Trotzdem gießen", "callback_data": "water_anyway"},
+            {"text": "❌ Abbrechen", "callback_data": "man_cancel"},
+        ]]},
+    )
+    return True
+
+
 def handle_schedules(chat_id: int):
     schedules = database.get_schedules()
     if not schedules:
@@ -1570,6 +1599,9 @@ def _process_message(msg_obj: dict):
                     if pmid is not None:
                         telegram_client.edit_message_reply_markup(chat_id, pmid, None)
 
+                    # Feature 0020: Kontext prüfen; spricht er dagegen, Rückfrage statt Sofortstart.
+                    if _maybe_confirm_manual_watering(chat_id, dur, vol, mqtt_name):
+                        return
                     if _watering_ctrl:
                         success, response = _watering_ctrl.start_watering(dur, vol, "manual", mqtt_name=mqtt_name)
                     else:
@@ -2072,6 +2104,11 @@ def _process_callback_query(cb_obj: dict):
                 mqtt_name = state.get("mqtt_name", "garden_valve")
                 _state_del(manual_states, chat_id)
 
+                # Feature 0020: Kontext prüfen; spricht er dagegen, Rückfrage statt Sofortstart.
+                if _maybe_confirm_manual_watering(chat_id, dur, vol, mqtt_name):
+                    telegram_client.edit_message_reply_markup(chat_id, message_id, None)
+                    return
+
                 if _watering_ctrl:
                     success, response = _watering_ctrl.start_watering(dur, vol, "manual", mqtt_name=mqtt_name)
                 else:
@@ -2085,6 +2122,25 @@ def _process_callback_query(cb_obj: dict):
     elif data == "man_cancel":
         _state_del(manual_states, chat_id)
         _end_inline_flow(chat_id, message_id, cb_id, "❌ Vorgang abgebrochen.")
+
+    elif data == "water_anyway":
+        # Feature 0020: Nutzer übergeht den Kontext-Hinweis — Guss mit gemerkten Werten starten.
+        state = _state_get(manual_states, chat_id) or {}
+        pending = state.get("pending_water")
+        _state_del(manual_states, chat_id)
+        telegram_client.answer_callback_query(cb_id)
+        telegram_client.edit_message_reply_markup(chat_id, message_id, None)
+        if not pending:
+            return
+        dur, vol, mqtt_name = pending["dur"], pending["vol"], pending["mqtt_name"]
+        if _watering_ctrl:
+            success, response = _watering_ctrl.start_watering(dur, vol, "manual", mqtt_name=mqtt_name)
+        else:
+            success, response = False, "Guss-Steuerung nicht initialisiert."
+        if not success:
+            telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
+        else:
+            telegram_client.edit_message_text(chat_id, message_id, f"🟢 *Befehl gesendet:* Bewässerung gestartet ({dur} Min / {vol}l).")
 
     # --- Kamera-Untermenü (Feature 0031) ---
     elif data == "kamera_foto":

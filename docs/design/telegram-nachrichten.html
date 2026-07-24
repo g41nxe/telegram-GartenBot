@@ -533,6 +533,19 @@ Wie viel Wasser soll <b>maximal</b> fließen? (Volumenlimit)
   </div>
 
   <div class="phone">
+    <div class="src">Kontextsensible Gieß-Hinweise (Feature 0020) · <code>_maybe_confirm_manual_watering</code> — vor dem Start, nur wenn der Kontext dagegenspricht</div>
+    <div class="bubble">🌧 <b>Kontext-Hinweis</b>
+
+🌧 Kein Gießen nötig
+
+• 8.0 mm Regen erwartet (Schwelle 5.0 mm).
+
+Trotzdem gießen?</div>
+    <div class="btnrow"><span class="btn">🚿 Trotzdem gießen</span><span class="btn">❌ Abbrechen</span></div>
+    <div class="note">Erscheint <b>nur im manuellen Guss</b>, unmittelbar vor <code>start_watering</code>, wenn die bestehende Gieß-Empfehlung (<code>evaluate_watering_factor</code>, ADR 0020) <code>skip=True</code> liefert — Verdikt + konkrete mm-Begründung. Im unkritischen Fall (<code>skip=False</code>) kein Zwischenschritt, Sofortstart wie bisher. „🚿 Trotzdem gießen" (<code>water_anyway</code>) startet mit den gemerkten Werten; „❌ Abbrechen" (<code>man_cancel</code>) tut nichts. Bewertung fällt aus → kein Blockieren, direkter Start.</div>
+  </div>
+
+  <div class="phone">
     <div class="src">handle_stopp() · „🛑 Stopp" — querschnittlicher Aus (Feature 0031)</div>
     <div class="bubble">🛑 <b>Stopp</b>
 

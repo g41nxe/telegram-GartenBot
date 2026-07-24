@@ -1,0 +1,116 @@
+- generic [active] [ref=f8e1]:
+  - link "Skip to content" [ref=f8e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=f8e3]:
+    - generic [ref=f8e4]:
+      - link "Matthew Freed Pottery" [ref=f8e5] [cursor=pointer]:
+        - /url: /
+      - navigation "Main" [ref=f8e6]:
+        - link "Collections" [ref=f8e7] [cursor=pointer]:
+          - /url: /collections.html
+        - link "Events" [ref=f8e8] [cursor=pointer]:
+          - /url: /events.html
+        - link "About" [ref=f8e9] [cursor=pointer]:
+          - /url: /about/
+        - link "Contact" [ref=f8e10] [cursor=pointer]:
+          - /url: /contact.html
+        - link "Shop" [ref=f8e11] [cursor=pointer]:
+          - /url: https://shop.matthewfreed.net/collections/all/
+  - main [ref=f8e12]:
+    - generic [ref=f8e13]:
+      - paragraph [ref=f8e14]: Get in touch
+      - heading "Don't be a stranger" [level=1] [ref=f8e15]
+      - paragraph [ref=f8e16]: Just say hello.
+      - generic [ref=f8e17]:
+        - generic [ref=f8e18]:
+          - heading "Contact me" [level=2] [ref=f8e19]
+          - paragraph [ref=f8e20]: All fields marked with an asterisk (*) are required.
+          - generic [ref=f8e21]:
+            - generic [ref=f8e22]: Name
+            - textbox "Name" [ref=f8e23]
+            - generic [ref=f8e24]: Email
+            - textbox "Email" [ref=f8e25]:
+              - /placeholder: Email *
+            - generic [ref=f8e26]: Phone
+            - textbox "Phone" [ref=f8e27]
+            - generic [ref=f8e28]: Message
+            - textbox "Message" [ref=f8e29]:
+              - /placeholder: What's on your mind? *
+            - button "Send" [ref=f8e30]: Send Away
+        - generic [ref=f8e31]:
+          - heading "Reach me directly" [level=2] [ref=f8e32]
+          - list [ref=f8e33]:
+            - listitem [ref=f8e34]:
+              - link "Instagram" [ref=f8e35] [cursor=pointer]:
+                - /url: https://www.instagram.com/matthewfreedpottery/
+                - img [ref=f8e36]
+            - listitem [ref=f8e40]:
+              - link "Facebook" [ref=f8e41] [cursor=pointer]:
+                - /url: https://www.facebook.com/matthewfreedpottery/
+                - img [ref=f8e42]
+          - generic [ref=f8e44]:
+            - paragraph [ref=f8e45]: Feel free to get in touch with me.
+            - paragraph [ref=f8e46]: I am always open to individual requests.
+          - generic [ref=f8e47]:
+            - paragraph [ref=f8e48]: Want to leave a message?
+            - link "mfreed74@gmail.com" [ref=f8e49] [cursor=pointer]:
+              - /url: mailto:mfreed74@gmail.com
+          - generic [ref=f8e50]:
+            - paragraph [ref=f8e51]: Want to talk?
+            - link "1-778-829-4526" [ref=f8e52] [cursor=pointer]:
+              - /url: tel:1-778-829-4526
+          - generic [ref=f8e53]:
+            - paragraph [ref=f8e54]: Come visit, but please make an appointment in advance!
+            - paragraph [ref=f8e55]:
+              - text: 740 Jackson Avenue
+              - text: Vancouver, B.C., V6A 3B9
+              - text: Canada
+          - iframe [ref=f8e57]:
+            - link "Open in Maps (opens in new tab)" [ref=f9e4] [cursor=pointer]:
+              - /url: about:invalid#zClosurez
+              - text: Open in Maps
+              - img [ref=f9e6]
+  - region "Newsletter" [ref=f8e58]:
+    - generic [ref=f8e59]:
+      - generic [ref=f8e60]:
+        - heading "First to know about firings and markets" [level=2] [ref=f8e61]
+        - paragraph [ref=f8e62]: One email a month, no clutter.
+      - generic [ref=f8e63]:
+        - generic [ref=f8e64]: Email address
+        - textbox "Email address" [ref=f8e65]:
+          - /placeholder: you@email.com
+        - button "Sign up" [ref=f8e66]
+  - contentinfo [ref=f8e67]:
+    - generic [ref=f8e68]:
+      - generic [ref=f8e69]:
+        - paragraph [ref=f8e70]:
+          - img [ref=f8e72]
+          - text: Matthew Freed Pottery
+        - paragraph [ref=f8e78]:
+          - text: 740 Jackson Avenue
+          - text: Vancouver, B.C., V6A 3B9
+          - text: Canada
+        - paragraph [ref=f8e79]:
+          - text: Send me an
+          - link "email" [ref=f8e80] [cursor=pointer]:
+            - /url: mailto:mfreed74@gmail.com
+          - text: or give me a
+          - link "call" [ref=f8e81] [cursor=pointer]:
+            - /url: tel:1-778-829-4526
+      - navigation "Footer" [ref=f8e82]:
+        - link "Retail stores" [ref=f8e83] [cursor=pointer]:
+          - /url: /retail-stores.html
+        - link "FAQ" [ref=f8e84] [cursor=pointer]:
+          - /url: /faq.html
+        - link "My process" [ref=f8e85] [cursor=pointer]:
+          - /url: /about/process.html
+        - link "Privacy" [ref=f8e86] [cursor=pointer]:
+          - /url: /privacy-statement.html
+      - generic [ref=f8e87]:
+        - link "Instagram" [ref=f8e88] [cursor=pointer]:
+          - /url: https://www.instagram.com/matthewfreedpottery/
+          - img [ref=f8e89]
+        - link "Facebook" [ref=f8e91] [cursor=pointer]:
+          - /url: https://www.facebook.com/matthewfreedpottery/
+          - img [ref=f8e92]
+    - generic [ref=f8e94]: © Matthew Freed Pottery

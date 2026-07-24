@@ -1,0 +1,181 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]: Concept G — Glaze Anthology
+  - group [ref=e3]:
+    - generic "Designer's note — palette & rationale" [ref=e4] [cursor=pointer]
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - link "Matthew Freed" [ref=e7] [cursor=pointer]:
+        - /url: "#top"
+      - list [ref=e8]:
+        - listitem [ref=e9]:
+          - link "glazes" [ref=e10] [cursor=pointer]:
+            - /url: "#glazes"
+        - listitem [ref=e11]:
+          - link "markets" [ref=e12] [cursor=pointer]:
+            - /url: "#markets"
+        - listitem [ref=e13]:
+          - link "shop" [ref=e14] [cursor=pointer]:
+            - /url: "#shop"
+        - listitem [ref=e15]:
+          - link "about" [ref=e16] [cursor=pointer]:
+            - /url: "#about"
+        - listitem [ref=e17]:
+          - link "online shop ↗" [ref=e18] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net
+  - main [ref=e19]:
+    - generic [ref=e20]:
+      - generic [ref=e21]:
+        - generic [ref=e22]: handmade in Vancouver —
+        - heading "Art for everyday life" [level=1] [ref=e23]:
+          - text: Art for
+          - text: everyday life
+        - paragraph [ref=e24]: Stoneware thrown in a small studio on Jackson Avenue. Fifteen glazes, named after the places that shaped them — every piece one of a kind.
+        - generic "The fifteen glazes" [ref=e25]:
+          - link "Squamish Nights" [ref=e26] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Galiano" [ref=e27] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Jericho" [ref=e28] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Pemberton Sky" [ref=e29] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Tofino" [ref=e30] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Garibaldi" [ref=e31] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Joffre" [ref=e32] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Kitsilano" [ref=e33] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Pemberton Earth" [ref=e34] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Yaletown" [ref=e35] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Dogwood" [ref=e36] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Saltspring" [ref=e37] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Strathcona" [ref=e38] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Tree of Life" [ref=e39] [cursor=pointer]:
+            - /url: "#glazes"
+          - link "Zen" [ref=e40] [cursor=pointer]:
+            - /url: "#glazes"
+        - paragraph [ref=e41]:
+          - text: ↓
+          - link "fifteen glazes, one studio — take the walk" [ref=e42] [cursor=pointer]:
+            - /url: "#glazes"
+      - img "Arrangement of deep blue glazed stoneware pieces" [ref=e44]
+    - img [ref=e45]
+    - generic [ref=e48]:
+      - heading "The fifteen glazes" [level=2] [ref=e49]
+      - paragraph [ref=e50]: a walk through the collection — one glaze at a time, like rooms of an exhibition
+      - generic [ref=e51]:
+        - img "Squamish Nights glaze" [ref=e53]
+        - generic [ref=e54]:
+          - generic [ref=e55]: glaze no. 01 of 15
+          - generic [ref=e56]: the blues
+          - heading "Squamish Nights" [level=3] [ref=e57]
+          - paragraph [ref=e58]: A speckled deep green and blue glaze with a celestial look.
+          - link "step onto its stage →" [ref=e59] [cursor=pointer]:
+            - /url: G-glaze-anthology-glaze.html
+      - generic [ref=e60]:
+        - button "Previous glaze" [ref=e61] [cursor=pointer]: ←
+        - tablist "Jump to a glaze" [ref=e62]:
+          - button "Squamish Nights" [ref=e63] [cursor=pointer]
+          - button "Galiano" [ref=e64] [cursor=pointer]
+          - button "Jericho" [ref=e65] [cursor=pointer]
+          - button "Pemberton Sky" [ref=e66] [cursor=pointer]
+          - button "Tofino" [ref=e67] [cursor=pointer]
+          - button "Garibaldi" [ref=e68] [cursor=pointer]
+          - button "Joffre" [ref=e69] [cursor=pointer]
+          - button "Kitsilano" [ref=e70] [cursor=pointer]
+          - button "Pemberton Earth" [ref=e71] [cursor=pointer]
+          - button "Yaletown" [ref=e72] [cursor=pointer]
+          - button "Dogwood" [ref=e73] [cursor=pointer]
+          - button "Saltspring" [ref=e74] [cursor=pointer]
+          - button "Strathcona" [ref=e75] [cursor=pointer]
+          - button "Tree of Life" [ref=e76] [cursor=pointer]
+          - button "Zen" [ref=e77] [cursor=pointer]
+        - button "Next glaze" [ref=e78] [cursor=pointer]: →
+        - generic [ref=e79]: 01 / 15
+    - generic [ref=e81]:
+      - generic [ref=e82]: find me this weekend —
+      - heading "Markets & events" [level=2] [ref=e83]
+      - generic [ref=e84]:
+        - generic [ref=e85]:
+          - generic [ref=e86]: Sun · Jul 5
+          - generic [ref=e87]: Kitsilano Farmer's Market
+          - generic [ref=e88]: 10 a.m. – 2 p.m.
+        - generic [ref=e89]:
+          - generic [ref=e90]: Sun · Jul 12
+          - generic [ref=e91]: Kitsilano Farmer's Market
+          - generic [ref=e92]: 10 a.m. – 2 p.m.
+        - generic [ref=e93]:
+          - generic [ref=e94]: Sat · Jul 18
+          - generic [ref=e95]: Trout Lake Farmer's Market
+          - generic [ref=e96]: 9 a.m. – 2 p.m.
+        - generic [ref=e97]:
+          - generic [ref=e98]: Sun · Jul 19
+          - generic [ref=e99]: Ladner Village Market
+          - generic [ref=e100]: 10 a.m. – 4 p.m.
+      - link "full market calendar →" [ref=e101] [cursor=pointer]:
+        - /url: "#"
+    - generic [ref=e103]:
+      - heading "From the shop" [level=2] [ref=e104]
+      - paragraph [ref=e105]: a few favourites, fresh from the kiln
+      - generic [ref=e106]:
+        - generic [ref=e107]:
+          - img "Tofino chopstick bowl" [ref=e108]
+          - generic [ref=e109]: Chopstick Bowl · Tofino
+          - generic [ref=e110]:
+            - text: $45 ·
+            - link "in the shop →" [ref=e111] [cursor=pointer]:
+              - /url: https://shop.matthewfreed.net
+        - generic [ref=e112]:
+          - img "Jericho teardrop vase" [ref=e113]
+          - generic [ref=e114]: Teardrop Vase · Jericho
+          - generic [ref=e115]:
+            - text: $90 ·
+            - link "in the shop →" [ref=e116] [cursor=pointer]:
+              - /url: https://shop.matthewfreed.net
+        - generic [ref=e117]:
+          - img "Squamish Nights shorty mug" [ref=e118]
+          - generic [ref=e119]: Shorty Mug · Squamish Nights
+          - generic [ref=e120]:
+            - text: $38 ·
+            - link "in the shop →" [ref=e121] [cursor=pointer]:
+              - /url: https://shop.matthewfreed.net
+      - generic [ref=e122]:
+        - link "browse the shop" [ref=e123] [cursor=pointer]:
+          - /url: https://shop.matthewfreed.net
+        - emphasis [ref=e124]: free local delivery for orders over $150
+    - img [ref=e126]
+    - generic [ref=e128]:
+      - img "Matthew Freed in his studio" [ref=e130]
+      - generic [ref=e131]:
+        - heading "The studio on Jackson Ave" [level=2] [ref=e132]
+        - paragraph [ref=e133]: Matthew Freed makes functional stoneware in Strathcona, Vancouver — mugs, bowls, plates and vases meant to be used, not saved for good. Each piece is thrown by hand and glazed in one of fifteen recipes developed in the studio, where nature, science and art meet in the kiln.
+        - paragraph [ref=e134]: No two firings come out the same. That is the point.
+        - generic [ref=e135]: — Matt
+  - contentinfo [ref=e136]:
+    - generic [ref=e137]:
+      - generic [ref=e138]:
+        - generic [ref=e139]: Matthew Freed
+        - paragraph [ref=e140]:
+          - text: 740 Jackson Avenue
+          - text: Vancouver, B.C. V6A 3B9
+      - list [ref=e141]:
+        - listitem [ref=e142]:
+          - link "mfreed74@gmail.com" [ref=e143] [cursor=pointer]:
+            - /url: mailto:mfreed74@gmail.com
+        - listitem [ref=e144]:
+          - link "1-778-829-4526" [ref=e145] [cursor=pointer]:
+            - /url: tel:+17788294526
+      - list [ref=e146]:
+        - listitem [ref=e147]:
+          - link "Instagram — @matthewfreedpottery" [ref=e148] [cursor=pointer]:
+            - /url: https://www.instagram.com/matthewfreedpottery
+        - listitem [ref=e149]:
+          - link "Online shop ↗" [ref=e150] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net

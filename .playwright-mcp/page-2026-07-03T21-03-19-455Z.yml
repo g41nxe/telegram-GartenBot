@@ -1,0 +1,179 @@
+- generic [active] [ref=f4e1]:
+  - link "Skip to content" [ref=f4e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=f4e3]:
+    - generic [ref=f4e4]:
+      - link "Matthew Freed Pottery" [ref=f4e5] [cursor=pointer]:
+        - /url: /
+      - navigation "Main" [ref=f4e6]:
+        - link "Collections" [ref=f4e7] [cursor=pointer]:
+          - /url: /collections.html
+        - link "Events" [ref=f4e8] [cursor=pointer]:
+          - /url: /events.html
+        - link "About" [ref=f4e9] [cursor=pointer]:
+          - /url: /about/
+        - link "Contact" [ref=f4e10] [cursor=pointer]:
+          - /url: /contact.html
+        - link "Shop" [ref=f4e11] [cursor=pointer]:
+          - /url: https://shop.matthewfreed.net/collections/all/
+  - main [ref=f4e12]:
+    - generic [ref=f4e13]:
+      - paragraph [ref=f4e14]: The field guide
+      - heading "Fifteen glazes, fifteen stories" [level=1] [ref=f4e15]
+      - paragraph [ref=f4e16]: Each glaze began somewhere — a night sky over Squamish, dogwoods on the boulevard, a quiet morning at the wheel. Find yours.
+      - img [ref=f4e18]
+    - group "Filter collections" [ref=f4e24]:
+      - button "All" [ref=f4e25] [cursor=pointer]
+      - button "Blues" [ref=f4e26] [cursor=pointer]
+      - button "Charcoals" [ref=f4e27] [cursor=pointer]
+      - button "Patterned" [ref=f4e28] [cursor=pointer]
+    - region "All collections" [ref=f4e29]:
+      - article [ref=f4e30]:
+        - img "Squamish Nights Teardrop Vase by Matthew Freed" [ref=f4e33]
+        - generic [ref=f4e34]:
+          - heading "Squamish Nights" [level=2] [ref=f4e35]: Squamish Nights
+          - paragraph [ref=f4e37]: A speckled deep green and blue glaze with a celestial look
+          - link "Browse in shop" [ref=f4e38] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Squamish
+      - article [ref=f4e39]:
+        - img "Large Garibaldi Mug by Matthew Freed" [ref=f4e42]
+        - generic [ref=f4e43]:
+          - heading "Garibaldi" [level=2] [ref=f4e44]: Garibaldi
+          - paragraph [ref=f4e46]: A deep forest green glaze with speckled cobalt tones and a warm blue accent around the rim
+          - link "Browse in shop" [ref=f4e47] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Garibaldi
+      - article [ref=f4e48]:
+        - img "Large Yaletown Mug by Matthew Freed" [ref=f4e51]
+        - generic [ref=f4e52]:
+          - heading "Yaletown" [level=2] [ref=f4e53]: Yaletown
+          - paragraph [ref=f4e55]: Red, green or blue rims pop on a charcoal glazed base.
+          - link "Browse in shop" [ref=f4e56] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Yaletown
+      - article [ref=f4e57]:
+        - img "Galiano Plates and Mugs by Matthew Freed" [ref=f4e60]
+        - generic [ref=f4e61]:
+          - heading "Galiano" [level=2] [ref=f4e62]: Galiano
+          - paragraph [ref=f4e64]: A multi-tone deep blue glaze.
+          - link "Browse in shop" [ref=f4e65] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Galiano
+      - article [ref=f4e66]:
+        - 'img "Dogwood Collection: Large Bowls by Matthew Freed" [ref=f4e69]'
+        - generic [ref=f4e70]:
+          - heading "Dogwood" [level=2] [ref=f4e71]: Dogwood
+          - paragraph [ref=f4e73]: A semi-matte charcoal glaze with a hand-painted dogwood pattern.
+          - link "Browse in shop" [ref=f4e74] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Dogwood
+      - article [ref=f4e75]:
+        - 'img "Saltspring Collection: Large Platter by Matthew Freed" [ref=f4e78]'
+        - generic [ref=f4e79]:
+          - heading "Saltspring" [level=2] [ref=f4e80]: Saltspring
+          - paragraph [ref=f4e82]: A semi-matte charcoal glaze with vibrant bursts of glossy colour.
+          - link "Browse in shop" [ref=f4e83] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Saltspring
+      - article [ref=f4e84]:
+        - 'img "Jericho Collection: Bowls and a Platter by Matthew Freed" [ref=f4e87]'
+        - generic [ref=f4e88]:
+          - heading "Jericho" [level=2] [ref=f4e89]: Jericho
+          - paragraph [ref=f4e91]: A pale grey/blue glaze with sand toned speckles.
+          - link "Browse in shop" [ref=f4e92] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Jericho
+      - article [ref=f4e93]:
+        - 'img "Joffre Collection: Plate and Vase by Matthew Freed" [ref=f4e96]'
+        - generic [ref=f4e97]:
+          - heading "Joffre" [level=2] [ref=f4e98]: Joffre
+          - paragraph [ref=f4e100]: A rich green/blue glaze with multi-toned variation.
+          - link "Browse in shop" [ref=f4e101] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Joffre
+      - article [ref=f4e102]:
+        - 'img "Kitsilano Collection: Bowls by Matthew Freed" [ref=f4e105]'
+        - generic [ref=f4e106]:
+          - heading "Kitsilano" [level=2] [ref=f4e107]: Kitsilano
+          - paragraph [ref=f4e109]: A satiny smooth lilac glaze with warm blue rim.
+          - link "Browse in shop" [ref=f4e110] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Kitsilano
+      - article [ref=f4e111]:
+        - 'img "Pemberton Sky Collection: A Bowl by Matthew Freed" [ref=f4e114]'
+        - generic [ref=f4e115]:
+          - heading "Pemberton Sky" [level=2] [ref=f4e116]: Pemberton Sky
+          - paragraph [ref=f4e118]: A hand-painted leafing pattern with a textured finish in a two toned blue glossy finish.
+          - link "Browse in shop" [ref=f4e119] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Pemberton
+      - article [ref=f4e120]:
+        - 'img "Pemberton Earth Collection: Bowls and a Platter by Matthew Freed" [ref=f4e123]'
+        - generic [ref=f4e124]:
+          - heading "Pemberton Earth" [level=2] [ref=f4e125]: Pemberton Earth
+          - paragraph [ref=f4e127]: A hand-painted leafing pattern with a textured finish in a medium brown and charcoal glaze.
+          - link "Browse in shop" [ref=f4e128] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Pemberton
+      - article [ref=f4e129]:
+        - 'img "Strathcona Collection: A Platter by Matthew Freed" [ref=f4e132]'
+        - generic [ref=f4e133]:
+          - heading "Strathcona" [level=2] [ref=f4e134]: Strathcona
+          - paragraph [ref=f4e136]: Semi-matte charcoal glaze with a hand-painted gold chevron pattern.
+          - link "Browse in shop" [ref=f4e137] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Strathcona
+      - article [ref=f4e138]:
+        - 'img "Tofino Collection: A close-up of a Mug by Matthew Freed" [ref=f4e141]'
+        - generic [ref=f4e142]:
+          - heading "Tofino" [level=2] [ref=f4e143]: Tofino
+          - paragraph [ref=f4e145]: A stormy, landscape effect in complimentary hues of cobalt, mocha, and amber.
+          - link "Browse in shop" [ref=f4e146] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Tofino
+      - article [ref=f4e147]:
+        - 'img "Tree of Life Collection: Bowls and a Jar by Matthew Freed" [ref=f4e150]'
+        - generic [ref=f4e151]:
+          - heading "Tree of Life" [level=2] [ref=f4e152]: Tree of Life
+          - paragraph [ref=f4e154]: A textured Tree of Life emblem on a semi-matte charcoal glaze.
+          - link "Browse in shop" [ref=f4e155] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Tree-of-Life
+      - article [ref=f4e156]:
+        - 'img "Zen Collection: Snack Bowl by Matthew Freed" [ref=f4e159]'
+        - generic [ref=f4e160]:
+          - heading "Zen" [level=2] [ref=f4e161]: Zen
+          - paragraph [ref=f4e163]: A semi-matte charcoal glaze with a textured gold decorative accent tile.
+          - link "Browse in shop" [ref=f4e164] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Zen
+  - region "Newsletter" [ref=f4e165]:
+    - generic [ref=f4e166]:
+      - generic [ref=f4e167]:
+        - heading "First to know about firings and markets" [level=2] [ref=f4e168]
+        - paragraph [ref=f4e169]: One email a month, no clutter.
+      - generic [ref=f4e170]:
+        - generic [ref=f4e171]: Email address
+        - textbox "Email address" [ref=f4e172]:
+          - /placeholder: you@email.com
+        - button "Sign up" [ref=f4e173]
+  - contentinfo [ref=f4e174]:
+    - generic [ref=f4e175]:
+      - generic [ref=f4e176]:
+        - paragraph [ref=f4e177]:
+          - img [ref=f4e179]
+          - text: Matthew Freed Pottery
+        - paragraph [ref=f4e185]:
+          - text: 740 Jackson Avenue
+          - text: Vancouver, B.C., V6A 3B9
+          - text: Canada
+        - paragraph [ref=f4e186]:
+          - text: Send me an
+          - link "email" [ref=f4e187] [cursor=pointer]:
+            - /url: mailto:mfreed74@gmail.com
+          - text: or give me a
+          - link "call" [ref=f4e188] [cursor=pointer]:
+            - /url: tel:1-778-829-4526
+      - navigation "Footer" [ref=f4e189]:
+        - link "Retail stores" [ref=f4e190] [cursor=pointer]:
+          - /url: /retail-stores.html
+        - link "FAQ" [ref=f4e191] [cursor=pointer]:
+          - /url: /faq.html
+        - link "My process" [ref=f4e192] [cursor=pointer]:
+          - /url: /about/process.html
+        - link "Privacy" [ref=f4e193] [cursor=pointer]:
+          - /url: /privacy-statement.html
+      - generic [ref=f4e194]:
+        - link "Instagram" [ref=f4e195] [cursor=pointer]:
+          - /url: https://www.instagram.com/matthewfreedpottery/
+          - img [ref=f4e196]
+        - link "Facebook" [ref=f4e198] [cursor=pointer]:
+          - /url: https://www.facebook.com/matthewfreedpottery/
+          - img [ref=f4e199]
+    - generic [ref=f4e201]: © Matthew Freed Pottery

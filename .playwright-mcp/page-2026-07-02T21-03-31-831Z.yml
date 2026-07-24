@@ -1,0 +1,165 @@
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#main"
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - link "Matthew Freed" [ref=e5] [cursor=pointer]:
+        - /url: /
+      - navigation "Main" [ref=e6]:
+        - link "Collections" [ref=e7] [cursor=pointer]:
+          - /url: /collections.html
+        - link "Events" [ref=e8] [cursor=pointer]:
+          - /url: /events.html
+        - link "About" [ref=e9] [cursor=pointer]:
+          - /url: /about/
+        - link "Contact" [ref=e10] [cursor=pointer]:
+          - /url: /contact.html
+        - link "Shop" [ref=e11] [cursor=pointer]:
+          - /url: https://shop.matthewfreed.net/collections/all/
+  - main [ref=e12]:
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - paragraph [ref=e15]: Handthrown in Vancouver
+        - heading "Art for everyday life" [level=1] [ref=e16]
+        - paragraph [ref=e17]: Functional pottery in glazes named after the West Coast places that inspired them.
+        - generic [ref=e18]:
+          - link "Shop the collections" [ref=e19] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/
+          - link "Upcoming events" [ref=e20] [cursor=pointer]:
+            - /url: /events.html
+      - img "Two blue Galiano bowls on a board by Matthew Freed" [ref=e23]
+    - region "Why buy from Matthew" [ref=e24]:
+      - list [ref=e25]:
+        - listitem [ref=e26]: Circle Craft gold medal
+        - listitem [ref=e27]: Every piece one of a kind
+        - listitem [ref=e28]: Free local delivery over $150
+    - generic [ref=e29]:
+      - region "Featured piece" [ref=e31]:
+        - paragraph [ref=e32]: Featured piece
+        - generic [ref=e33]:
+          - img "Squamish Nights Teardrop Vase by Matthew Freed" [ref=e36]
+          - generic [ref=e37]:
+            - heading "Teardrop vase" [level=2] [ref=e38]
+            - paragraph [ref=e39]: Squamish Nights · celestial speckle
+            - paragraph [ref=e40]: Wheel-thrown stoneware — no two alike.
+            - link "View in the shop" [ref=e41] [cursor=pointer]:
+              - /url: https://shop.matthewfreed.net/collections/all/Squamish
+      - region "Collections" [ref=e43]:
+        - generic [ref=e44]:
+          - heading "Fifteen glazes, fifteen places" [level=2] [ref=e45]
+          - link "All collections" [ref=e46] [cursor=pointer]:
+            - /url: /collections.html
+        - paragraph [ref=e47]: Each collection is named for the coast, mountain, or neighbourhood that shaped its colour.
+        - generic [ref=e48]:
+          - link "Squamish Nights Teardrop Vase by Matthew Freed Squamish Nights A speckled deep green and blue glaze with a celestial look" [ref=e49] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Squamish
+            - img "Squamish Nights Teardrop Vase by Matthew Freed" [ref=e52]
+            - paragraph [ref=e53]: Squamish Nights
+            - paragraph [ref=e54]: A speckled deep green and blue glaze with a celestial look
+          - link "Large Garibaldi Mug by Matthew Freed Garibaldi A deep forest green glaze with speckled cobalt tones and a warm blue accent around the rim" [ref=e55] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Garibaldi
+            - img "Large Garibaldi Mug by Matthew Freed" [ref=e58]
+            - paragraph [ref=e59]: Garibaldi
+            - paragraph [ref=e60]: A deep forest green glaze with speckled cobalt tones and a warm blue accent around the rim
+          - link "Large Yaletown Mug by Matthew Freed Yaletown Red, green or blue rims pop on a charcoal glazed base." [ref=e61] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/Yaletown
+            - img "Large Yaletown Mug by Matthew Freed" [ref=e64]
+            - paragraph [ref=e65]: Yaletown
+            - paragraph [ref=e66]: Red, green or blue rims pop on a charcoal glazed base.
+          - link "+ 12 more View all The full field guide" [ref=e67] [cursor=pointer]:
+            - /url: /collections.html
+            - generic [ref=e68]:
+              - img [ref=e70]
+              - generic [ref=e76]: + 12 more
+            - paragraph [ref=e77]: View all
+            - paragraph [ref=e78]: The full field guide
+      - region "Shop pieces" [ref=e80]:
+        - generic [ref=e81]:
+          - heading "From the current firing" [level=2] [ref=e82]
+          - link "Shop all pieces" [ref=e83] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/collections/all/
+        - generic [ref=e84]:
+          - link "Tofino Chopstick Bowl by Matthew Freed Chopstick Bowl Tofino View in the shop" [ref=e85] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/products/chopstick-bowl-tofino
+            - img "Tofino Chopstick Bowl by Matthew Freed" [ref=e88]
+            - paragraph [ref=e89]: Chopstick Bowl
+            - paragraph [ref=e90]: Tofino
+            - generic [ref=e91]: View in the shop
+          - link "Jericho Teardrop Vase by Matthew Freed Teardrop Vase Jericho View in the shop" [ref=e92] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/products/copy-teardrop-vase-tofino
+            - img "Jericho Teardrop Vase by Matthew Freed" [ref=e95]
+            - paragraph [ref=e96]: Teardrop Vase
+            - paragraph [ref=e97]: Jericho
+            - generic [ref=e98]: View in the shop
+          - link "Squamish Nights Shorty Mug by Matthew Freed Shorty Mug Squamish Nights View in the shop" [ref=e99] [cursor=pointer]:
+            - /url: https://shop.matthewfreed.net/products/shorty-mug-squamish-night
+            - img "Squamish Nights Shorty Mug by Matthew Freed" [ref=e102]
+            - paragraph [ref=e103]: Shorty Mug
+            - paragraph [ref=e104]: Squamish Nights
+            - generic [ref=e105]: View in the shop
+        - paragraph [ref=e106]: Checkout happens on the Shopify shop — the site hands over seamlessly.
+    - region "Upcoming events" [ref=e107]:
+      - generic [ref=e108]:
+        - generic [ref=e109]:
+          - heading "Where to find me next" [level=2] [ref=e110]
+          - link "All events" [ref=e111] [cursor=pointer]:
+            - /url: /events.html
+        - list [ref=e112]:
+          - listitem [ref=e113]:
+            - paragraph [ref=e114]: Kitsilano Farmer's Market
+            - paragraph [ref=e115]: Jul 5
+          - listitem [ref=e116]:
+            - paragraph [ref=e117]: Kitsilano Farmer's Market
+            - paragraph [ref=e118]: Jul 12
+          - listitem [ref=e119]:
+            - paragraph [ref=e120]: Trout Lake Farmer's Market
+            - paragraph [ref=e121]: Jul 18
+    - region "About Matthew" [ref=e122]:
+      - img "Matthew Freed holding a stack of his mugs" [ref=e125]
+      - generic [ref=e126]:
+        - heading "A love affair with clay since the early '90s" [level=2] [ref=e127]
+        - paragraph [ref=e128]: From lessons in a Winnipeg stoneware studio to a gold medal and a Strathcona studio of our own.
+        - link "Read our story" [ref=e129] [cursor=pointer]:
+          - /url: /about/
+  - region "Newsletter" [ref=e130]:
+    - generic [ref=e131]:
+      - generic [ref=e132]:
+        - heading "First to know about firings and markets" [level=2] [ref=e133]
+        - paragraph [ref=e134]: One email a month, no clutter.
+      - generic [ref=e135]:
+        - generic [ref=e136]: Email address
+        - textbox "Email address" [ref=e137]:
+          - /placeholder: you@email.com
+        - button "Sign up" [ref=e138]
+  - contentinfo [ref=e139]:
+    - generic [ref=e140]:
+      - generic [ref=e141]:
+        - paragraph [ref=e142]: Matthew Freed Pottery
+        - paragraph [ref=e143]:
+          - text: 740 Jackson Avenue
+          - text: Vancouver, B.C., V6A 3B9
+          - text: Canada
+        - paragraph [ref=e144]:
+          - text: Send me an
+          - link "email" [ref=e145] [cursor=pointer]:
+            - /url: mailto:mfreed74@gmail.com
+          - text: or give me a
+          - link "call" [ref=e146] [cursor=pointer]:
+            - /url: tel:1-778-829-4526
+      - navigation "Footer" [ref=e147]:
+        - link "Retail stores" [ref=e148] [cursor=pointer]:
+          - /url: /retail-stores.html
+        - link "FAQ" [ref=e149] [cursor=pointer]:
+          - /url: /faq.html
+        - link "My process" [ref=e150] [cursor=pointer]:
+          - /url: /about/process.html
+        - link "Privacy" [ref=e151] [cursor=pointer]:
+          - /url: /privacy-statement.html
+      - generic [ref=e152]:
+        - link "Instagram" [ref=e153] [cursor=pointer]:
+          - /url: https://www.instagram.com/matthewfreedpottery/
+          - img [ref=e154]
+        - link "Facebook" [ref=e158] [cursor=pointer]:
+          - /url: https://www.facebook.com/matthewfreedpottery/
+          - img [ref=e159]
+    - generic [ref=e161]: © Matthew Freed Pottery

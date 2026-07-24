@@ -499,9 +499,18 @@ class TestManualWateringPresetCallback(unittest.TestCase):
 
     def setUp(self):
         manual_states.clear()
+        # Feature 0020: Der Start-Pfad prüft jetzt den Kontext. Für diese Tests ist der
+        # Kontext unkritisch (skip=False), damit der Sofortstart wie bisher greift.
+        from daemon.core.watering_advice import WateringDecision
+        self._wp = patch("daemon.ui.telegram_ui._weather_adapter")
+        mock_w = self._wp.start()
+        mock_w.evaluate_watering_factor.return_value = WateringDecision(
+            factor=1.0, verdict="", reasons=[], skip=False
+        )
 
     def tearDown(self):
         manual_states.clear()
+        self._wp.stop()
 
     def _cb(self, data, chat_id=100, msg_id=1):
         return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
@@ -539,6 +548,88 @@ class TestManualWateringPresetCallback(unittest.TestCase):
 
         error_text = mock_client.send_message.call_args[0][1]
         self.assertIn("Fehler", error_text)
+
+
+class TestContextSensitiveWateringHint(unittest.TestCase):
+    """Feature 0020: Kontextsensible Rückfrage vor manuellem Guss."""
+
+    def setUp(self):
+        manual_states.clear()
+
+    def tearDown(self):
+        manual_states.clear()
+
+    def _cb(self, data, chat_id=100, msg_id=1):
+        return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
+
+    def _decision(self, skip):
+        from daemon.core.watering_advice import WateringDecision
+        return WateringDecision(
+            factor=0.0 if skip else 1.0,
+            verdict="🌧 Kein Gießen nötig" if skip else "💧 Gießen empfohlen",
+            reasons=["8.0 mm Regen erwartet (Schwelle 5.0 mm)."],
+            skip=skip,
+        )
+
+    @patch("daemon.ui.telegram_ui._weather_adapter")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_skip_context_asks_instead_of_starting(self, mock_client, mock_ctrl, mock_w):
+        mock_w.evaluate_watering_factor.return_value = self._decision(skip=True)
+        _state_set(manual_states, 100, {"step": 2, "duration": 10})
+
+        _process_callback_query(self._cb("man_vol_25"))
+
+        # Kein Sofortstart, sondern Rückfrage
+        mock_ctrl.start_watering.assert_not_called()
+        sent = mock_client.send_message.call_args
+        text, keyboard = sent[0][1], sent[0][2]
+        self.assertIn("Trotzdem gießen", text)
+        self.assertIn("8.0 mm", text)  # konkrete Begründung
+        cbs = [b["callback_data"] for row in keyboard["inline_keyboard"] for b in row]
+        self.assertIn("water_anyway", cbs)
+        self.assertIn("man_cancel", cbs)
+
+    @patch("daemon.ui.telegram_ui._weather_adapter")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_uncritical_context_starts_directly(self, mock_client, mock_ctrl, mock_w):
+        mock_w.evaluate_watering_factor.return_value = self._decision(skip=False)
+        mock_ctrl.start_watering.return_value = (True, "OK")
+        _state_set(manual_states, 100, {"step": 2, "duration": 10})
+
+        _process_callback_query(self._cb("man_vol_25"))
+
+        mock_ctrl.start_watering.assert_called_once_with(10, 25, "manual", mqtt_name="garden_valve")
+
+    @patch("daemon.ui.telegram_ui._weather_adapter")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_water_anyway_starts_with_pending_values(self, mock_client, mock_ctrl, mock_w):
+        mock_w.evaluate_watering_factor.return_value = self._decision(skip=True)
+        mock_ctrl.start_watering.return_value = (True, "OK")
+        _state_set(manual_states, 100, {"step": 2, "duration": 15, "mqtt_name": "valve_a"})
+
+        # Erst Rückfrage auslösen (merkt 15 Min / 30 l / valve_a)
+        _process_callback_query(self._cb("man_vol_30"))
+        mock_ctrl.start_watering.assert_not_called()
+
+        # Dann "Trotzdem gießen"
+        _process_callback_query(self._cb("water_anyway"))
+        mock_ctrl.start_watering.assert_called_once_with(15, 30, "manual", mqtt_name="valve_a")
+        self.assertIsNone(_state_get(manual_states, 100))
+
+    @patch("daemon.ui.telegram_ui._weather_adapter")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_eval_failure_does_not_block(self, mock_client, mock_ctrl, mock_w):
+        mock_w.evaluate_watering_factor.side_effect = RuntimeError("Wetter weg")
+        mock_ctrl.start_watering.return_value = (True, "OK")
+        _state_set(manual_states, 100, {"step": 2, "duration": 10})
+
+        _process_callback_query(self._cb("man_vol_25"))
+
+        mock_ctrl.start_watering.assert_called_once_with(10, 25, "manual", mqtt_name="garden_valve")
 
 
 class TestNebelUI(unittest.TestCase):
