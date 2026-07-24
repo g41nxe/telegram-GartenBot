@@ -20,10 +20,11 @@ class WeatherDataFetched(Event):
         self.rain_last_source = rain_last_source
 
 class WateringSkipped(Event):
-    def __init__(self, schedule_name: str, details: str, schedule_id: int = None):
+    def __init__(self, schedule_name: str, details: str, schedule_id: int = None, duration: int = 0):
         self.schedule_name = schedule_name
         self.details = details
         self.schedule_id = schedule_id
+        self.duration = duration  # Original-Dauer (Min), damit der DB-Logger die skipped-Zeile schreiben kann (Ticket 6l3)
 
 
 class WateringRainWarning(Event):

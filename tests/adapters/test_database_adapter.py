@@ -12,11 +12,21 @@ from daemon.core.watering_controller import (
     WateringCycleFailed,
     WateringCycleStopped
 )
-from daemon.core.scheduler_events import WeatherDataFetched
+from daemon.core.scheduler_events import WeatherDataFetched, WateringSkipped
 from daemon.core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
 from daemon.adapters.database_adapter import DatabaseLoggerAdapter
 
 class TestDatabaseAdapter(unittest.TestCase):
+
+    @patch("daemon.adapters.database.log_watering")
+    def test_watering_skipped_routes_to_journal(self, mock_log_watering):
+        """6l3: ein uebersprungener Guss journalt via Ereignis (Rule 2), nicht per Direktaufruf im Scheduler."""
+        bus = EventBus()
+        DatabaseLoggerAdapter(bus)
+
+        bus.publish(WateringSkipped(schedule_name="Rasen", details="13 mm Regen.", duration=10, schedule_id=3))
+
+        mock_log_watering.assert_called_once_with(10, "schedule", "skipped", "Zeitplan 'Rasen': 13 mm Regen.")
     @patch("daemon.adapters.database.log_watering")
     def test_routing_events_to_database(self, mock_log_watering):
         """Verifies that the DatabaseLoggerAdapter intercepts events and logs them in SQLite."""

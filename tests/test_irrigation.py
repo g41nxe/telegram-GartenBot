@@ -557,6 +557,29 @@ class TestGardenIrrigation(unittest.TestCase):
         self.assertIn("Morgens", joined)
         self.assertIn("skaliert", joined.lower())
 
+    def test_15a3_skip_journaled_once_via_event_with_duration(self):
+        """Ticket 6l3: Skip journalt GENAU EINMAL über den Ereignis-Kanal (DatabaseLoggerAdapter),
+        trägt die Original-Dauer. Ein zurückgelassener Direktaufruf im Scheduler ergäbe eine zweite Zeile."""
+        from daemon import scheduler
+        from daemon.core.scheduler_events import WateringSkipped
+        from daemon.core.watering_advice import WateringDecision
+
+        skip_decision = WateringDecision(
+            factor=0.0, verdict="🌧 Kein Gießen nötig", reasons=["13 mm Regen."], skip=True
+        )
+        captured = []
+        mqtt_client._global_bus.subscribe(WateringSkipped, captured.append)
+        try:
+            with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=skip_decision), \
+                 patch("daemon.adapters.database.log_watering") as mock_log:
+                scheduler._trigger_scheduled_watering({"name": "Abends", "duration_minutes": 15})
+
+            mock_log.assert_called_once_with(15, "schedule", "skipped", "Zeitplan 'Abends': 13 mm Regen.")
+        finally:
+            mqtt_client._global_bus.unsubscribe(WateringSkipped, captured.append)
+
+        self.assertEqual(captured[0].duration, 15)
+
     def test_15b_scheduler_graduated_scaling(self):
         """Graduierte Gieß-Steuerung: Faktor 50% halbiert Dauer und Volumen, publiziert WateringScaled."""
         from daemon import scheduler

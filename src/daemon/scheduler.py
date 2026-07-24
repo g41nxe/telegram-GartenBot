@@ -121,7 +121,7 @@ def _check_rain_warning(sched: dict, now: datetime):
         return
 
     plan = plan_scheduled_run(duration, volume, decision)
-    if not (plan.skip or plan.scaled):
+    if not _plan_intervenes(plan):
         return  # voller Guss — kein Eingriff, keine Vorwarnung
 
     _global_bus.publish(WateringRainWarning(
@@ -137,6 +137,50 @@ def _check_rain_warning(sched: dict, now: datetime):
         factor=plan.factor,
         reasons=list(plan.reasons),
     ))
+
+
+def _plan_intervenes(plan) -> bool:
+    """Ticket 6l3: gemeinsame Klassifikation 'der Plan greift ein' (Skip oder Skalierung).
+    Geteilt von _apply_plan und _check_rain_warning, statt plan.skip/plan.scaled je neu abzuleiten."""
+    return plan.skip or plan.scaled
+
+
+def _apply_plan(sched: dict, plan) -> "dict | None":
+    """Ticket 6l3: EIN Eigner für den Plan-Ausgang. Loggt + publiziert das passende Ereignis und
+    liefert den auszuführenden Zeitplan zurück — skalierte Kopie bei Reduzierung, None bei Skip,
+    sonst den Zeitplan unverändert. Journaling läuft über den Ereignis-Kanal (DatabaseLoggerAdapter
+    abonniert WateringSkipped), nicht per Direktaufruf im Scheduler (Rule 2)."""
+    name = sched.get("name", "Zeitplan")
+    schedule_id = sched.get("id")
+
+    if plan.skip:
+        logger.info(f"Zeitplan '{name}': Guss bewusst übersprungen — {plan.skip_reason}")
+        _global_bus.publish(WateringSkipped(
+            name, plan.skip_reason, schedule_id=schedule_id, duration=plan.duration_original
+        ))
+        return None
+
+    if plan.scaled:
+        logger.info(
+            f"Zeitplan '{name}': Guss auf {int(round(plan.factor * 100))} % skaliert "
+            f"({plan.duration_original}→{plan.duration} Min) — {', '.join(plan.reasons)}"
+        )
+        _global_bus.publish(WateringScaled(
+            schedule_name=name,
+            factor=plan.factor,
+            duration_original=plan.duration_original,
+            duration_scaled=plan.duration,
+            volume_original=plan.volume_original,
+            volume_scaled=plan.volume,
+            reasons=list(plan.reasons),
+            schedule_id=schedule_id,
+        ))
+        scaled_sched = dict(sched)
+        scaled_sched["duration_minutes"] = plan.duration
+        scaled_sched["target_volume_liters"] = plan.volume
+        return scaled_sched
+
+    return sched
 
 
 def _trigger_scheduled_watering(sched: dict):
@@ -163,34 +207,11 @@ def _trigger_scheduled_watering(sched: dict):
 
     plan = plan_scheduled_run(duration, volume, decision)
 
-    if plan.skip:
-        # Journalspur (Ticket 06v): im Log klar als bewusster Skip erkennbar, nicht als stiller Ausfall.
-        logger.info(f"Zeitplan '{name}': Guss bewusst übersprungen — {plan.skip_reason}")
-        database.log_watering(duration, "schedule", "skipped", f"Zeitplan '{name}': {plan.skip_reason}")
-        _global_bus.publish(WateringSkipped(name, plan.skip_reason, schedule_id=schedule_id))
+    # Ticket 6l3: EIN Eigner entscheidet Skip/Skalierung/Voll (Log + Ereignis) und liefert den
+    # auszuführenden Zeitplan; None ⇒ übersprungen, kein Ventil-Start.
+    sched = _apply_plan(sched, plan)
+    if sched is None:
         return
-
-    # Skalierter Guss: Zeitplan-Kopie mit reduzierten Werten erstellen
-    if plan.scaled:
-        # Journalspur (Ticket 06v): reduzierter Guss im Log nachvollziehbar.
-        logger.info(
-            f"Zeitplan '{name}': Guss auf {int(round(plan.factor * 100))} % skaliert "
-            f"({plan.duration_original}→{plan.duration} Min) — {', '.join(plan.reasons)}"
-        )
-        _global_bus.publish(WateringScaled(
-            schedule_name=name,
-            factor=plan.factor,
-            duration_original=plan.duration_original,
-            duration_scaled=plan.duration,
-            volume_original=plan.volume_original,
-            volume_scaled=plan.volume,
-            reasons=list(plan.reasons),
-            schedule_id=schedule_id,
-        ))
-        scaled_sched = dict(sched)
-        scaled_sched["duration_minutes"] = plan.duration
-        scaled_sched["target_volume_liters"] = plan.volume
-        sched = scaled_sched  # sched-Referenz ab hier auf skalierten Zeitplan
 
     sched_id = sched.get("id")
     valves = []

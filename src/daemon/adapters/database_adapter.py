@@ -10,7 +10,7 @@ from ..core.watering_events import (
     WateringCycleInterrupted,
 )
 from .mqtt_client import ValveStatusReported
-from ..core.scheduler_events import WeatherDataFetched
+from ..core.scheduler_events import WeatherDataFetched, WateringSkipped
 from ..core.sensor_events import RainSensorMeasured
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
 from ..core.camera_events import TimedPhotoDeliveryFailed
@@ -30,10 +30,15 @@ class DatabaseLoggerAdapter:
         self.event_bus.subscribe(WateringCycleInterrupted, self._on_cycle_interrupted)
         self.event_bus.subscribe(ValveStatusReported, self._on_valve_status_reported)
         self.event_bus.subscribe(WeatherDataFetched, self._on_weather_data_fetched)
+        self.event_bus.subscribe(WateringSkipped, self._on_watering_skipped)
         self.event_bus.subscribe(RainSensorMeasured, self._on_rain_sensor_measured)
         self.event_bus.subscribe(NebelIntervalStarted, self._on_nebel_started)
         self.event_bus.subscribe(NebelIntervalEnded, self._on_nebel_ended)
         self.event_bus.subscribe(TimedPhotoDeliveryFailed, self._on_timed_photo_delivery_failed)
+
+    def _on_watering_skipped(self, event: WateringSkipped):
+        """Ticket 6l3: journalt den bewusst uebersprungenen Guss (Rule 2, statt Direktaufruf im Scheduler)."""
+        database.log_watering(event.duration, "schedule", "skipped", f"Zeitplan '{event.schedule_name}': {event.details}")
 
     def _on_timed_photo_delivery_failed(self, event: TimedPhotoDeliveryFailed):
         """Öffnet den Aufnahme-Zeitpunkt wieder, ohne den Anker zu zerstören.
