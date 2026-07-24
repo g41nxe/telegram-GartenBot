@@ -108,6 +108,12 @@ def main():
         register_telegram_commands()
         logger.info("Telegram-Bot-System (entkoppelter Client & UI-Controller) erfolgreich initialisiert.")
 
+        # Update-Benachrichtigung (ADR 0044): meldet einen Versionswechsel bzw. Rollback,
+        # jetzt wo der Bot bereit ist. Ein reiner Neustart bleibt still.
+        from .adapters.version_announce_adapter import announce_on_start
+        logger.info("Laufende Version: %s", config.read_version())
+        announce_on_start(mqtt_client._global_bus)
+
     logger.info("----------------------------------------------")
     logger.info("System läuft erfolgreich. Drücken Sie Strg+C zum Beenden.")
     logger.info("----------------------------------------------")
