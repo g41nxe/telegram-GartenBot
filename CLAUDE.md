@@ -70,6 +70,9 @@ python -m daemon.main
 # Add -CopyEnv to also transfer .env (first-time setup only)
 ```
 
+### Releases (NUR über den `release`-Skill)
+Ein Release wird **ausschließlich** über den `release`-Skill ausgelöst — **niemals** `git tag vX.Y.Z` von Hand. Der CI erzeugt die GitHub-Release-Notes aus dem obersten `## `-Abschnitt der `CHANGELOG.md`; taggt man ohne CHANGELOG-Update, veröffentlicht der CI die *alten* Notes des Vorgänger-Releases. Der Skill aktualisiert die CHANGELOG **vor** dem Tag; ein CI-Guard (`CHANGELOG passt zum Tag` in `release.yml`) lässt das Release fehlschlagen, wenn CHANGELOG-Kopf und Tag divergieren.
+
 ### Apply Python/DB changes on Pi (no full setup needed)
 For Python source changes and DB schema migrations, only a service restart is required — do **not** re-run `setup.sh`:
 ```bash

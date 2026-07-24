@@ -5,6 +5,9 @@ description: Führt durch den Release-Prozess — vergleicht letzten Tag mit mas
 
 Du bist auf dem `master`-Branch. Führe die folgenden Schritte der Reihe nach aus.
 
+> **Releases laufen NUR über diesen Skill — niemals `git tag vX.Y.Z` von Hand.**
+> Der CI baut die Release-Notes aus dem **obersten `## `-Abschnitt der `CHANGELOG.md`**. Wird ohne CHANGELOG-Update getaggt, veröffentlicht der CI die *alten* Notes des Vorgänger-Releases. Schritt 4 (CHANGELOG **vor** dem Tag aktualisieren) verhindert das; ein CI-Guard (`CHANGELOG passt zum Tag` in `release.yml`) **erzwingt** es und lässt das Release fehlschlagen, wenn der CHANGELOG-Kopf nicht zur getaggten Version passt.
+
 ## Schritt 1: Änderungen seit letztem Release ermitteln
 
 Ermittle zuerst den letzten Tag:
@@ -46,6 +49,8 @@ Halte Stichpunkte kurz (max. 80 Zeichen) und benutzerfreundlich. Warte auf Best�
 Füge den bestätigten Eintrag am Anfang von `CHANGELOG.md` ein, gefolgt von `---`. Bestehende Einträge bleiben unberührt.
 
 ## Schritt 5: Committen, taggen und pushen
+
+Reihenfolge ist bindend: CHANGELOG-Commit **vor** dem Tag, damit der CI-Guard (`CHANGELOG passt zum Tag`) grün ist und die Notes zur Version passen.
 
 ```bash
 git add CHANGELOG.md

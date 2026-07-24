@@ -1,3 +1,24 @@
+## v1.18.1 — 2026-07-24
+
+### Behoben
+- Übersprungene Güsse werden wieder genau einmal im Verlauf protokolliert
+- Chart-Beschriftung nennt dieselbe Gieß-Empfehlung wie /gießcheck (statt einer eigenen Regel)
+
+---
+
+## v1.18.0 — 2026-07-24
+
+### Neu
+- Nach einem Update meldet sich die Steuerzentrale beim Start selbst — mit neuer Version oder Rollback
+- Vor einem manuellen Guss fragt der Bot nach, wenn Regen klar dagegen spricht
+
+### Behoben
+- Wetterabruf übersteht vereinzelte Server-Aussetzer (kurzer Retry)
+- Fehlende Regenwahrscheinlichkeit führt nicht mehr zum leeren Wetterbericht
+- Übersprungene und reduzierte Güsse sind im Journal nachvollziehbar
+
+---
+
 ## v1.17.0 — 2026-07-19
 
 ### Behoben

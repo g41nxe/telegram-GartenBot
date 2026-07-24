@@ -36,6 +36,16 @@ jobs:
           echo "$VERSION"     > VERSION
           echo "$Z2M_VERSION" > Z2M_VERSION
 
+      - name: CHANGELOG passt zum Tag
+        run: |
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          TOP=$(grep -m1 '^## ' CHANGELOG.md | sed -E 's/^##[[:space:]]+([^[:space:]]+).*/\1/')
+          if [ "$TOP" != "$VERSION" ]; then
+            echo "::error::CHANGELOG.md beginnt mit '$TOP', getaggt wurde '$VERSION'. Die Release-Notes stammen aus dem obersten CHANGELOG-Abschnitt — ohne passenden Eintrag wuerden alte Notes veroeffentlicht. Nutze den 'release'-Skill (aktualisiert CHANGELOG vor dem Tag), NICHT 'git tag' von Hand."
+            exit 1
+          fi
+          echo "CHANGELOG-Kopf '$TOP' passt zum Tag."
+
       - name: Release-Notes extrahieren
         id: notes
         run: |
