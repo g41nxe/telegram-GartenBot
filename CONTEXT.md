@@ -129,8 +129,12 @@ Im Tagesbericht stammen Regen und Temperatur des Gestern-Blocks im Normalfall vo
 _Avoid_: geschätzt, lokal gemessen, online/offline, ERA5 (benutzersichtbar).
 
 **Software-Update (OTA)**:
-Das Over-the-Air Update-Verfahren, das dem Benutzer über den Telegram-Bot ermöglicht, neue Releases direkt von GitHub herunterzuladen und auf der Steuerzentrale vollautomatisch zu installieren.
+Das Over-the-Air Update-Verfahren, das dem Benutzer über den Telegram-Bot ermöglicht, neue Releases direkt von GitHub herunterzuladen und auf der Steuerzentrale vollautomatisch zu installieren. Nach einem Update meldet sich die Steuerzentrale **beim nächsten Daemon-Start** von selbst — erfolgreich mit der neuen Version, oder im Fehlerfall mit dem durchgeführten Rollback (ADR 0044).
 _Avoid_: Patching, Neu-Installation, Upgrade-Skript
+
+**Gemeldete Version**:
+Die zuletzt per Telegram angekündigte Versionskennung (`announced_version` in den System-Metadaten). Der Daemon vergleicht sie beim Start mit der installierten `VERSION`; nur bei Unterschied meldet er ein aktives Update. So bleibt ein reiner Neustart (ohne Versionswechsel) stumm (ADR 0044).
+_Avoid_: letzte Version, Update-Flag.
 
 **Garten-Kamera**:
 Die M5Stack Timer Camera F, die batteriebetrieben im Garten Bilder aufnimmt und zur Steuerzentrale sendet.
