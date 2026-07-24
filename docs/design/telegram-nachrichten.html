@@ -499,6 +499,13 @@ Erneut versuchen über ⚙️ Einstellungen ▸ 📷 Kamera koppeln.</div>
     <div class="bubble">❌ Update abgebrochen.</div>
   </div>
 
+  <div class="phone">
+    <div class="src">Update-Benachrichtigung beim Daemon-Start (ADR 0044) · <code>_on_software_update_activated</code> / <code>_on_software_update_rolled_back</code> — automatisch, kein manueller Auslöser</div>
+    <div class="bubble">🚀 <b>Update aktiv</b> — jetzt auf <code>v1.17.0</code></div>
+    <div class="bubble">❌ <b>Update fehlgeschlagen</b> — <code>v1.17.0</code> ließ sich nicht installieren, läuft weiter auf <code>v1.16.1</code></div>
+    <div class="note">Ausgelöst beim Neustart des Daemons per Versions-Diff gegen die zuletzt gemeldete Version (<code>announced_version</code> in <code>system_metadata</code>). Erfolg = neue Version läuft; Fehlschlag = Rollback-Marker <code>/tmp/garden-ota-rollback</code>, den <code>update.sh</code> hinterlegt. Ein reiner Neustart ohne Versionswechsel bleibt still (höchstens-einmal).</div>
+  </div>
+
 
   <div class="phone">
     <div class="src">Manuelle Bewässerung · „🚿 Bewässern" → Art → Ventil → Details (Feature 0031)</div>

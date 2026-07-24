@@ -36,6 +36,7 @@ from ..core.camera_events import (CameraInactivityAlertTriggered, CameraInactivi
                                   TimedPhotoCaptured, TimedPhotoDeliveryFailed,
                                   CameraDelayAlertTriggered, CameraDelayAlertResolved)
 from ..core.sensor_events import RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved, RainEventStarted, RainEventEnded
+from ..core.system_events import SoftwareUpdateActivated, SoftwareUpdateRolledBack
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
 
@@ -2334,8 +2335,9 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.answer_callback_query(cb_id, "Zeitplan nicht gefunden", show_alert=True)
 
     elif data == "update_confirm":
+        # Erfolg/Rollback meldet der Daemon beim nächsten Start selbst (ADR 0044) —
+        # kein Notify-Marker mehr nötig.
         telegram_client.answer_callback_query(cb_id, "Update wird gestartet...")
-        Path("/tmp/garden-ota-notify").write_text(str(chat_id))
         scripts_dir = Path(__file__).resolve().parent.parent.parent.parent / "scripts"
         subprocess.Popen(["bash", str(scripts_dir / "update.sh")])
         telegram_client.send_message(
@@ -3029,6 +3031,17 @@ def _format_rain_duration(minutes: int) -> str:
     return f"{minutes} Min"
 
 
+def _on_software_update_activated(event: SoftwareUpdateActivated):
+    telegram_client.broadcast_notification(f"🚀 *Update aktiv* — jetzt auf `{event.version}`")
+
+
+def _on_software_update_rolled_back(event: SoftwareUpdateRolledBack):
+    telegram_client.broadcast_notification(
+        f"❌ *Update fehlgeschlagen* — `{event.target_version}` ließ sich nicht installieren, "
+        f"läuft weiter auf `{event.current_version}`"
+    )
+
+
 def _on_rain_event_started(event: RainEventStarted):
     # Ohne Menge: die Zahl wäre stets die 0,5 mm des ersten Kipps (ADR 0043).
     telegram_client.broadcast_notification("🌧 *Regen erkannt*")
@@ -3105,6 +3118,8 @@ def subscribe_event_handlers():
     _global_bus.subscribe(CameraInactivityAlertResolved, _on_camera_inactivity_resolved)
     _global_bus.subscribe(RainEventStarted, _on_rain_event_started)
     _global_bus.subscribe(RainEventEnded, _on_rain_event_ended)
+    _global_bus.subscribe(SoftwareUpdateActivated, _on_software_update_activated)
+    _global_bus.subscribe(SoftwareUpdateRolledBack, _on_software_update_rolled_back)
     _global_bus.subscribe(WateringCycleInterrupted, _on_watering_interrupted)
     _global_bus.subscribe(RainSensorInactivityAlertTriggered, _on_rain_sensor_inactivity_alert)
     _global_bus.subscribe(RainSensorInactivityAlertResolved, _on_rain_sensor_inactivity_resolved)
