@@ -420,5 +420,51 @@ class TestYesterdayTempStats(unittest.TestCase):
         self.assertIsNone(weather.get_yesterday_temp_stats(48.0, 11.0))
 
 
+class TestRainProbHandlesNull(unittest.TestCase):
+    """Ticket 11b: Open-Meteo liefert precipitation_probability je nach Modell teils null.
+    max() über ein Fenster mit null wirft TypeError → get_weather_data lieferte None →
+    irreführender 0-0-Bericht. Das Fenster muss null herausfiltern (wie die Summen)."""
+
+    def _call_and_capture_event(self, response_bytes, mock_urlopen_obj):
+        mock_urlopen_obj.return_value.__enter__.return_value = MagicMock(
+            read=lambda: response_bytes
+        )
+        captured = []
+        _global_bus.subscribe(WeatherDataFetched, captured.append)
+        try:
+            res = weather.get_weather_data(52.5, 13.5)
+        finally:
+            _global_bus.unsubscribe(WeatherDataFetched, captured.append)
+        return res, (captured[0] if captured else None)
+
+    @patch("urllib.request.urlopen")
+    def test_null_in_probability_window_does_not_crash(self, mock_urlopen):
+        response = json.loads(_make_api_response().decode("utf-8"))
+        # Fenster der nächsten 24h beginnt bei current_idx (=24). null + reale Werte mischen.
+        probs = [10] * 48
+        probs[24] = None      # aktuelle Stunde: null
+        probs[30] = None      # weitere null im Fenster
+        probs[36] = 80        # höchster realer Wert im Fenster
+        response["hourly"]["precipitation_probability"] = probs
+        payload = json.dumps(response).encode("utf-8")
+
+        res, event = self._call_and_capture_event(payload, mock_urlopen)
+
+        self.assertIsNotNone(res, "get_weather_data darf bei null in precip_prob nicht None liefern")
+        self.assertIsNotNone(event)
+        self.assertEqual(event.rain_prob, 80, "rain_prob = max der Nicht-null-Werte im Fenster")
+
+    @patch("urllib.request.urlopen")
+    def test_all_null_probability_window_yields_zero(self, mock_urlopen):
+        response = json.loads(_make_api_response().decode("utf-8"))
+        response["hourly"]["precipitation_probability"] = [None] * 48
+        payload = json.dumps(response).encode("utf-8")
+
+        res, event = self._call_and_capture_event(payload, mock_urlopen)
+
+        self.assertIsNotNone(res)
+        self.assertEqual(event.rain_prob, 0, "nur null im Fenster → 0%")
+
+
 if __name__ == "__main__":
     unittest.main()

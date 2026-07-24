@@ -154,14 +154,13 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
         end_forecast_idx = min(len(precip), current_idx + 24)
         rain_next_24h = sum(p for p in precip[current_idx:end_forecast_idx] if p is not None)
         
-        # Berechne die maximale Regenwahrscheinlichkeit für die nächsten 24 Stunden
+        # Berechne die maximale Regenwahrscheinlichkeit für die nächsten 24 Stunden.
+        # Open-Meteo liefert precipitation_probability je nach Modell teils null — wie bei den
+        # Regen-Summen (Zeile 155) null herausfiltern, sonst wirft max() TypeError (Ticket 11b).
         if precip_probs and current_idx < len(precip_probs):
             end_prob_idx = min(len(precip_probs), current_idx + 24)
-            rain_prob = max(precip_probs[current_idx:end_prob_idx])
-            try:
-                rain_prob = int(rain_prob)
-            except (TypeError, ValueError):
-                rain_prob = 0
+            prob_window = [p for p in precip_probs[current_idx:end_prob_idx] if p is not None]
+            rain_prob = int(max(prob_window)) if prob_window else 0
         else:
             rain_prob = 0
             
