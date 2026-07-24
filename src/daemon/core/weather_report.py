@@ -24,6 +24,34 @@ class HeuteWeather(NamedTuple):
     stand: str | None        # "HH:MM Uhr" nur im Cache-Rückfall, sonst None
 
 
+def is_cache_fresh(cached: dict | None, now: datetime, max_age) -> bool:
+    """Ticket 2jq (rein): Ist der gecachte Wettereintrag jung genug, um den Live-Abruf zu
+    überspringen? Der Adapter nutzt dies als Tor, ob überhaupt live geholt wird."""
+    if not cached:
+        return False
+    try:
+        cache_time = datetime.fromisoformat(cached["timestamp"])
+    except (KeyError, ValueError, TypeError):
+        return False
+    return (now - cache_time) < max_age
+
+
+def resolve_watering_source(cached: dict | None, now: datetime, forecast_window, live_ok: bool) -> str:
+    """Ticket 2jq (rein): Quellen-Wahl NACH dem Frische-Check (Cache war nicht frisch).
+    Liefert 'live' (Live-Abruf erfolgreich → frisch nachgeladener Cache), 'stale' (Live weg,
+    aber Cache noch im Vorhersagefenster) oder 'failsafe' (nichts Verwertbares)."""
+    if live_ok:
+        return "live"
+    if cached:
+        try:
+            cache_time = datetime.fromisoformat(cached["timestamp"])
+            if (now - cache_time) < forecast_window:
+                return "stale"
+        except (KeyError, ValueError, TypeError):
+            pass
+    return "failsafe"
+
+
 def resolve_heute_weather(
     live: tuple | None,
     cached: dict | None,

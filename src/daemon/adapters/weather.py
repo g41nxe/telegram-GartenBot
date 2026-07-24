@@ -9,6 +9,7 @@ from . import database
 from .mqtt_client import _global_bus
 from ..core.scheduler_events import WeatherDataFetched
 from ..core.watering_advice import evaluate_watering, WateringDecision
+from ..core.weather_report import is_cache_fresh, resolve_watering_source
 
 WEATHER_FORECAST_WINDOW_SECONDS = 86400  # Open-Meteo liefert genau 24h voraus
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
@@ -339,36 +340,32 @@ def evaluate_watering_factor() -> WateringDecision:
     now = datetime.now()
 
     cached = database.get_last_weather()
-    cache_age = None
-    if cached:
-        try:
-            cache_time = datetime.fromisoformat(cached["timestamp"])
-            cache_age = now - cache_time
-        except (KeyError, ValueError):
-            cached = None
 
-    # 1. Frischer Cache
-    if cached and cache_age is not None and cache_age < max_age:
-        logger.info(f"Gieß-Faktor aus DB-Cache (Alter: {cache_age}).")
+    # 1. Frischer Cache — Live gar nicht erst holen (reine Politik: is_cache_fresh, Ticket 2jq).
+    if is_cache_fresh(cached, now, max_age):
+        logger.info("Gieß-Faktor aus frischem DB-Cache.")
         return _watering_decision_from_cache(cached)
 
-    # 2. Cache veraltet oder fehlend — Live-API versuchen
+    # 2. Cache veraltet/fehlend — Live-API versuchen (I/O).
     try:
         live_ok = get_weather_data(config.LATITUDE, config.LONGITUDE) is not None
     except Exception as e:
         logger.error(f"Live-Wetterabfrage fehlgeschlagen: {e}")
         live_ok = False
-    if live_ok:
+
+    # 3. Reine Quellen-Wahl: live > stale-im-Fenster > fail-safe.
+    source = resolve_watering_source(cached, now, forecast_window, live_ok)
+    if source == "live":
         refreshed = database.get_last_weather()
         if refreshed:
             return _watering_decision_from_cache(refreshed)
-
-    # 3. Live fehlgeschlagen — stale Cache nutzen falls Vorhersagefenster noch gültig
-    if cached and cache_age is not None and cache_age < forecast_window:
-        logger.warning(f"Live nicht erreichbar. Nutze veralteten Cache (Alter: {cache_age}).")
+        # Live meldete Erfolg, aber kein Eintrag lesbar → wie ohne Live neu entscheiden.
+        source = resolve_watering_source(cached, now, forecast_window, live_ok=False)
+    if source == "stale":
+        logger.warning("Live nicht erreichbar. Nutze veralteten Cache im Vorhersagefenster.")
         return _watering_decision_from_cache(cached)
 
-    # 4. Kein verwertbarer Cache — fail-safe: voller Guss
+    # 4. Kein verwertbarer Cache — fail-safe: voller Guss.
     logger.error("Keine Wetterdaten — Bewässerung zur Sicherheit durchgeführt.")
     return WateringDecision(
         factor=1.0,

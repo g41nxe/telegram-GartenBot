@@ -5,7 +5,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from daemon.core.weather_report import resolve_heute_weather, HeuteWeather
+from daemon.core.weather_report import (
+    resolve_heute_weather, HeuteWeather, is_cache_fresh, resolve_watering_source,
+)
 
 
 # Live-Tupel-Layout (wie weather.get_weather_data):
@@ -71,6 +73,49 @@ class TestResolveHeuteWeather(unittest.TestCase):
 
         self.assertFalse(result.available)
         self.assertIsNone(result.stand)
+
+
+class TestIsCacheFresh(unittest.TestCase):
+    """Ticket 2jq: reines Praedikat 'ist der Cache frisch genug, um Live gar nicht zu holen'."""
+
+    NOW = datetime(2026, 7, 24, 12, 0, 0)
+
+    def _cached(self, minutes_ago):
+        return {"timestamp": (self.NOW - timedelta(minutes=minutes_ago)).isoformat()}
+
+    def test_fresh_within_max_age(self):
+        self.assertTrue(is_cache_fresh(self._cached(10), self.NOW, timedelta(minutes=30)))
+
+    def test_stale_beyond_max_age(self):
+        self.assertFalse(is_cache_fresh(self._cached(45), self.NOW, timedelta(minutes=30)))
+
+    def test_none_cache_not_fresh(self):
+        self.assertFalse(is_cache_fresh(None, self.NOW, timedelta(minutes=30)))
+
+    def test_bad_timestamp_not_fresh(self):
+        self.assertFalse(is_cache_fresh({"timestamp": "garbage"}, self.NOW, timedelta(minutes=30)))
+
+
+class TestResolveWateringSource(unittest.TestCase):
+    """Ticket 2jq: reine Quellen-Wahl NACH dem Frische-Check — live > stale-im-Fenster > fail-safe."""
+
+    NOW = datetime(2026, 7, 24, 12, 0, 0)
+    WINDOW = timedelta(hours=24)
+
+    def _cached(self, hours_ago):
+        return {"timestamp": (self.NOW - timedelta(hours=hours_ago)).isoformat()}
+
+    def test_live_ok_uses_live(self):
+        self.assertEqual(resolve_watering_source(self._cached(2), self.NOW, self.WINDOW, live_ok=True), "live")
+
+    def test_live_fail_stale_within_window(self):
+        self.assertEqual(resolve_watering_source(self._cached(2), self.NOW, self.WINDOW, live_ok=False), "stale")
+
+    def test_live_fail_beyond_window_failsafe(self):
+        self.assertEqual(resolve_watering_source(self._cached(30), self.NOW, self.WINDOW, live_ok=False), "failsafe")
+
+    def test_no_cache_no_live_failsafe(self):
+        self.assertEqual(resolve_watering_source(None, self.NOW, self.WINDOW, live_ok=False), "failsafe")
 
 
 if __name__ == "__main__":
