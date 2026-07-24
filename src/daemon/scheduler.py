@@ -164,12 +164,19 @@ def _trigger_scheduled_watering(sched: dict):
     plan = plan_scheduled_run(duration, volume, decision)
 
     if plan.skip:
+        # Journalspur (Ticket 06v): im Log klar als bewusster Skip erkennbar, nicht als stiller Ausfall.
+        logger.info(f"Zeitplan '{name}': Guss bewusst übersprungen — {plan.skip_reason}")
         database.log_watering(duration, "schedule", "skipped", f"Zeitplan '{name}': {plan.skip_reason}")
         _global_bus.publish(WateringSkipped(name, plan.skip_reason, schedule_id=schedule_id))
         return
 
     # Skalierter Guss: Zeitplan-Kopie mit reduzierten Werten erstellen
     if plan.scaled:
+        # Journalspur (Ticket 06v): reduzierter Guss im Log nachvollziehbar.
+        logger.info(
+            f"Zeitplan '{name}': Guss auf {int(plan.factor * 100)} % skaliert "
+            f"({plan.duration_original}→{plan.duration} Min) — {', '.join(plan.reasons)}"
+        )
         _global_bus.publish(WateringScaled(
             schedule_name=name,
             factor=plan.factor,

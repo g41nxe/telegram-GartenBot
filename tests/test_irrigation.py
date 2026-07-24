@@ -516,6 +516,47 @@ class TestGardenIrrigation(unittest.TestCase):
             mock_fail.assert_called_once()
             self.assertIn("Failed start", mock_fail.call_args[0][0].details)
             
+    def test_15a_skip_leaves_journal_trace(self):
+        """Ticket 06v: übersprungener Guss muss eine INFO-Journalspur hinterlassen,
+        damit 'bewusst übersprungen' im Log von 'still fehlgeschlagen' unterscheidbar ist."""
+        from daemon import scheduler
+        from daemon.core.watering_advice import WateringDecision
+
+        skip_decision = WateringDecision(
+            factor=0.0, verdict="🌧 Kein Gießen nötig", reasons=["13 mm Regen."], skip=True
+        )
+        with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=skip_decision):
+            with self.assertLogs("garden_scheduler", level="INFO") as cm:
+                scheduler._trigger_scheduled_watering({"name": "Abends", "duration_minutes": 10})
+
+        joined = " ".join(cm.output)
+        self.assertIn("Abends", joined)
+        self.assertIn("übersprungen", joined.lower())
+
+    def test_15a2_scaled_leaves_journal_trace(self):
+        """Ticket 06v: auch der skalierte Guss braucht eine INFO-Journalspur."""
+        from daemon import scheduler
+        from daemon.core.watering_advice import WateringDecision
+
+        scaled_decision = WateringDecision(
+            factor=0.5, verdict="💧 Reduzierter Guss (50 %)", reasons=["1.5 mm Regen."], skip=False
+        )
+        original_start = scheduler._controller.start_watering
+        scheduler._controller.start_watering = lambda *a, **k: (True, "OK")
+        try:
+            with patch("daemon.adapters.weather.evaluate_watering_factor", return_value=scaled_decision):
+                with self.assertLogs("garden_scheduler", level="INFO") as cm:
+                    scheduler._trigger_scheduled_watering({
+                        "name": "Morgens", "duration_minutes": 10, "target_volume_liters": 20,
+                        "execution_mode": "sequential",
+                    })
+        finally:
+            scheduler._controller.start_watering = original_start
+
+        joined = " ".join(cm.output)
+        self.assertIn("Morgens", joined)
+        self.assertIn("skaliert", joined.lower())
+
     def test_15b_scheduler_graduated_scaling(self):
         """Graduierte Gieß-Steuerung: Faktor 50% halbiert Dauer und Volumen, publiziert WateringScaled."""
         from daemon import scheduler
