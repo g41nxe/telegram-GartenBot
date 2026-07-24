@@ -10,16 +10,6 @@ from ..adapters.mqtt_client import _global_bus
 logger = logging.getLogger("garden_daily_report")
 
 
-def _lqi_label(avg_lqi: float) -> str:
-    if avg_lqi >= 180:
-        return "Sehr gut"
-    if avg_lqi >= 120:
-        return "Gut"
-    if avg_lqi >= 60:
-        return "Ausreichend"
-    return "Kritisch"
-
-
 def _sensor_issues() -> list:
     """Regensensor-Warnungen im selben Format wie Ventil-Meldungen.
 
@@ -129,103 +119,6 @@ def _format_heute(
     else:
         line += f"{rain_prob} % ☂"
     return line
-
-
-_RAIN_DEVIATION_THRESHOLD_MM = 2.0  # DWD-Schwellenwert für signifikante Abweichung
-
-
-def _format_watering_section(success_count: int, failed_count: int, total_volume: float) -> str:
-    if success_count == 0 and failed_count == 0:
-        return "💧 In den letzten 24h wurde nicht bewässert."
-    if success_count == 1:
-        base = f"💧 In den letzten 24h wurde 1× bewässert — {total_volume} Liter gesamt."
-    else:
-        base = f"💧 In den letzten 24h wurde {success_count}× bewässert — {total_volume} Liter gesamt."
-    if failed_count == 1:
-        base += " 1 Zyklus fehlgeschlagen."
-    elif failed_count > 1:
-        base += f" {failed_count} Zyklen fehlgeschlagen."
-    return base
-
-
-def _format_weather_section(
-    temp: float, temp_min: float, temp_max: float,
-    weather_desc: str,
-    rain_last: float, rain_next: float, rain_prob: int,
-    yesterday_rain_next: float | None,
-    rain_last_source: str = "measured",
-) -> str:
-    parts = [f"{weather_desc}, heute {temp_min}–{temp_max} °C."]
-
-    if rain_last_source == "sensor":
-        source_label = "(lokal gemessen)"
-    elif rain_last_source == "measured":
-        source_label = "(ERA5-Reanalyse)"
-    else:
-        source_label = ""
-
-    if rain_last_source not in ("measured", "sensor"):
-        parts.append("Gemessene Regendaten zurzeit nicht verfügbar.")
-    else:
-        if yesterday_rain_next is not None:
-            deviation = rain_last - yesterday_rain_next
-            if deviation > _RAIN_DEVIATION_THRESHOLD_MM:
-                parts.append(
-                    f"Mehr Regen als erwartet: {rain_last} mm gefallen {source_label} (Vorhersage gestern: {yesterday_rain_next} mm)."
-                )
-            elif deviation < -_RAIN_DEVIATION_THRESHOLD_MM:
-                parts.append(
-                    f"Weniger Regen als erwartet: {rain_last} mm gefallen {source_label} (Vorhersage gestern: {yesterday_rain_next} mm)."
-                )
-            elif rain_last > 0:
-                parts.append(f"{rain_last} mm Regen gefallen {source_label}.")
-        elif rain_last > 0:
-            parts.append(f"{rain_last} mm Regen gefallen {source_label}.")
-
-    if rain_next > 10.0:
-        parts.append(f"Heute starker Regen erwartet ({rain_next} mm, {rain_prob}%).")
-    elif rain_next >= 2.0:
-        parts.append(f"Heute mäßiger Regen erwartet ({rain_next} mm, {rain_prob}%).")
-    elif rain_next > 0:
-        parts.append(f"Heute wenig Regen erwartet ({rain_next} mm, {rain_prob}%).")
-    else:
-        parts.append(f"Heute trocken ({rain_prob}% Regenwahrscheinlichkeit).")
-
-    return " ".join(parts)
-
-
-def _format_valve_line(
-    wish_name: str, mqtt_name: str,
-    count: int, avg_lqi: float, max_gap_hours: float,
-    has_watchdog_alert: bool, battery: int, abnormal_state: str,
-) -> str:
-    warnings = []
-    if battery <= config.get_setting("BATTERY_WARNING_THRESHOLD", 20):
-        warnings.append(f"🪫 Batterie {battery}%")
-    if abnormal_state != "normal":
-        warnings.append(f"🚨 Anomalie: {abnormal_state}")
-
-    if count == 0:
-        signal_text = "Keine Verbindung ⚠️"
-    else:
-        if avg_lqi >= 180:
-            quality = "sehr gutes Signal"
-        elif avg_lqi >= 120:
-            quality = "gutes Signal"
-        elif avg_lqi >= 60:
-            quality = "ausreichendes Signal"
-        else:
-            quality = "schwaches Signal"
-        gap_text = f", max. {max_gap_hours:.0f}h Funkstille" if max_gap_hours >= 1 else ""
-        watchdog_text = " ⚠️" if has_watchdog_alert else ""
-        signal_text = f"{quality} (Ø {avg_lqi:.0f} LQI, {count} Meldungen{gap_text}){watchdog_text}"
-
-    line = f"📡 *{wish_name}* — {signal_text}"
-    if warnings:
-        line += " | " + ", ".join(warnings)
-    return line
-
-
 def generate_daily_report(today_str: str) -> str:
     """Generiert den Morgen-Bericht (Kurzform wenn grün, Problemfall sonst)."""
     # 1. Guss-Statistiken
