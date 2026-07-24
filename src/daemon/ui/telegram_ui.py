@@ -1309,7 +1309,7 @@ def _maybe_confirm_manual_watering(chat_id: int, dur: int, vol: int, mqtt_name: 
     except Exception as e:
         logger.warning(f"Kontextprüfung vor manuellem Guss fehlgeschlagen: {e} — starte ohne Rückfrage.")
         return False
-    if not getattr(decision, "skip", False):
+    if not decision.skip:
         return False
     _state_set(manual_states, chat_id, {"pending_water": {"dur": dur, "vol": vol, "mqtt_name": mqtt_name}})
     reason_text = "\n".join(f"• {r}" for r in decision.reasons)
@@ -2127,11 +2127,12 @@ def _process_callback_query(cb_obj: dict):
         # Feature 0020: Nutzer übergeht den Kontext-Hinweis — Guss mit gemerkten Werten starten.
         state = _state_get(manual_states, chat_id) or {}
         pending = state.get("pending_water")
-        _state_del(manual_states, chat_id)
         telegram_client.answer_callback_query(cb_id)
         telegram_client.edit_message_reply_markup(chat_id, message_id, None)
         if not pending:
+            # Veralteter/doppelter Tap: keinen evtl. neu gestarteten Wizard-State anfassen.
             return
+        _state_del(manual_states, chat_id)
         dur, vol, mqtt_name = pending["dur"], pending["vol"], pending["mqtt_name"]
         if _watering_ctrl:
             success, response = _watering_ctrl.start_watering(dur, vol, "manual", mqtt_name=mqtt_name)

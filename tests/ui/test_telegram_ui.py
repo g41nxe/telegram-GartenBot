@@ -631,6 +631,36 @@ class TestContextSensitiveWateringHint(unittest.TestCase):
 
         mock_ctrl.start_watering.assert_called_once_with(10, 25, "manual", mqtt_name="garden_valve")
 
+    @patch("daemon.ui.telegram_ui._weather_adapter")
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_typed_volume_path_asks_on_skip(self, mock_client, mock_ctrl, mock_w):
+        """Auch der getippte Mengen-Pfad (man_custom_volume) muss bei skip nachfragen."""
+        mock_w.evaluate_watering_factor.return_value = self._decision(skip=True)
+        _state_set(manual_states, 100, {"step": "man_custom_volume", "duration": 12, "mqtt_name": "garden_valve"})
+
+        _process_message({"chat": {"id": 100}, "message_id": 5, "text": "40"})
+
+        mock_ctrl.start_watering.assert_not_called()
+        text = mock_client.send_message.call_args[0][1]
+        self.assertIn("Trotzdem gießen", text)
+        # gemerkte Werte für water_anyway
+        self.assertEqual(_state_get(manual_states, 100)["pending_water"],
+                         {"dur": 12, "vol": 40, "mqtt_name": "garden_valve"})
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_water_anyway_without_pending_is_noop(self, mock_client, mock_ctrl):
+        """Veralteter/doppelter water_anyway-Tap: kein Start, fremder State bleibt unangetastet."""
+        _state_set(manual_states, 100, {"step": 1, "mqtt_name": "garden_valve"})  # frischer Wizard
+
+        _process_callback_query(self._cb("water_anyway"))
+
+        mock_ctrl.start_watering.assert_not_called()
+        remaining = _state_get(manual_states, 100)   # fremder Wizard NICHT gelöscht
+        self.assertIsNotNone(remaining)
+        self.assertEqual(remaining["step"], 1)
+
 
 class TestNebelUI(unittest.TestCase):
     """Sofort-Nebel, Wizard-Nebel-Zweig und Benachrichtigungen (Feature 0032)."""

@@ -174,7 +174,7 @@ def _trigger_scheduled_watering(sched: dict):
     if plan.scaled:
         # Journalspur (Ticket 06v): reduzierter Guss im Log nachvollziehbar.
         logger.info(
-            f"Zeitplan '{name}': Guss auf {int(plan.factor * 100)} % skaliert "
+            f"Zeitplan '{name}': Guss auf {int(round(plan.factor * 100))} % skaliert "
             f"({plan.duration_original}→{plan.duration} Min) — {', '.join(plan.reasons)}"
         )
         _global_bus.publish(WateringScaled(
