@@ -1651,12 +1651,13 @@ def _process_message(msg_obj: dict):
         report_text = _generate_daily_report(today_str)
 
         # Chart-Caption spiegelt die reale Gieß-Entscheidung (Ticket ccc) — Aufrufer reicht sie ein.
+        # Fällt die Bewertung aus, geht das Chart mit Kopf-only-Caption trotzdem raus (None).
         try:
             _chart_decision = _weather_adapter.evaluate_watering_factor()
-            chart_result = _chart.generate_weather_chart(_chart_decision)
         except Exception as e:
-            logger.warning(f"Wetterchart übersprungen: {e}")
-            chart_result = None
+            logger.warning(f"Gieß-Entscheidung fürs Chart nicht verfügbar: {e}")
+            _chart_decision = None
+        chart_result = _chart.generate_weather_chart(_chart_decision)
         if chart_result:
             image_bytes, caption = chart_result
             telegram_client.send_photo(chat_id, image_bytes, caption=caption)
@@ -2983,13 +2984,13 @@ def _on_nebel_interval_ended(event: NebelIntervalEnded):
 
 def _on_daily_report(event: DailyReportTriggered):
     from ..adapters import chart
-    # Chart-Caption aus der realen Gieß-Entscheidung (Ticket ccc).
+    # Chart-Caption aus der realen Gieß-Entscheidung (Ticket ccc); fällt sie aus, Kopf-only.
     try:
         decision = _weather_adapter.evaluate_watering_factor()
-        chart_result = chart.generate_weather_chart(decision)
     except Exception as e:
-        logger.warning(f"Wetterchart im Tagesbericht übersprungen: {e}")
-        chart_result = None
+        logger.warning(f"Gieß-Entscheidung fürs Tagesbericht-Chart nicht verfügbar: {e}")
+        decision = None
+    chart_result = chart.generate_weather_chart(decision)
     if chart_result:
         image_bytes, caption = chart_result
         telegram_client.broadcast_photo(image_bytes, caption=caption)

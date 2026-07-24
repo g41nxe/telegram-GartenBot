@@ -188,6 +188,18 @@ class TestGenerateWeatherChart(unittest.TestCase):
         _, caption = chart_module.generate_weather_chart(_SKIP_DECISION)
         self.assertIn("Kein Gießen", caption)
 
+    @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
+    @patch("daemon.adapters.chart.urllib.request.urlopen")
+    def test_caption_header_only_when_decision_none(self, mock_urlopen, _):
+        """Ticket ccc/Review: fällt die Gieß-Entscheidung aus (None), geht das Chart mit
+        Kopf-only-Caption trotzdem raus (Resilienz), kein Verdikt."""
+        mock_urlopen.return_value = _make_mock_urlopen()
+        result = chart_module.generate_weather_chart(None)
+        self.assertIsNotNone(result)
+        _, caption = result
+        self.assertIn("Wetterverlauf", caption)
+        self.assertNotIn("Guss", caption)
+
     # --- Chart-Inhalt ---
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)

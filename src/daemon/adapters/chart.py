@@ -36,8 +36,12 @@ def _bar_color(prob: int) -> str:
 def _build_caption(decision) -> str:
     """Caption = Kopf + das reale Gieß-Verdikt (Ticket ccc). Damit spricht der Chart dieselbe
     Wahrheit wie Scheduler und Gießcheck (WateringDecision.verdict), statt eine parallele
-    binäre Regel."""
-    return f"🌤 Wetterverlauf — letzte & nächste 24h\n{decision.verdict}"
+    binäre Regel. Ohne Entscheidung (Bewertung fiel aus) bleibt der Kopf allein — das Chart
+    geht trotzdem raus (Resilienz)."""
+    header = "🌤 Wetterverlauf — letzte & nächste 24h"
+    if decision is None:
+        return header
+    return f"{header}\n{decision.verdict}"
 
 
 def generate_weather_chart(decision) -> tuple[bytes, str] | None:
