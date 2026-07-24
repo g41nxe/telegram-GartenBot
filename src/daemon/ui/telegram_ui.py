@@ -1650,7 +1650,13 @@ def _process_message(msg_obj: dict):
         today_str = datetime.now().strftime("%Y-%m-%d")
         report_text = _generate_daily_report(today_str)
 
-        chart_result = _chart.generate_weather_chart()
+        # Chart-Caption spiegelt die reale Gieß-Entscheidung (Ticket ccc) — Aufrufer reicht sie ein.
+        try:
+            _chart_decision = _weather_adapter.evaluate_watering_factor()
+            chart_result = _chart.generate_weather_chart(_chart_decision)
+        except Exception as e:
+            logger.warning(f"Wetterchart übersprungen: {e}")
+            chart_result = None
         if chart_result:
             image_bytes, caption = chart_result
             telegram_client.send_photo(chat_id, image_bytes, caption=caption)
@@ -2977,7 +2983,13 @@ def _on_nebel_interval_ended(event: NebelIntervalEnded):
 
 def _on_daily_report(event: DailyReportTriggered):
     from ..adapters import chart
-    chart_result = chart.generate_weather_chart()
+    # Chart-Caption aus der realen Gieß-Entscheidung (Ticket ccc).
+    try:
+        decision = _weather_adapter.evaluate_watering_factor()
+        chart_result = chart.generate_weather_chart(decision)
+    except Exception as e:
+        logger.warning(f"Wetterchart im Tagesbericht übersprungen: {e}")
+        chart_result = None
     if chart_result:
         image_bytes, caption = chart_result
         telegram_client.broadcast_photo(image_bytes, caption=caption)

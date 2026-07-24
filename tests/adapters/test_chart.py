@@ -9,6 +9,10 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 import daemon.adapters.chart as chart_module
+from daemon.core.watering_advice import WateringDecision
+
+_FULL_DECISION = WateringDecision(factor=1.0, verdict="🚿 Voller Guss", reasons=[], skip=False)
+_SKIP_DECISION = WateringDecision(factor=0.0, verdict="🌧 Kein Gießen nötig", reasons=["6 mm Regen."], skip=True)
 
 # Festes "Jetzt" für Jetzt-Markierung-Tests
 _NOW_DT = dt_module.datetime(2026, 6, 22, 14, 0, 0)
@@ -106,42 +110,42 @@ class TestGenerateWeatherChart(unittest.TestCase):
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value=None)
     def test_returns_none_when_no_weather_data(self, _):
-        result = chart_module.generate_weather_chart()
+        result = chart_module.generate_weather_chart(_FULL_DECISION)
         self.assertIsNone(result)
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value={
         "hourly_forecast_json": None
     })
     def test_returns_none_when_hourly_json_is_null(self, _):
-        result = chart_module.generate_weather_chart()
+        result = chart_module.generate_weather_chart(_FULL_DECISION)
         self.assertIsNone(result)
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value={
         "hourly_forecast_json": ""
     })
     def test_returns_none_when_hourly_json_is_empty(self, _):
-        result = chart_module.generate_weather_chart()
+        result = chart_module.generate_weather_chart(_FULL_DECISION)
         self.assertIsNone(result)
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value={
         "hourly_forecast_json": "not-valid-json{"
     })
     def test_returns_none_when_hourly_json_is_invalid(self, _):
-        result = chart_module.generate_weather_chart()
+        result = chart_module.generate_weather_chart(_FULL_DECISION)
         self.assertIsNone(result)
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value={
         "hourly_forecast_json": json.dumps({"times": []})
     })
     def test_returns_none_when_times_array_is_empty(self, _):
-        result = chart_module.generate_weather_chart()
+        result = chart_module.generate_weather_chart(_FULL_DECISION)
         self.assertIsNone(result)
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
     @patch("daemon.adapters.chart.urllib.request.urlopen")
     def test_returns_tuple_on_success(self, mock_urlopen, _):
         mock_urlopen.return_value = _make_mock_urlopen()
-        result = chart_module.generate_weather_chart()
+        result = chart_module.generate_weather_chart(_FULL_DECISION)
         self.assertIsInstance(result, tuple)
         self.assertEqual(len(result), 2)
 
@@ -150,55 +154,39 @@ class TestGenerateWeatherChart(unittest.TestCase):
     def test_first_element_is_png_bytes(self, mock_urlopen, _):
         fake_png = b"\x89PNG\r\nfake"
         mock_urlopen.return_value = _make_mock_urlopen(fake_png)
-        result = chart_module.generate_weather_chart()
+        result = chart_module.generate_weather_chart(_FULL_DECISION)
         self.assertEqual(result[0], fake_png)
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
     @patch("daemon.adapters.chart.urllib.request.urlopen")
     def test_second_element_is_string(self, mock_urlopen, _):
         mock_urlopen.return_value = _make_mock_urlopen()
-        result = chart_module.generate_weather_chart()
+        result = chart_module.generate_weather_chart(_FULL_DECISION)
         self.assertIsInstance(result[1], str)
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
     @patch("daemon.adapters.chart.urllib.request.urlopen", side_effect=urllib.error.URLError("timeout"))
     def test_returns_none_on_network_error(self, _, __):
-        result = chart_module.generate_weather_chart()
+        result = chart_module.generate_weather_chart(_FULL_DECISION)
         self.assertIsNone(result)
 
     # --- Caption ---
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_WITH_FORECAST)
     @patch("daemon.adapters.chart.urllib.request.urlopen")
-    def test_caption_recommends_watering_when_dry(self, mock_urlopen, _):
-        """Niederschlagsumme < RAIN_THRESHOLD_MM → Gießen empfohlen."""
+    def test_caption_reflects_full_watering_decision(self, mock_urlopen, _):
+        """Ticket ccc: Caption = das reale Verdikt der WateringDecision (voller Guss)."""
         mock_urlopen.return_value = _make_mock_urlopen()
-        _, caption = chart_module.generate_weather_chart()
-        self.assertIn("Gießen empfohlen", caption)
+        _, caption = chart_module.generate_weather_chart(_FULL_DECISION)
+        self.assertIn("Voller Guss", caption)
 
     @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_RAINY)
     @patch("daemon.adapters.chart.urllib.request.urlopen")
-    def test_caption_skips_watering_when_rain_expected(self, mock_urlopen, _):
-        """Niederschlagsumme ≥ RAIN_THRESHOLD_MM → Kein Gießen nötig."""
+    def test_caption_reflects_skip_decision(self, mock_urlopen, _):
+        """Ticket ccc: bei skip=True zeigt die Caption das Skip-Verdikt der Entscheidung."""
         mock_urlopen.return_value = _make_mock_urlopen()
-        _, caption = chart_module.generate_weather_chart()
+        _, caption = chart_module.generate_weather_chart(_SKIP_DECISION)
         self.assertIn("Kein Gießen", caption)
-
-    @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_RAINED_YESTERDAY)
-    @patch("daemon.adapters.chart.urllib.request.urlopen")
-    def test_caption_skips_watering_when_much_rain_yesterday(self, mock_urlopen, _):
-        """Viel Regen gestern (rain_last_24h ≥ THRESHOLD) → Kein Gießen, auch wenn Vorhersage trocken."""
-        mock_urlopen.return_value = _make_mock_urlopen()
-        _, caption = chart_module.generate_weather_chart()
-        self.assertIn("Kein Gießen", caption)
-
-    @patch("daemon.adapters.chart.database.get_last_weather", return_value=_LAST_WEATHER_RAINY)
-    @patch("daemon.adapters.chart.urllib.request.urlopen")
-    def test_caption_shows_rain_amount(self, mock_urlopen, _):
-        """Bei Regen-Caption wird die Gesamtmenge angezeigt."""
-        mock_urlopen.return_value = _make_mock_urlopen()
-        _, caption = chart_module.generate_weather_chart()
-        self.assertIn("mm", caption)
 
     # --- Chart-Inhalt ---
 
@@ -208,7 +196,7 @@ class TestGenerateWeatherChart(unittest.TestCase):
         """Balken-Dataset darf kein datalabels-Objekt enthalten — verhindert '0'-Spam."""
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         datasets = body["chart"]["data"]["datasets"]
         bar_ds = next(d for d in datasets if d.get("type") == "bar")
@@ -220,7 +208,7 @@ class TestGenerateWeatherChart(unittest.TestCase):
         """0°-Linie soll dunkelgrau sein, nicht blau."""
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         annotations = (
             body["chart"]["options"]
@@ -243,7 +231,7 @@ class TestGenerateWeatherChart(unittest.TestCase):
         """Wahrscheinlichkeits-Dataset darf nicht mehr im Chart sein."""
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         dataset_labels = [d["label"] for d in body["chart"]["data"]["datasets"]]
         self.assertFalse(
@@ -257,7 +245,7 @@ class TestGenerateWeatherChart(unittest.TestCase):
         """Balken-Opazität muss als Array kodiert sein (eine Farbe pro Stunde)."""
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         datasets = body["chart"]["data"]["datasets"]
         bar_ds = next(d for d in datasets if d.get("type") == "bar")
@@ -272,7 +260,7 @@ class TestGenerateWeatherChart(unittest.TestCase):
         """Höhere Wahrscheinlichkeit → höhere Opazität im rgba-Farbwert."""
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         datasets = body["chart"]["data"]["datasets"]
         bar_ds = next(d for d in datasets if d.get("type") == "bar")
@@ -291,7 +279,7 @@ class TestGenerateWeatherChart(unittest.TestCase):
     def test_post_payload_contains_chart_key(self, mock_urlopen, _):
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         self.assertIn("chart", body)
         self.assertIn("datasets", body["chart"]["data"])
@@ -302,7 +290,7 @@ class TestGenerateWeatherChart(unittest.TestCase):
         """Fixture-Zeiten liegen in der Vergangenheit → now_index == -1, kein Jetzt-Label."""
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         labels = body["chart"]["data"]["labels"]
         for i, label in enumerate(labels):
@@ -318,7 +306,7 @@ class TestGenerateWeatherChart(unittest.TestCase):
         """Horizontale Linie bei 0°C muss als Annotation vorhanden sein."""
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         annotations = (
             body["chart"]["options"]
@@ -340,7 +328,7 @@ class TestGenerateWeatherChart(unittest.TestCase):
     def test_payload_includes_version_4(self, mock_urlopen, _):
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         self.assertEqual(body.get("version"), "4")
 
@@ -363,7 +351,7 @@ class TestJetztMarkierung(unittest.TestCase):
         mock_dt.now.return_value = _NOW_DT
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         annotations = self._get_annotations(captured["data"])
         now_lines = [
             a for a in annotations.values()
@@ -381,7 +369,7 @@ class TestJetztMarkierung(unittest.TestCase):
         """Fixture-Zeiten 2026-06-13 → now_index == -1 → keine nowLine."""
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         annotations = self._get_annotations(captured["data"])
         now_keys = [k for k in annotations if "now" in k.lower()]
         self.assertFalse(now_keys, f"Unerwartete nowLine: {now_keys}")
@@ -393,7 +381,7 @@ class TestJetztMarkierung(unittest.TestCase):
         mock_dt.now.return_value = _NOW_DT
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         labels = body["chart"]["data"]["labels"]
         self.assertEqual(labels[_NOW_INDEX], "Jetzt", f"Label[{_NOW_INDEX}] soll 'Jetzt' sein")
@@ -405,7 +393,7 @@ class TestJetztMarkierung(unittest.TestCase):
         mock_dt.now.return_value = _NOW_DT
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         annotations = self._get_annotations(captured["data"])
         zero_line = next(
             (a for a in annotations.values() if a.get("yScaleID") == "yTemp"), None
@@ -428,7 +416,7 @@ class TestJetztMarkierung(unittest.TestCase):
         mock_dt.now.return_value = _NOW_DT
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         annotations = self._get_annotations(captured["data"])
         grid_lines = {
             a["xMin"]
@@ -445,7 +433,7 @@ class TestJetztMarkierung(unittest.TestCase):
     def test_x_grid_disabled(self, mock_urlopen, _):
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         x_scale = body["chart"]["options"]["scales"].get("x", {})
         self.assertFalse(
@@ -458,7 +446,7 @@ class TestJetztMarkierung(unittest.TestCase):
     def test_tick_rotation_is_45(self, mock_urlopen, _):
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         ticks = body["chart"]["options"]["scales"].get("x", {}).get("ticks", {})
         self.assertEqual(ticks.get("minRotation"), 45)
@@ -469,7 +457,7 @@ class TestJetztMarkierung(unittest.TestCase):
     def test_chart_title_includes_letzte(self, mock_urlopen, _):
         side_effect, captured = _capture_and_return()
         mock_urlopen.side_effect = side_effect
-        chart_module.generate_weather_chart()
+        chart_module.generate_weather_chart(_FULL_DECISION)
         body = json.loads(captured["data"].decode("utf-8"))
         title = body["chart"]["options"]["plugins"]["title"]["text"]
         self.assertIn("letzte", title)

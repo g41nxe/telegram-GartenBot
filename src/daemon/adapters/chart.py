@@ -6,7 +6,6 @@ import urllib.error
 from datetime import datetime
 from . import database
 from .. import config
-from ..core.watering_advice import evaluate_rain_window
 
 logger = logging.getLogger("garden_chart")
 
@@ -34,17 +33,19 @@ def _bar_color(prob: int) -> str:
     return f"rgba(54, 162, 235, {alpha})"
 
 
-def _build_caption(rain_last_24h_mm: float, rain_next_24h_mm: float) -> str:
-    result = evaluate_rain_window(rain_last_24h_mm, rain_next_24h_mm, config.get_setting("RAIN_THRESHOLD_MM", config.RAIN_THRESHOLD_MM))
-    if result.skip:
-        return f"🌤 Wetterverlauf — letzte & nächste 24h\n☔ Kein Gießen nötig — Regen erwartet ({result.total_mm:.1f}mm)"
-    return "🌤 Wetterverlauf — letzte & nächste 24h\n🌱 Gießen empfohlen — trocken bis morgen"
+def _build_caption(decision) -> str:
+    """Caption = Kopf + das reale Gieß-Verdikt (Ticket ccc). Damit spricht der Chart dieselbe
+    Wahrheit wie Scheduler und Gießcheck (WateringDecision.verdict), statt eine parallele
+    binäre Regel."""
+    return f"🌤 Wetterverlauf — letzte & nächste 24h\n{decision.verdict}"
 
 
-def generate_weather_chart() -> tuple[bytes, str] | None:
+def generate_weather_chart(decision) -> tuple[bytes, str] | None:
     """
     Liest hourly_forecast_json aus dem letzten weather_history-Eintrag,
     baut eine Chart.js-Konfiguration und sendet diese per POST an QuickChart.io.
+    Die Caption stammt aus der hereingereichten WateringDecision (Ticket ccc; Rule 1 —
+    chart darf weather nicht importieren, der Aufrufer berechnet die Entscheidung).
     Gibt (PNG-Bytes, Caption-String) zurück oder None bei Fehler / fehlenden Daten.
     """
     last_weather = database.get_last_weather()
@@ -209,9 +210,7 @@ def generate_weather_chart() -> tuple[bytes, str] | None:
         )
         with urllib.request.urlopen(req, timeout=10) as response:
             image_bytes = response.read()
-        rain_last = last_weather.get("rain_last_24h_mm", 0.0) or 0.0
-        rain_next = last_weather.get("rain_next_24h_mm", 0.0) or 0.0
-        caption = _build_caption(rain_last, rain_next)
+        caption = _build_caption(decision)
         return image_bytes, caption
     except Exception as e:
         logger.error(f"Chart-Generierung fehlgeschlagen: {e}. Nutze Textfallback.")
