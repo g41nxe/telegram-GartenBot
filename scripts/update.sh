@@ -8,7 +8,9 @@ TMP_EXTRACT="/tmp/garden-update-extract"
 ENV_FILE="$GARDEN_DIR/.env"
 Z2M_DIR="/opt/zigbee2mqtt"
 Z2M_UPDATED=false
-NOTIFY_FILE="/tmp/garden-ota-notify"
+# Marker, den der Daemon beim Neustart liest, um einen fehlgeschlagenen Update-Versuch
+# (Rollback) zu melden (ADR 0044). Erfolgsmeldungen macht der Daemon per Versions-Diff.
+ROLLBACK_MARKER="/tmp/garden-ota-rollback"
 
 log() { echo "[update] $*"; }
 die() { log "FEHLER: $*"; exit 1; }
@@ -16,18 +18,6 @@ die() { log "FEHLER: $*"; exit 1; }
 # --- .env parsen ---
 get_env() {
     grep -E "^\s*$1\s*=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '[:space:]'
-}
-
-tg_notify() {
-    local chat_id="$1" text="$2"
-    local token
-    token="$(get_env TELEGRAM_BOT_TOKEN)"
-    [ -z "$token" ] && return
-    curl -sf -X POST \
-        "https://api.telegram.org/bot${token}/sendMessage" \
-        -d "chat_id=${chat_id}" \
-        -d "parse_mode=Markdown" \
-        --data-urlencode "text=${text}" > /dev/null || true
 }
 
 [ -f "$ENV_FILE" ] || die ".env nicht gefunden unter $ENV_FILE"
@@ -139,12 +129,8 @@ log "Health-Check (15 Sek)..."
 sleep 15
 
 if systemctl is-active --quiet garden-irrigation; then
+    # Erfolg meldet der Daemon selbst per Versions-Diff (ADR 0044) — hier keine Nachricht.
     log "Update auf $RELEASE_TAG erfolgreich."
-    if [ -f "$NOTIFY_FILE" ]; then
-        CHAT_ID=$(head -1 "$NOTIFY_FILE")
-        rm -f "$NOTIFY_FILE"
-        tg_notify "$CHAT_ID" "✅ Update auf \`${RELEASE_TAG}\` erfolgreich installiert."
-    fi
     rm -rf "$TMP_ARCHIVE" "$TMP_EXTRACT"
     exit 0
 fi
@@ -166,12 +152,11 @@ if [ "$Z2M_UPDATED" = "true" ] && [ -d "$BACKUP_DIR/zigbee2mqtt_backup" ]; then
     cd "$Z2M_DIR" && npm ci --production
 fi
 
+# Rollback-Marker für den Daemon hinterlegen (ADR 0044): enthält das gescheiterte Ziel.
+# Der Daemon liest ihn beim Neustart, meldet den Fehlschlag und löscht ihn danach.
+echo "$RELEASE_TAG" > "$ROLLBACK_MARKER"
+
 sudo systemctl restart garden-irrigation
-if [ -f "$NOTIFY_FILE" ]; then
-    CHAT_ID=$(head -1 "$NOTIFY_FILE")
-    rm -f "$NOTIFY_FILE"
-    tg_notify "$CHAT_ID" "❌ Update fehlgeschlagen — Rollback auf \`${LOCAL_VERSION}\` durchgeführt."
-fi
 rm -rf "$TMP_ARCHIVE" "$TMP_EXTRACT"
 log "Rollback abgeschlossen. Läuft wieder auf $LOCAL_VERSION."
 exit 1

@@ -163,10 +163,11 @@ class TestUpdateCallbacks(unittest.TestCase):
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("subprocess.Popen")
-    def test_confirm_schreibt_notify_datei_und_startet_subprocess(self, mock_popen, mock_client):
+    def test_confirm_startet_subprocess_ohne_notify_datei(self, mock_popen, mock_client):
+        # ADR 0044: Erfolg/Rollback meldet der Daemon beim Neustart selbst — der Handler
+        # schreibt keinen Notify-Marker mehr.
         notify = Path("/tmp/garden-ota-notify")
-        if notify.exists():
-            notify.unlink()
+        notify.unlink(missing_ok=True)
         cb = {
             "id": "cb1",
             "message": {"chat": {"id": 12345}, "message_id": 1},
@@ -177,11 +178,9 @@ class TestUpdateCallbacks(unittest.TestCase):
         mock_popen.assert_called_once()
         cmd = " ".join(mock_popen.call_args[0][0])
         self.assertIn("update.sh", cmd)
-        self.assertTrue(notify.exists())
-        self.assertEqual(notify.read_text().strip(), "12345")
+        self.assertFalse(notify.exists())   # kein Marker mehr
         mock_client.send_message.assert_called_once()
         self.assertIn("gestartet", mock_client.send_message.call_args[0][1].lower())
-        notify.unlink(missing_ok=True)
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_cancel_bricht_ab(self, mock_client):
