@@ -85,6 +85,59 @@ def _fetch_measured_rain_last(lat: float, lon: float) -> float | None:
         logger.warning(f"Archiv-Wetterdaten nicht verwertbar: {e}")
     return None
 
+# --- Reine Helfer über bereits geparste Open-Meteo-Arrays (Ticket 6xy) --------------------
+# Bleiben im Adapter, weil ans Open-Meteo-Array-Layout gekoppelt (ADR 0045), aber rein und
+# unit-testbar. null-Sicherheit lebt hier an einem Ort statt an den Aufrufstellen kopiert.
+
+def aggregate_rain_window(precip: list, start: int, end: int) -> float:
+    """Null-sichere Regensumme im halb-offenen Fenster [start, end), auf 2 Stellen gerundet."""
+    return round(sum(p for p in precip[start:end] if p is not None), 2)
+
+
+def max_rain_prob(precip_probs: list, current_idx: int, hours: int = 24) -> int:
+    """Höchste Regenwahrscheinlichkeit der nächsten `hours` Stunden ab current_idx.
+    Open-Meteo liefert modellabhängig teils null — herausfiltern, sonst wirft max() TypeError (Ticket 11b)."""
+    if not precip_probs or current_idx >= len(precip_probs):
+        return 0
+    end = min(len(precip_probs), current_idx + hours)
+    window = [p for p in precip_probs[current_idx:end] if p is not None]
+    return int(max(window)) if window else 0
+
+
+def select_rain_last(sensor_fresh: bool, sensor_sum: float, measured: "float | None",
+                     forecast_fallback: float) -> "tuple[float, str]":
+    """Regen-der-letzten-24h — Quelle der Wahrheit: frischer Sensor > gemessenes Archiv >
+    Forecast-Fallback (Ticket 6xy/0028). Liefert (Wert, Quell-Kennung)."""
+    if sensor_fresh:
+        return sensor_sum, "sensor"
+    if measured is not None:
+        return measured, "measured"
+    return forecast_fallback, "forecast"
+
+
+def build_hourly_forecast(times: list, temps: list, precip: list, precip_probs: list,
+                          wmo: list, current_idx: int) -> str:
+    """±24h-Fenster (bis zu 48 Einträge) als JSON-String fürs Wetterchart. Vergangenheitsstunden:
+    gemessener Regen → prob 100, trocken → prob 0; Zukunft → Forecast-Wahrscheinlichkeit."""
+    chart_start = max(0, current_idx - 24)
+    forecast_end = min(chart_start + 48, len(times))
+    # precip_probs kann kürzer sein (z. B. leer bei nicht-best_match-Modell) — auf Länge auffüllen
+    safe_probs = list(precip_probs) + [0] * max(0, forecast_end - len(precip_probs))
+    chart_probs = []
+    for i in range(chart_start, forecast_end):
+        if i < current_idx:
+            chart_probs.append(100 if (i < len(precip) and precip[i] is not None and precip[i] > 0) else 0)
+        else:
+            chart_probs.append(safe_probs[i] if i < len(safe_probs) else 0)
+    return json.dumps({
+        "times": times[chart_start:forecast_end],
+        "temp": temps[chart_start:forecast_end],
+        "precip_mm": precip[chart_start:forecast_end],
+        "precip_prob": chart_probs,
+        "wmo": wmo[chart_start:forecast_end],
+    })
+
+
 def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, float, float, int, str] | None:
     """
     Ruft stündliche Niederschlagsdaten der letzten 24h, der nächsten 24h,
@@ -149,11 +202,11 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
             current_idx = 24
             logger.warning(f"Alle Forecast-Zeiten in Zukunft. Nutze Fallback-Index {current_idx}.")
             
-        # rain_last aus Forecast (Fallback)
+        # rain_last aus Forecast (Fallback) — null-sichere Summe der Vergangenheitsstunden
         start_past_idx = max(0, current_idx - 24)
-        forecast_rain_last = round(sum(p for p in precip[start_past_idx:current_idx] if p is not None), 2)
-        
-        # Primäre Quelle: Regensensor (frisch genug)
+        forecast_rain_last = aggregate_rain_window(precip, start_past_idx, current_idx)
+
+        # Regen-der-letzten-24h: Quelle über I/O sammeln, reine Politik wählt (Ticket 6xy).
         sensor_last = database.get_last_rain_measurement()
         sensor_is_fresh = False
         if sensor_last:
@@ -164,55 +217,29 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
                 pass
 
         if sensor_is_fresh:
-            rain_last_24h = database.get_rain_sum_last_24h()
-            rain_last_source = "sensor"
-            logger.info(f"Regenmenge aus lokalem Sensor: {rain_last_24h} mm (letzte 24h).")
+            sensor_sum = database.get_rain_sum_last_24h()
+            measured = None
         else:
+            sensor_sum = 0.0
             measured = _fetch_measured_rain_last(lat, lon)
-            if measured is not None:
-                rain_last_24h = measured
-                rain_last_source = "measured"
-            else:
-                rain_last_24h = forecast_rain_last
-                rain_last_source = "forecast"
-                logger.warning("Gemessener Regen nicht verfügbar — nutze Forecast-Wert (degradiert).")
-        
-        # Summiere die nächsten 24 Stunden ab der aktuellen Stunde
-        end_forecast_idx = min(len(precip), current_idx + 24)
-        rain_next_24h = sum(p for p in precip[current_idx:end_forecast_idx] if p is not None)
-        
-        # Berechne die maximale Regenwahrscheinlichkeit für die nächsten 24 Stunden.
-        # Open-Meteo liefert precipitation_probability je nach Modell teils null — wie bei den
-        # Regen-Summen (Zeile 155) null herausfiltern, sonst wirft max() TypeError (Ticket 11b).
-        if precip_probs and current_idx < len(precip_probs):
-            end_prob_idx = min(len(precip_probs), current_idx + 24)
-            prob_window = [p for p in precip_probs[current_idx:end_prob_idx] if p is not None]
-            rain_prob = int(max(prob_window)) if prob_window else 0
-        else:
-            rain_prob = 0
-            
-        # Stündliche Vorhersage: ±24h (= 48 Einträge), passend zum Bewässerungshinweis-Fenster
-        chart_start = max(0, current_idx - 24)
-        forecast_end = min(chart_start + 48, len(times))
-        # precip_probs kann kürzer sein (z.B. leer bei nicht-best_match-Modell) — auf Länge auffüllen
-        safe_probs = list(precip_probs) + [0] * max(0, forecast_end - len(precip_probs))
-        # Vergangenheitsstunden: gemessener Regen → prob 100, trocken → prob 0
-        chart_probs = []
-        for i in range(chart_start, forecast_end):
-            if i < current_idx:
-                chart_probs.append(100 if (i < len(precip) and precip[i] is not None and precip[i] > 0) else 0)
-            else:
-                chart_probs.append(safe_probs[i] if i < len(safe_probs) else 0)
-        hourly_forecast_json = json.dumps({
-            "times": times[chart_start:forecast_end],
-            "temp": hourly_temps[chart_start:forecast_end],
-            "precip_mm": precip[chart_start:forecast_end],
-            "precip_prob": chart_probs,
-            "wmo": hourly_wmo[chart_start:forecast_end],
-        })
+        rain_last_24h, rain_last_source = select_rain_last(
+            sensor_is_fresh, sensor_sum, measured, forecast_rain_last
+        )
+        if rain_last_source == "sensor":
+            logger.info(f"Regenmenge aus lokalem Sensor: {rain_last_24h} mm (letzte 24h).")
+        elif rain_last_source == "forecast":
+            logger.warning("Gemessener Regen nicht verfügbar — nutze Forecast-Wert (degradiert).")
 
-        # rain_next runden (rain_last ist bereits gerundet aus _fetch_measured_rain_last oder forecast_rain_last)
-        rain_next_24h = round(rain_next_24h, 2)
+        # Summe nächste 24h + höchste Regenwahrscheinlichkeit (beide null-sicher, Ticket 11b/6xy)
+        end_forecast_idx = min(len(precip), current_idx + 24)
+        rain_next_24h = aggregate_rain_window(precip, current_idx, end_forecast_idx)
+        rain_prob = max_rain_prob(precip_probs, current_idx, 24)
+
+        # Stündliche Vorhersage ±24h (bis 48 Einträge) fürs Wetterchart
+        hourly_forecast_json = build_hourly_forecast(
+            times, hourly_temps, precip, precip_probs, hourly_wmo, current_idx
+        )
+
         temp_min = round(temp_min, 1)
         temp_max = round(temp_max, 1)
 

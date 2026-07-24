@@ -421,6 +421,50 @@ class TestYesterdayTempStats(unittest.TestCase):
         self.assertIsNone(weather.get_yesterday_temp_stats(48.0, 11.0))
 
 
+class TestWeatherPureHelpers(unittest.TestCase):
+    """Ticket 6xy: reine Helfer über bereits geparste Arrays (null-Sicherheit an 1 Ort)."""
+
+    def test_aggregate_rain_window_null_safe_and_rounded(self):
+        precip = [0.5, None, 1.25, 0.0, None, 0.3]
+        self.assertEqual(weather.aggregate_rain_window(precip, 0, 6), 2.05)
+        self.assertEqual(weather.aggregate_rain_window(precip, 1, 3), 1.25)  # None übersprungen
+        self.assertEqual(weather.aggregate_rain_window(precip, 4, 5), 0.0)   # nur None → 0
+
+    def test_max_rain_prob_filters_null(self):
+        probs = [10] * 48
+        probs[24] = None
+        probs[30] = None
+        probs[36] = 80
+        self.assertEqual(weather.max_rain_prob(probs, 24, 24), 80)
+
+    def test_max_rain_prob_all_null_or_empty(self):
+        self.assertEqual(weather.max_rain_prob([None] * 48, 24, 24), 0)
+        self.assertEqual(weather.max_rain_prob([], 0, 24), 0)
+
+    def test_select_rain_last_precedence(self):
+        # frischer Sensor gewinnt
+        self.assertEqual(weather.select_rain_last(True, 3.0, 6.1, 2.0), (3.0, "sensor"))
+        # kein Sensor, gemessenes Archiv
+        self.assertEqual(weather.select_rain_last(False, 0.0, 6.1, 2.0), (6.1, "measured"))
+        # kein Sensor, kein Archiv → Forecast-Fallback
+        self.assertEqual(weather.select_rain_last(False, 0.0, None, 2.0), (2.0, "forecast"))
+
+    def test_build_hourly_forecast_shape_and_past_probs(self):
+        n = 48
+        times = [f"2026-07-24T{i:02d}:00" for i in range(n)]
+        temps = [20.0] * n
+        precip = [0.0] * n
+        precip[0] = 1.0  # Vergangenheitsstunde mit Regen → prob 100
+        probs = [55] * n
+        wmo = [0] * n
+        raw = weather.build_hourly_forecast(times, temps, precip, probs, wmo, current_idx=24)
+        fc = json.loads(raw)
+        self.assertEqual(set(fc.keys()), {"times", "temp", "precip_mm", "precip_prob", "wmo"})
+        self.assertEqual(len({len(v) for v in fc.values()}), 1)   # alle gleich lang
+        self.assertEqual(fc["precip_prob"][0], 100)               # Vergangenheit mit Regen
+        self.assertEqual(fc["precip_prob"][-1], 55)               # Zukunft = Forecast-Prob
+
+
 class TestPollRetryOn5xx(unittest.TestCase):
     """Ticket lca: der 30-Min-Poll soll transiente HTTP-5xx (503/502) kurz wiederholen,
     statt eine ganze Poll-Runde zu überspringen. 4xx bleibt Sofort-Fehler."""
