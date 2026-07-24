@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 import urllib.request
 import urllib.error
 from datetime import datetime, timedelta
@@ -13,6 +14,32 @@ WEATHER_FORECAST_WINDOW_SECONDS = 86400  # Open-Meteo liefert genau 24h voraus
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 
 logger = logging.getLogger("garden_weather")
+
+# Poll-Resilienz gegen vereinzelte Open-Meteo-5xx (Ticket lca): kleiner Retry mit kurzem Backoff,
+# damit ein isolierter 503/502-Blip nicht eine ganze 30-Min-Poll-Runde überspringt.
+HTTP_RETRIES = 2          # zusätzliche Versuche nach dem ersten
+HTTP_BACKOFF_SECONDS = 2.0  # Basis-Wartezeit; wächst linear pro Versuch
+
+
+def _http_get_bytes(req, timeout: int = 10):
+    """urlopen mit Retry bei transienten HTTP-5xx. 4xx und andere Fehler werden sofort
+    weitergereicht (kein Retry). Gibt den Antwort-Body als Bytes zurück."""
+    for attempt in range(HTTP_RETRIES + 1):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError as e:
+            transient = 500 <= e.code < 600
+            if transient and attempt < HTTP_RETRIES:
+                wait = HTTP_BACKOFF_SECONDS * (attempt + 1)
+                logger.warning(
+                    f"Wetter-Abruf HTTP {e.code} (Versuch {attempt + 1}/{HTTP_RETRIES + 1}) — "
+                    f"erneuter Versuch in {wait:.0f}s."
+                )
+                time.sleep(wait)
+                continue
+            raise
+
 
 def _find_current_index(times: list[str]) -> int:
     """Index des letzten Stunden-Zeitstempels <= jetzt (ISO sortiert lexikografisch).
@@ -77,9 +104,8 @@ def get_weather_data(lat: float, lon: float) -> tuple[float, float, float, int, 
     try:
         logger.info(f"Rufe Wetterdaten ab: {url}")
         req = urllib.request.Request(url, headers={'User-Agent': 'GardenIrrigationDaemon/1.0'})
-        with urllib.request.urlopen(req, timeout=10) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            
+        data = json.loads(_http_get_bytes(req, timeout=10).decode("utf-8"))
+
         current = data.get("current", {})
         current_temp = float(current.get("temperature_2m", 0.0))
         weather_code = int(current.get("weather_code", 0))

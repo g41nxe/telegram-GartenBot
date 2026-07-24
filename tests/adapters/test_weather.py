@@ -1,6 +1,7 @@
 import json
 import sys
 import unittest
+import urllib.error
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -418,6 +419,52 @@ class TestYesterdayTempStats(unittest.TestCase):
     def test_returns_none_on_error(self, mock_urlopen):
         mock_urlopen.side_effect = Exception("network down")
         self.assertIsNone(weather.get_yesterday_temp_stats(48.0, 11.0))
+
+
+class TestPollRetryOn5xx(unittest.TestCase):
+    """Ticket lca: der 30-Min-Poll soll transiente HTTP-5xx (503/502) kurz wiederholen,
+    statt eine ganze Poll-Runde zu überspringen. 4xx bleibt Sofort-Fehler."""
+
+    def _cm(self, payload):
+        cm = MagicMock()
+        cm.__enter__.return_value = MagicMock(read=lambda: payload)
+        return cm
+
+    @patch("daemon.adapters.weather._fetch_measured_rain_last", return_value=1.0)
+    @patch("daemon.adapters.weather.time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_transient_503_is_retried_then_succeeds(self, mock_urlopen, mock_sleep, _mr):
+        err = urllib.error.HTTPError("http://x", 503, "Service Unavailable", {}, None)
+        mock_urlopen.side_effect = [err, err, self._cm(_make_api_response())]
+
+        res = weather.get_weather_data(52.5, 13.5)
+
+        self.assertIsNotNone(res, "Poll darf nach transienten 503 nicht None liefern")
+        self.assertEqual(mock_urlopen.call_count, 3)
+        self.assertGreaterEqual(mock_sleep.call_count, 2)
+
+    @patch("daemon.adapters.weather._fetch_measured_rain_last", return_value=1.0)
+    @patch("daemon.adapters.weather.time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_persistent_5xx_gives_up_and_returns_none(self, mock_urlopen, mock_sleep, _mr):
+        mock_urlopen.side_effect = urllib.error.HTTPError("http://x", 503, "down", {}, None)
+
+        res = weather.get_weather_data(52.5, 13.5)
+
+        self.assertIsNone(res)
+        self.assertEqual(mock_urlopen.call_count, 3)   # 1 Versuch + 2 Retries
+
+    @patch("daemon.adapters.weather._fetch_measured_rain_last", return_value=1.0)
+    @patch("daemon.adapters.weather.time.sleep")
+    @patch("urllib.request.urlopen")
+    def test_4xx_is_not_retried(self, mock_urlopen, mock_sleep, _mr):
+        mock_urlopen.side_effect = urllib.error.HTTPError("http://x", 404, "Not Found", {}, None)
+
+        res = weather.get_weather_data(52.5, 13.5)
+
+        self.assertIsNone(res)
+        self.assertEqual(mock_urlopen.call_count, 1)   # kein Retry bei 4xx
+        mock_sleep.assert_not_called()
 
 
 class TestRainProbHandlesNull(unittest.TestCase):
