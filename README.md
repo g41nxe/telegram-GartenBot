@@ -7,7 +7,7 @@
 <p><strong>Gartenbewässerungs-Steuerung für den Raspberry Pi Zero W — intelligent, offline-first, per Telegram gesteuert.</strong></p>
 
 <p>
-  <img src="https://img.shields.io/badge/version-1.9.1-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.18.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python">
   <img src="https://img.shields.io/badge/platform-Raspberry%20Pi%20Zero%20W-c51a4a" alt="Platform">
   <img src="https://img.shields.io/badge/runtime%20deps-paho--mqtt-green" alt="Runtime deps">
@@ -46,6 +46,7 @@ Bedient wird er sicher von überall über einen whitelist-basierten **Telegram-B
 *   **📅 Zeitpläne im Chat:** Erstellen und bearbeiten komplett per Inline-Tastatur — kein Editieren von Konfigurationsdateien.
 *   **🌧️ Lokaler Regensensor:** Echter gemessener Regen als primäre Quelle (mit Wetterarchiv-Fallback); ein laufender Guss stoppt sofort, wenn Regen einsetzt.
 *   **🪴 Graduierte Gieß-Steuerung:** Kein binäres „gießen/überspringen“, sondern ein Skalierungsfaktor 0–100 % aus Regen, Vorhersage und Hitzestrecke.
+*   **💬 Kontextsensible Rückfrage:** Vor einem manuellen Guss meldet sich der Bot, wenn der Kontext klar dagegenspricht — „Trotzdem gießen?“ mit mm-Begründung, statt kommentarlos zu öffnen.
 *   **📷 Garten-Kamera (optional):** Batteriebetriebene Kamera mit getimten Aufnahmen, automatischem Foto nach jedem Guss und Langzeit-Archiv.
 *   **🐕 Inaktivitäts-Watchdog:** Warnt proaktiv, wenn Ventil, Regensensor oder Kamera kein Lebenszeichen mehr senden.
 *   **🚨 Ventilöffnungs-Alarm:** Sofortiger Push, wenn ein Ventil ohne aktiven Guss öffnet.
@@ -118,7 +119,7 @@ graph TD
 ├── .env.template            # Vorlage für Secrets & standortspezifische Werte (→ .env)
 ├── garden.db                # Lokale SQLite-Datenbank — wird auf der Steuerzentrale erzeugt
 ├── docs/
-│   ├── adr/                 # Architekturentscheidungen (ADRs 0001–0032)
+│   ├── adr/                 # Architekturentscheidungen (ADRs 0001–0045)
 │   ├── features/            # Feature-Spezifikationen (completed/ für abgeschlossene)
 │   ├── plans/               # Detaillierte Umsetzungspläne (completed/ für abgeschlossene)
 │   ├── design/              # Telegram Design-System & Nachrichten-Referenz (SOLL/IST)
@@ -141,6 +142,12 @@ graph TD
 │       │   ├── watering_controller.py   # Guss-Steuerung mit Multi-Ventil-Support
 │       │   ├── watering_advice.py       # Reine Gieß-Empfehlung & graduierter Skalierungsfaktor
 │       │   ├── watering_events.py       # Guss-Ereignistypen (Start, Abschluss, Unterbrechung)
+│       │   ├── nebel_controller.py      # Nebel-Steuerung (Kühl-Intervalle, eigene Engine)
+│       │   ├── nebel_events.py          # Nebel-Ereignistypen (Fenster-Start/-Ende)
+│       │   ├── weather_report.py        # Reine Wetter-Quellenwahl (Tagesbericht & Gieß-Fallback)
+│       │   ├── rain_event.py            # Reine Regenereignis-Zustandslogik (Karenzzeit)
+│       │   ├── version_announce.py      # Reine Update-Entscheidung (Versions-Diff/Rollback)
+│       │   ├── system_events.py         # System-Ereignistypen (Software-Update aktiv/Rollback)
 │       │   ├── scheduler_events.py      # Domänen-Ereignistypen (Zeitsteuerung, Reports)
 │       │   ├── valve_events.py          # Ventil-Ereignistypen (Kopplung, Status)
 │       │   ├── sensor_events.py         # Regensensor-Ereignistypen
@@ -152,10 +159,13 @@ graph TD
 │       │   ├── database.py              # SQLite CRUD (Zeitpläne, Ventile, Verlauf, Wetter, Regenmessungen, Kamera-Metadaten) — keine Bilddaten
 │       │   ├── database_adapter.py      # Domänen-Events → Datenbank-Archivierung
 │       │   ├── mqtt_client.py           # MQTT-Schnittstelle + Simulations-Adapter
-│       │   ├── weather.py               # Open-Meteo HTTP-Adapter & Skip-Logik
+│       │   ├── weather.py               # Open-Meteo HTTP-Adapter & Gieß-Entscheidung
 │       │   ├── chart.py                 # QuickChart.io-Adapter (Wetterchart-PNG)
 │       │   ├── daily_report.py          # Täglicher Statusbericht (pro Ventil)
 │       │   ├── watchdog.py              # Überwachung inaktiver Geräte (Ventile, Sensor, Kamera)
+│       │   ├── rain_event_adapter.py    # Regenereignis-Zustand → Ereignis-Kanal (ADR 0043)
+│       │   ├── version_announce_adapter.py # Update-Meldung beim Daemon-Start (ADR 0044)
+│       │   ├── diagnose.py              # Diagnose-Paket (/diagnose) für Ferndiagnose
 │       │   ├── valve_pairing.py         # Ventil-Kopplung (Zigbee-Join + DB-Registrierung)
 │       │   ├── camera_pairing.py        # Kamera-Kopplung
 │       │   └── camera_receiver.py       # HTTP-Empfänger für Kamera-Uploads
@@ -323,10 +333,11 @@ Details: [ADR 0010](docs/adr/0010-vorkompilierte-bereitstellung-des-mittelweg-di
 Updates erfolgen ohne SSH direkt aus dem Telegram-Chat über `/update`:
 
 *   Der Daemon prüft das in `.env` hinterlegte GitHub-Repository (`GITHUB_REPO`, authentifiziert per `GITHUB_PAT`) auf das neueste Release.
-*   `scripts/update.sh` entpackt das Release-Archiv (inkl. `config/`), startet den Dienst neu und meldet **Erfolg oder Rollback** per Telegram zurück.
+*   `scripts/update.sh` entpackt das Release-Archiv (inkl. `config/`), startet den Dienst neu und rollt bei fehlgeschlagenem Health-Check automatisch zurück.
+*   Die Erfolgs- bzw. Rollback-**Meldung macht der Daemon selbst beim nächsten Start** — per Versions-Diff gegen die zuletzt gemeldete Version (kein Race, auch automatisch ausgelieferte Releases melden sich): `🚀 Update aktiv` bzw. `❌ Update fehlgeschlagen` (ADR 0044).
 *   Die geheime `.env` wird dabei **nie** überschrieben — nur versionierte Dateien werden aktualisiert.
 
-Hintergrund: [ADR 0023](docs/adr/0023-ota-update-via-github-actions-und-releases.md).
+Hintergrund: [ADR 0023](docs/adr/0023-ota-update-via-github-actions-und-releases.md) · [ADR 0044](docs/adr/0044-update-benachrichtigung-beim-daemon-start.md).
 
 ---
 
