@@ -43,6 +43,10 @@ class Done(NamedTuple):
 class Assistent:
     """Basis: besitzt den Dialog-Zustand. Konkrete Assistenten implementieren start()/advance()."""
 
+    #: Schritte, in denen getippte Eingabe erwartet wird. In allen anderen Schritten wird Text
+    #: ignoriert (verhindert ``int("Unsinn")``-Abstürze, wenn statt eines Buttons getippt wird).
+    _text_steps = frozenset()
+
     def __init__(self):
         self.step = None
         self.data = {}
@@ -54,6 +58,10 @@ class Assistent:
     def advance(self, value) -> "Prompt | Reject | Done":
         raise NotImplementedError
 
+    def wants_text(self) -> bool:
+        """Ob der aktuelle Schritt getippte Eingabe verarbeitet (sonst: Text ignorieren)."""
+        return self.step in self._text_steps
+
 
 class ScheduleAssistent(Assistent):
     """Zeitplan-anlegen-Assistent (Wässern- und Nebel-Pfad). Ventile werden beim Start
@@ -63,6 +71,8 @@ class ScheduleAssistent(Assistent):
     Bestätigung. Nach der Minute zweigt ``mode="nebel"`` in Fensterende → Nebelstoß →
     Pause ab (statt Dauer → Volumen im Wässern-Pfad).
     """
+
+    _text_steps = frozenset({"name", "duration_custom", "volume_custom"})
 
     def __init__(self, mode: str = "watering", valves=None):
         super().__init__()
@@ -207,6 +217,8 @@ class GussAssistent(Assistent):
     Kontext-Rückfrage (Feature 0020) liegt im Live-Adapter, nicht im Kern.
     """
 
+    _text_steps = frozenset({"duration_custom", "volume_custom"})
+
     def __init__(self, mqtt_name: str = "garden_valve"):
         super().__init__()
         self.data["mqtt_name"] = mqtt_name
@@ -292,6 +304,8 @@ class CameraPairAssistent(Assistent):
     Mapping Label→Zahl) liegt im Live-Adapter. Name- und Intervall-Schritte sind getippt.
     """
 
+    _text_steps = frozenset({"wish_name", "interval"})
+
     def start(self) -> Prompt:
         self.step = "wish_name"
         return Prompt("wish_name", None)
@@ -330,6 +344,8 @@ class CameraPairAssistent(Assistent):
 class PairingNameAssistent(Assistent):
     """Ventil-Kopplung: einziger Schritt ist der Wunschname. ``Done`` liefert den Namen;
     das eigentliche Pairing (Mittelweg-Dienst) startet der Live-Adapter."""
+
+    _text_steps = frozenset({"wish_name"})
 
     def start(self) -> Prompt:
         self.step = "wish_name"
@@ -375,6 +391,8 @@ class CameraSettingsAssistent(Assistent):
     """Kamera-Einstellung: nur das Sendeintervall ändern. Kamera (mac + wish_name) ist
     vorgewählt; ``Done`` liefert mac/wish_name/sleep_seconds, das DB-Update liegt im Adapter."""
 
+    _text_steps = frozenset({"interval"})
+
     def __init__(self, mac: str, wish_name: str):
         super().__init__()
         self.data["mac"] = mac
@@ -393,3 +411,113 @@ class CameraSettingsAssistent(Assistent):
             return Done(dict(self.data))
 
         raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{self.step}'")
+
+
+class EditAssistent(Assistent):
+    """Zeitplan bearbeiten als Nabe-Speiche-Editor (Ticket cy1). Der ``menu``-Schritt ist die
+    Nabe: von dort in einen Feld-Editor (Speiche) und wieder zurück. Änderungen sammeln sich in
+    ``data`` (vorbefüllt aus dem bestehenden Zeitplan); erst „✅ Fertig" löst **ein** ``Done`` aus
+    → der Adapter schreibt alles in einem update_schedule. Damit passt der Editor komplett ins
+    reine Schema (keine I/O mitten im Fluss) und wird transaktional (Abbrechen = keine Änderung).
+
+    Die Feld-Editoren teilen die Picker/Keyboards des Anlege-Pfads (Live-Adapter)."""
+
+    _text_steps = frozenset({"name"})
+
+    def __init__(self, schedule: dict, valves=None):
+        super().__init__()
+        self.valves = list(valves or [])
+        hour, minute = (schedule.get("time") or "00:00").split(":")
+        self.data.update({
+            "sched_id": schedule["id"],
+            "name": schedule["name"],
+            "hour": int(hour), "minute": int(minute),
+            "days": schedule["days"].split(",") if schedule.get("days") else [],
+            "duration": schedule["duration_minutes"],
+            "volume": schedule.get("target_volume_liters") or 0,
+            "valve_id": schedule.get("valve_id"),
+            "is_active": schedule.get("is_active", 1),
+        })
+
+    def start(self) -> Prompt:
+        self.step = "menu"
+        return Prompt("menu", "edit_menu")
+
+    def _to_menu(self) -> Prompt:
+        self.step = "menu"
+        return Prompt("menu", "edit_menu")
+
+    def advance(self, value) -> "Prompt | Reject | Done":
+        step = self.step
+
+        if step == "menu":
+            if value == "done":
+                return Done(dict(self.data))
+            if value == "name":
+                self.step = "name"
+                return Prompt("name", None)
+            if value == "time":
+                self.step = "time_hour"
+                return Prompt("time_hour", "edit_hour")
+            if value == "days":
+                self.data["edit_days"] = list(self.data["days"])
+                self.step = "days"
+                return Prompt("days", "edit_days")
+            if value == "duration":
+                self.step = "duration"
+                return Prompt("duration", "edit_duration")
+            if value == "volume":
+                self.step = "volume"
+                return Prompt("volume", "edit_volume")
+            if value == "valve":
+                self.step = "valve"
+                return Prompt("valve", "edit_valve")
+            raise ValueError(f"Unerwartetes Menü-Feld '{value}'")
+
+        if step == "name":
+            name = (value or "").strip()
+            if not name or len(name) > 50 or name.startswith("/"):
+                return Reject("❌ Name muss 1–50 Zeichen lang sein.")
+            self.data["name"] = name
+            return self._to_menu()
+
+        if step == "time_hour":
+            self.data["hour"] = int(value)
+            self.step = "time_min"
+            return Prompt("time_min", "edit_minute")
+
+        if step == "time_min":
+            self.data["minute"] = int(value)
+            return self._to_menu()
+
+        if step == "duration":
+            self.data["duration"] = int(value)
+            return self._to_menu()
+
+        if step == "volume":
+            self.data["volume"] = int(value)
+            return self._to_menu()
+
+        if step == "valve":
+            self.data["valve_id"] = int(value)
+            return self._to_menu()
+
+        if step == "days":
+            return self._edit_days(value)
+
+        raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{step}'")
+
+    def _edit_days(self, value) -> "Prompt | Reject":
+        days = self.data["edit_days"]
+        if value == "save":
+            if not days:
+                return Reject("⚠️ Mind. einen Tag auswählen!")
+            self.data["days"] = list(days)
+            return self._to_menu()
+        if value == "everyday":
+            self.data["edit_days"] = [] if "everyday" in days else ["everyday"]
+        else:
+            days = [d for d in days if d != "everyday"]
+            days = [d for d in days if d != value] if value in days else days + [value]
+            self.data["edit_days"] = days
+        return Prompt("days", "edit_days")

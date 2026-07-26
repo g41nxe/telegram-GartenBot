@@ -42,7 +42,7 @@ from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
 from .assistent import (
     ScheduleAssistent, GussAssistent, SofortNebelAssistent,
     CameraPairAssistent, CameraSettingsAssistent, PairingNameAssistent,
-    DeleteConfirmAssistent, Prompt, Reject, Done,
+    DeleteConfirmAssistent, EditAssistent, Prompt, Reject, Done,
 )
 
 logger = logging.getLogger("garden_telegram_ui")
@@ -1429,6 +1429,13 @@ def _process_message(msg_obj: dict):
             _state_del(delete_states, chat_id)
 
     ed_state = _state_get(edit_states, chat_id)
+    if ed_state is not None and "assistent" in ed_state:
+        # Ticket cy1: getippter Name im EditAssistent (nur im name-Schritt verarbeitet, sonst
+        # ignoriert). Ein Slash-Befehl bricht die Bearbeitung ab und wird normal verarbeitet.
+        if not text.startswith("/"):
+            _drive_typed(edit_states, chat_id, text)
+            return
+        _state_del(edit_states, chat_id)
     if ed_state is not None and ed_state.get("field") == "name":
         new_name = text.strip()
         if not new_name or len(new_name) > 50 or text.startswith("/"):
@@ -2226,16 +2233,15 @@ class WizardSpec:
     exakt→wert), ``on_done`` führt den Abschluss aus (DB-Schreiben/Aktion), ``cancel`` ist der
     Abbrechen-Callback (fällt zum Alt-Handler durch), ``accepts_text`` erlaubt getippte Schritte."""
 
-    __slots__ = ("store", "text", "keyboard", "callbacks", "on_done", "cancel", "accepts_text")
+    __slots__ = ("store", "text", "keyboard", "callbacks", "on_done", "cancel")
 
-    def __init__(self, store, text, keyboard, callbacks, on_done, cancel, accepts_text=True):
+    def __init__(self, store, text, keyboard, callbacks, on_done, cancel):
         self.store = store
         self.text = text
         self.keyboard = keyboard
         self.callbacks = callbacks
         self.on_done = on_done
         self.cancel = cancel
-        self.accepts_text = accepts_text
 
 
 def _apply_rules(data: str, rules):
@@ -2297,6 +2303,101 @@ def _finish_delete_from_assistent(chat_id, state, message_id):
         telegram_client.edit_message_text(chat_id, message_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.")
 
 
+# --- Zeitplan bearbeiten über den EditAssistent (Nabe-Speiche, Batch-Speichern) --------------
+
+def _edit_prompt_text(view: str, d: dict) -> str:
+    name = _md_escape(d["name"])
+    if view == "menu":
+        vol = d["volume"]
+        valve = database.get_valve_by_id(d["valve_id"]) if d.get("valve_id") else None
+        valve_name = _md_escape(valve["wish_name"]) if valve else "—"
+        return (f"*✏️ Zeitplan bearbeiten — \"{name}\"*\n\n"
+                f"• Zeit: {d['hour']:02d}:{d['minute']:02d} Uhr\n"
+                f"• Tage: {format_days_german(d['days'])}\n"
+                f"• Dauer: {d['duration']} Min\n"
+                f"• Menge: {'∞' if vol == 0 else str(vol) + ' L'}\n"
+                f"• Ventil: {valve_name}\n\n"
+                "Was möchtest du ändern?")
+    if view == "name":
+        return f"*✏️ Name — \"{name}\"*\n\nNeuen Namen eingeben:"
+    if view == "time_hour":
+        return (f"*✏️ Zeit — \"{name}\"*\n\nAktuell: *{d['hour']:02d}:{d['minute']:02d} Uhr*\n\n"
+                "Neue Stunde wählen:")
+    if view == "time_min":
+        return f"*✏️ Zeit*\n\nStunde: *{d['hour']:02d}*\nMinuten wählen:"
+    if view == "days":
+        return f"*✏️ Tage — \"{name}\"*\n\nWochentage wählen:"
+    if view == "duration":
+        return f"*✏️ Dauer — \"{name}\"*\n\nAktuell: *{d['duration']} Min*\n\nNeue Dauer wählen:"
+    if view == "volume":
+        vol = d["volume"]
+        return (f"*✏️ Menge — \"{name}\"*\n\nAktuell: *{'∞ (kein Limit)' if vol == 0 else str(vol) + ' L'}*\n\n"
+                "Neue Menge wählen:")
+    if view == "valve":
+        return f"*✏️ Ventil — \"{name}\"*\n\nWelches Ventil soll dieser Zeitplan steuern?"
+    return name
+
+
+def _edit_keyboard(tag, a) -> dict:
+    sid = a.data["sched_id"]
+    cancel_row = [{"text": "❌ Abbrechen", "callback_data": "sched_edit_cancel"}]
+    if tag == "edit_menu":
+        return {"inline_keyboard": [
+            [{"text": "⏰ Zeit", "callback_data": f"sched_editfield_time_{sid}"},
+             {"text": "📅 Tage", "callback_data": f"sched_editfield_days_{sid}"}],
+            [{"text": "⏳ Dauer", "callback_data": f"sched_editfield_duration_{sid}"},
+             {"text": "💧 Menge", "callback_data": f"sched_editfield_volume_{sid}"}],
+            [{"text": "✏️ Name", "callback_data": f"sched_editfield_name_{sid}"},
+             {"text": "🚰 Ventil", "callback_data": f"sched_editfield_valve_{sid}"}],
+            [{"text": "✅ Fertig", "callback_data": "sched_edit_done"},
+             {"text": "❌ Abbrechen", "callback_data": "sched_edit_cancel"}],
+        ]}
+    if tag == "edit_hour":
+        rows = [[{"text": f"{h:02d}", "callback_data": f"sched_edithour_{sid}_{h}"} for h in range(i, i + 6)]
+                for i in range(0, 24, 6)]
+        rows.append(cancel_row)
+        return {"inline_keyboard": rows}
+    if tag == "edit_minute":
+        hour = a.data["hour"]
+        rows = [[{"text": f":{m:02d}", "callback_data": f"sched_editmin_{sid}_{hour}_{m}"}
+                 for m in range(i, min(i + 15, 60), 5)] for i in range(0, 60, 15)]
+        rows.append(cancel_row)
+        return {"inline_keyboard": rows}
+    if tag == "edit_days":
+        return _get_edit_days_keyboard(sid, a.data["edit_days"])
+    if tag == "edit_duration":
+        return {"inline_keyboard": [
+            [{"text": f"{dd} Min", "callback_data": f"sched_setdur_{sid}_{dd}"} for dd in (5, 10, 15, 20, 25)],
+            cancel_row]}
+    if tag == "edit_volume":
+        volumes = [0, 5, 10, 15, 20, 25, 30, 40]
+        return {"inline_keyboard": [
+            [{"text": ("∞" if v == 0 else f"{v} L"), "callback_data": f"sched_setvol_{sid}_{v}"} for v in volumes[:4]],
+            [{"text": ("∞" if v == 0 else f"{v} L"), "callback_data": f"sched_setvol_{sid}_{v}"} for v in volumes[4:]],
+            cancel_row]}
+    if tag == "edit_valve":
+        cur = a.data.get("valve_id")
+        rows = [[{"text": ("✅ " if v["id"] == cur else "🚰 ") + _md_escape(v["wish_name"]),
+                  "callback_data": f"sched_setvalve_{sid}_{v['id']}"}] for v in a.valves]
+        rows.append(cancel_row)
+        return {"inline_keyboard": rows}
+    return {"inline_keyboard": [cancel_row]}
+
+
+def _finish_edit_from_assistent(chat_id, state, message_id):
+    d = state["assistent"].data
+    _state_del(edit_states, chat_id)
+    time_str = f"{d['hour']:02d}:{d['minute']:02d}"
+    days_str = ",".join(d["days"])
+    database.update_schedule(d["sched_id"], d["name"], time_str, days_str,
+                             d["duration"], d["volume"], d.get("is_active", 1))
+    if d.get("valve_id"):
+        database.set_schedule_valves(d["sched_id"], [d["valve_id"]])
+    telegram_client.edit_message_reply_markup(chat_id, message_id, None)
+    telegram_client.send_message(chat_id, f"✅ Zeitplan *'{_md_escape(d['name'])}'* aktualisiert.", get_main_keyboard())
+    handle_schedules(chat_id)
+
+
 def _render_wizard(chat_id, state, a, prompt, spec, message_id=None):
     text = spec.text(prompt.view, a.data)
     kb = spec.keyboard(prompt.keyboard, a) if prompt.keyboard is not None else None
@@ -2330,11 +2431,14 @@ def _start_wizard(chat_id, assistent, message_id=None):
 
 
 def _drive_typed(store, chat_id, text) -> bool:
-    """Getippte Eingabe an den aktiven Assistenten des Stores geben (falls er Text akzeptiert)."""
+    """Getippte Eingabe an den aktiven Assistenten des Stores geben — aber nur, wenn sein
+    aktueller Schritt Text erwartet (wants_text). So stürzt Tippen auf einem Button-Schritt
+    nicht ab (int('Unsinn')), sondern fällt zur normalen Verarbeitung durch."""
     st = _state_get(store, chat_id)
     if st and "assistent" in st:
-        spec = WIZARDS.get(type(st["assistent"]))
-        if spec and spec.accepts_text:
+        a = st["assistent"]
+        spec = WIZARDS.get(type(a))
+        if spec and a.wants_text():
             _drive_wizard(chat_id, spec, text, message_id=None)
             return True
     return False
@@ -2357,7 +2461,7 @@ WIZARDS = {
     SofortNebelAssistent: WizardSpec(
         store=manual_states, text=_sofort_nebel_prompt_text, keyboard=_sofort_nebel_keyboard,
         callbacks=[("nebel_now_on_", int), ("nebel_now_pause_", int), ("nebel_dur_", int)],
-        on_done=_start_sofort_nebel_from_assistent, cancel="nebel_cancel", accepts_text=False),
+        on_done=_start_sofort_nebel_from_assistent, cancel="nebel_cancel"),
     CameraPairAssistent: WizardSpec(
         store=wizard_states, text=_camera_prompt_text, keyboard=_camera_keyboard,
         callbacks=[("camsetup_res_", _valid_resolution), ("camsetup_qual_", _valid_quality)],
@@ -2371,14 +2475,26 @@ WIZARDS = {
     DeleteConfirmAssistent: WizardSpec(
         store=delete_states, text=_delete_prompt_text, keyboard=_delete_keyboard,
         callbacks=[("sched_del_yes", "confirm"), ("sched_del_no", "cancel")],
-        on_done=_finish_delete_from_assistent, cancel=None, accepts_text=False),
+        on_done=_finish_delete_from_assistent, cancel=None),
+    EditAssistent: WizardSpec(
+        store=edit_states, text=_edit_prompt_text, keyboard=_edit_keyboard,
+        callbacks=[("sched_editfield_", lambda r: r.rsplit("_", 1)[0]),
+                   ("sched_editday_save_", lambda r: "save"),
+                   ("sched_editday_", lambda r: r.split("_", 1)[1]),
+                   ("sched_edithour_", lambda r: int(r.split("_")[-1])),
+                   ("sched_editmin_", lambda r: int(r.split("_")[-1])),
+                   ("sched_setdur_", lambda r: int(r.split("_")[-1])),
+                   ("sched_setvol_", lambda r: int(r.split("_")[-1])),
+                   ("sched_setvalve_", lambda r: int(r.split("_")[-1])),
+                   ("sched_edit_done", "done")],
+        on_done=_finish_edit_from_assistent, cancel="sched_edit_cancel"),
 }
 
 
 def _dispatch_wizard_callback(chat_id, cb_id, data, message_id) -> bool:
     """Läuft ein Assistent, gehen seine Buttons (außer dem Flow-Abbrechen) durch die einheitliche
     Engine. Nicht zuständige Callbacks (globale Aktionen, Abbrechen) fallen zum Alt-Handler durch."""
-    for store in (wizard_states, manual_states, delete_states):
+    for store in (wizard_states, manual_states, delete_states, edit_states):
         st = _state_get(store, chat_id)
         if st and "assistent" in st:
             spec = WIZARDS.get(type(st["assistent"]))
@@ -3275,30 +3391,13 @@ def _process_callback_query(cb_obj: dict):
             if not schedule:
                 telegram_client.answer_callback_query(cb_id, "Zeitplan nicht gefunden.", show_alert=True)
                 return
-            _state_set(edit_states, chat_id, {"sched_id": sched_id})
+            # Ticket cy1: Bearbeiten läuft über den EditAssistent (Nabe-Speiche, Batch-Speichern).
+            valve_ids = database.get_schedule_valves(sched_id)
+            schedule = dict(schedule)
+            schedule["valve_id"] = valve_ids[0] if valve_ids else None
             telegram_client.answer_callback_query(cb_id)
-            days_str = format_days_german(schedule["days"].split(",") if schedule["days"] else [])
-            vol = schedule.get("target_volume_liters") or 0
-            valve_name = _schedule_valve_name(sched_id)
-            telegram_client.edit_message_text(
-                chat_id, message_id,
-                f"*✏️ Zeitplan bearbeiten — \"{_md_escape(schedule['name'])}\"*\n\n"
-                f"• Zeit: {schedule['time']} Uhr\n"
-                f"• Tage: {days_str}\n"
-                f"• Dauer: {schedule['duration_minutes']} Min\n"
-                f"• Menge: {'∞' if vol == 0 else str(vol) + ' L'}\n"
-                f"• Ventil: {_md_escape(valve_name)}\n\n"
-                "Was möchtest du ändern?",
-                {"inline_keyboard": [
-                    [{"text": "⏰ Zeit",   "callback_data": f"sched_editfield_time_{sched_id}"},
-                     {"text": "📅 Tage",  "callback_data": f"sched_editfield_days_{sched_id}"}],
-                    [{"text": "⏳ Dauer",  "callback_data": f"sched_editfield_duration_{sched_id}"},
-                     {"text": "💧 Menge", "callback_data": f"sched_editfield_volume_{sched_id}"}],
-                    [{"text": "✏️ Name",  "callback_data": f"sched_editfield_name_{sched_id}"},
-                     {"text": "🚰 Ventil", "callback_data": f"sched_editfield_valve_{sched_id}"}],
-                    [{"text": "❌ Abbrechen", "callback_data": "sched_edit_cancel"}],
-                ]},
-            )
+            _start_wizard(chat_id, EditAssistent(schedule, valves=database.get_all_valves()),
+                          message_id=message_id)
 
     elif data.startswith("sched_editfield_"):
         parts = data.split("_")

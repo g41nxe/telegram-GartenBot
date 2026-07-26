@@ -13,8 +13,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 from daemon.ui.assistent import (
     ScheduleAssistent, GussAssistent, SofortNebelAssistent,
     CameraPairAssistent, CameraSettingsAssistent, PairingNameAssistent,
-    DeleteConfirmAssistent, Prompt, Reject, Done,
+    DeleteConfirmAssistent, EditAssistent, Prompt, Reject, Done,
 )
+
+
+_SCHEDULE = {"id": 5, "name": "Morgen", "time": "08:30", "days": "Mon,Wed",
+             "duration_minutes": 10, "target_volume_liters": 20, "valve_id": 3, "is_active": 1}
 
 
 def _valves(n):
@@ -379,6 +383,94 @@ class TestDeleteConfirmAssistent(unittest.TestCase):
         result = a.advance("cancel")
         self.assertIsInstance(result, Done)
         self.assertFalse(result.data["confirmed"])
+
+
+class TestEditAssistent(unittest.TestCase):
+    """Nabe-Speiche-Editor: menu → Feld → zurück ins menu; Batch-Speichern bei „done"."""
+
+    def _fresh(self):
+        a = EditAssistent(dict(_SCHEDULE), valves=[{"id": 3, "wish_name": "Beet"}])
+        a.start()
+        return a
+
+    def test_prefilled_from_schedule(self):
+        a = self._fresh()
+        self.assertEqual(a.step, "menu")
+        self.assertEqual(a.data["name"], "Morgen")
+        self.assertEqual(a.data["hour"], 8)
+        self.assertEqual(a.data["minute"], 30)
+        self.assertEqual(a.data["days"], ["Mon", "Wed"])
+        self.assertEqual(a.data["duration"], 10)
+        self.assertEqual(a.data["volume"], 20)
+        self.assertEqual(a.data["valve_id"], 3)
+
+    def test_done_without_change_returns_original(self):
+        a = self._fresh()
+        result = a.advance("done")
+        self.assertIsInstance(result, Done)
+        self.assertEqual(result.data["name"], "Morgen")
+        self.assertEqual(result.data["hour"], 8)
+
+    def test_edit_time_returns_to_menu_and_batches(self):
+        a = self._fresh()
+        a.advance("time")
+        self.assertEqual(a.step, "time_hour")
+        a.advance(14)
+        self.assertEqual(a.step, "time_min")
+        p = a.advance(45)
+        self.assertEqual(p.view, "menu")            # zurück in der Nabe
+        self.assertEqual(a.data["hour"], 14)
+        self.assertEqual(a.data["minute"], 45)
+        # noch NICHT gespeichert — erst done liefert Done
+        result = a.advance("done")
+        self.assertEqual(result.data["hour"], 14)
+        self.assertEqual(result.data["minute"], 45)
+
+    def test_edit_name_validation(self):
+        a = self._fresh()
+        a.advance("name")
+        self.assertEqual(a.step, "name")
+        self.assertIsInstance(a.advance("   "), Reject)
+        self.assertIsInstance(a.advance("/slash"), Reject)
+        self.assertIsInstance(a.advance("x" * 51), Reject)
+        self.assertEqual(a.step, "name")            # kein Wechsel bei Fehler
+        a.advance("Abend")
+        self.assertEqual(a.step, "menu")
+        self.assertEqual(a.data["name"], "Abend")
+
+    def test_edit_days_toggle_and_save(self):
+        a = self._fresh()
+        a.advance("days")
+        self.assertEqual(a.data["edit_days"], ["Mon", "Wed"])
+        a.advance("Mon")                            # abwählen
+        self.assertNotIn("Mon", a.data["edit_days"])
+        a.advance("Fri")                            # hinzufügen
+        p = a.advance("save")
+        self.assertEqual(p.view, "menu")
+        self.assertEqual(a.data["days"], ["Wed", "Fri"])
+
+    def test_edit_days_empty_rejected(self):
+        a = self._fresh()
+        a.advance("days")
+        a.advance("Mon"); a.advance("Wed")          # beide abwählen
+        self.assertIsInstance(a.advance("save"), Reject)
+        self.assertEqual(a.step, "days")
+
+    def test_edit_multiple_fields_then_done(self):
+        a = self._fresh()
+        a.advance("duration"); a.advance(20)
+        a.advance("volume"); a.advance(0)
+        a.advance("valve"); a.advance(3)
+        result = a.advance("done")
+        self.assertEqual(result.data["duration"], 20)
+        self.assertEqual(result.data["volume"], 0)
+        self.assertEqual(result.data["valve_id"], 3)
+
+    def test_menu_ignores_typed_text(self):
+        a = self._fresh()
+        self.assertFalse(a.wants_text())            # Menü erwartet keine Tastatur-Eingabe
+        a.advance("name")
+        self.assertTrue(a.wants_text())             # Namensschritt schon
 
 
 class TestScheduleAssistentDays(unittest.TestCase):
