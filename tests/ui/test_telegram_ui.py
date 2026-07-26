@@ -315,17 +315,6 @@ class TestScheduleEditFlow(unittest.TestCase):
         mock_db.update_schedule.assert_not_called()
         mock_client.answer_callback_query.assert_called()
 
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_name_texteingabe_speichert_namen(self, mock_client, mock_db):
-        """Texteingabe wenn edit_states field='name' speichert den neuen Namen."""
-        from daemon.ui.telegram_ui import edit_states, _state_set
-        _state_set(edit_states, 100, {"sched_id": 7, "field": "name"})
-        mock_db.get_schedule_by_id.return_value = self._schedule()
-        mock_db.get_schedules.return_value = []
-        _process_message(self._msg("Neuer Zeitplan"))
-        mock_db.update_schedule.assert_called_once_with(7, "Neuer Zeitplan", "20:00", "Mon", 15, 0, 1)
-
 class TestScheduleToggleCallback(unittest.TestCase):
 
     def _cb(self, data, chat_id=100, msg_id=1):
@@ -399,31 +388,6 @@ class TestScheduleDeleteFlow(unittest.TestCase):
         cbs = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
         self.assertIn("sched_del_yes", cbs)
         self.assertIn("sched_del_no", cbs)
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_confirm_delete_calls_db_and_clears_state(self, mock_client, mock_db):
-        mock_db.delete_schedule.return_value = True
-        mock_db.get_schedules.return_value = []
-        _state_set(delete_states, 100, {"schedule_id": 5, "name": "Morgen"})
-        _process_message(self._msg("✅ Ja, löschen"))
-        mock_db.delete_schedule.assert_called_once_with(5)
-        self.assertIsNone(_state_get(delete_states, 100))
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_cancel_delete_does_not_call_db(self, mock_client, mock_db):
-        _state_set(delete_states, 100, {"schedule_id": 5, "name": "Morgen"})
-        _process_message(self._msg("❌ Nein, abbrechen"))
-        mock_db.delete_schedule.assert_not_called()
-        self.assertIsNone(_state_get(delete_states, 100))
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_unrelated_text_clears_delete_state(self, mock_client, mock_db):
-        _state_set(delete_states, 100, {"schedule_id": 5, "name": "Morgen"})
-        _process_message(self._msg("irgendwas"))
-        self.assertIsNone(_state_get(delete_states, 100))
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")

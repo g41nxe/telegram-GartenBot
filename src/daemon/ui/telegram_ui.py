@@ -461,29 +461,6 @@ def _schedule_valve_name(sched_id) -> str:
         pass
     return "Standard"
 
-def _wizard_valve_or_days(state: dict) -> tuple:
-    """Nächster Bewässerungs-Wizard-Schritt nach der Mengen-Auswahl.
-
-    Wie beim Nebel-Wizard: bei mehreren Ventilen eine Ventil-Auswahl (genau eines),
-    bei höchstens einem Ventil automatisch zuweisen und direkt zu den Wochentagen.
-    Mutiert `state` und liefert (text, keyboard) für den Aufrufer (edit/send).
-    """
-    valves = database.get_all_valves()
-    if len(valves) > 1:
-        state["step"] = "wiz_valve"
-        rows = [[{"text": f"🚰 {_md_escape(v['wish_name'])}", "callback_data": f"wv_valve_{v['id']}"}]
-                for v in valves]
-        rows.append([{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}])
-        return (f"🆕 *Zeitplan '{state['name']}'*\n\nWelches *Ventil* soll dieser Zeitplan steuern?",
-                {"inline_keyboard": rows})
-    if valves:
-        state["valve_id"] = valves[0]["id"]
-    state["step"] = 6
-    state["days"] = []
-    return (f"🆕 *Neuen Zeitplan '{state['name']}' (Schritt 6/6)*\n\n"
-            f"Wähle die *Wochentage* aus, an denen bewässert werden soll:\n\n*Ausgewählt: Keine*",
-            get_days_wizard_keyboard([]))
-
 def get_duration_wizard_keyboard(prefix: str) -> dict:
     """Erstellt ein Inline-Keyboard für die Schnellauswahl der Dauer."""
     return {
@@ -1383,24 +1360,11 @@ def _process_message(msg_obj: dict):
     chat_id = msg_obj["chat"]["id"]
     text = msg_obj.get("text", "").strip()
 
+    # Löschen ist ein Inline-Dialog (DeleteConfirmAssistent) — getippte Eingabe hat dort nichts
+    # zu suchen; ein Menü-Wechsel bricht die Bestätigung ab.
     del_state = _state_get(delete_states, chat_id)
-    if del_state is not None:
-        if text == "✅ Ja, löschen":
-            sched_id = del_state["schedule_id"]
-            name = del_state["name"]
-            _state_del(delete_states, chat_id)
-            if database.delete_schedule(sched_id):
-                telegram_client.send_message(chat_id, f"🗑️ Zeitplan *'{_md_escape(name)}'* wurde gelöscht.", get_main_keyboard())
-                handle_schedules(chat_id)
-            else:
-                telegram_client.send_message(chat_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.", get_main_keyboard())
-            return
-        elif text == "❌ Nein, abbrechen":
-            _state_del(delete_states, chat_id)
-            telegram_client.send_message(chat_id, "❌ Löschvorgang abgebrochen.", get_main_keyboard())
-            return
-        else:
-            _state_del(delete_states, chat_id)
+    if del_state is not None and _is_menu_escape(text):
+        _state_del(delete_states, chat_id)
 
     ed_state = _state_get(edit_states, chat_id)
     if ed_state is not None and "assistent" in ed_state:
@@ -1410,27 +1374,9 @@ def _process_message(msg_obj: dict):
             _drive_typed(edit_states, chat_id, text)
             return
         _state_del(edit_states, chat_id)
-    if ed_state is not None and ed_state.get("field") == "name":
-        new_name = text.strip()
-        if not new_name or len(new_name) > 50 or text.startswith("/"):
-            telegram_client.send_message(chat_id, "❌ Name muss 1–50 Zeichen lang sein.")
-            return
-        sched_id = ed_state["sched_id"]
-        schedule = database.get_schedule_by_id(sched_id)
-        if schedule:
-            database.update_schedule(
-                sched_id, new_name, schedule["time"], schedule["days"],
-                schedule["duration_minutes"], schedule.get("target_volume_liters") or 0, schedule["is_active"]
-            )
-            _state_del(edit_states, chat_id)
-            telegram_client.send_message(chat_id, f"✅ Name auf *\"{new_name}\"* geändert.")
-            handle_schedules(chat_id)
-        return
 
     state = _state_get(wizard_states, chat_id)
     if state is not None:
-        step = state.get("step")
-
         if _is_menu_escape(text):
             _state_del(wizard_states, chat_id)
         elif "assistent" in state:
@@ -1438,118 +1384,9 @@ def _process_message(msg_obj: dict):
             # (message_id=None ⇒ frische Prompt-Nachricht, altes Keyboard weg — ADR 0039).
             _drive_typed(wizard_states, chat_id, text)
             return
-        else:
-            if step == "setup_wish_name":
-                if not text:
-                    telegram_client.send_message(chat_id, "❌ Der Name darf nicht leer sein. Bitte gib einen Namen ein:")
-                    return
-                wish_name = text
-                _state_del(wizard_states, chat_id)
-                _start_pairing(chat_id, wish_name)
-                return
-            elif step == "camsetup_settings_interval":
-                try:
-                    minutes = int(text.strip())
-                    if minutes < 1 or minutes > 1440:
-                        raise ValueError
-                except ValueError:
-                    telegram_client.send_message(chat_id, "❌ Ungültige Eingabe. Bitte eine Zahl zwischen 1 und 1440 eingeben:")
-                    return
-                mac = state["mac"]
-                wish_name = state["wish_name"]
-                _state_del(wizard_states, chat_id)
-                camera = database.get_camera(mac)
-                if camera:
-                    database.update_camera_settings(
-                        mac,
-                        sleep_seconds=minutes * 60,
-                        resolution=camera["resolution"],
-                        quality=camera["quality"],
-                    )
-                    telegram_client.send_message(
-                        chat_id,
-                        f"✅ Sendeintervall für Kamera *'{wish_name}'* auf {minutes} Minuten gesetzt.",
-                        get_main_keyboard()
-                    )
-                else:
-                    telegram_client.send_message(chat_id, "❌ Kamera nicht mehr in der Datenbank gefunden.", get_main_keyboard())
-                return
-            elif step == "setup_camera_wish_name":
-                if not text or not re.match(r"^[a-zA-Z0-9_-]{1,32}$", text):
-                    telegram_client.send_message(chat_id, "❌ Ungültiger Name. Erlaubt: a-z, A-Z, 0-9, -, _ (Max 32 Zeichen). Bitte erneut eingeben:")
-                    return
-                state["wish_name"] = text
-                state["step"] = "setup_camera_interval"
-                _state_touch(wizard_states, chat_id)
-                telegram_client.send_message(
-                    chat_id,
-                    "⏱ *Wie oft soll die Kamera ein Bild senden?*\n\n"
-                    "Bitte gib das Intervall in Minuten ein _(z.B. `15` für alle 15 Minuten)_:"
-                )
-                return
-            elif step == "setup_camera_interval":
-                try:
-                    minutes = int(text.strip())
-                    if minutes < 1 or minutes > 1440:
-                        raise ValueError
-                except ValueError:
-                    telegram_client.send_message(chat_id, "❌ Ungültige Eingabe. Bitte eine Zahl zwischen 1 und 1440 eingeben:")
-                    return
-                state["sleep_seconds"] = minutes * 60
-                state["step"] = "setup_camera_resolution"
-                _state_touch(wizard_states, chat_id)
-                telegram_client.send_message(
-                    chat_id,
-                    "🖼 *Welche Auflösung soll die Kamera verwenden?*\n\n"
-                    "Höhere Auflösung = schärfere Bilder, größere Dateien.",
-                    get_camera_resolution_keyboard()
-                )
-                return
-            elif step == 1:
-                if not text:
-                    telegram_client.send_message(chat_id, "❌ Der Name darf nicht leer sein. Bitte gib einen Namen ein:")
-                    return
-                state["name"] = text
-                state["step"] = 2
-                if state.get("mode") == "nebel":
-                    prompt = f"🌫️ *Nebel-Intervall '{text}'*\n\nZu welcher *Stunde* soll das Nebel-Fenster starten?"
-                else:
-                    prompt = f"🆕 *Neuen Zeitplan '{text}' (Schritt 2/6)*\n\nZu welcher *Stunde* soll die Bewässerung starten?"
-                show_step(chat_id, state, prompt, get_hour_keyboard())
-                _state_touch(wizard_states, chat_id)
-                return
-            elif step == "custom_duration":
-                try:
-                    dur = int(text)
-                    if not (1 <= dur <= 25):
-                        raise ValueError
-                    state["duration"] = dur
-                    state["step"] = 5
-                    _state_touch(wizard_states, chat_id)
-                    telegram_client.send_message(
-                        chat_id,
-                        f"🆕 *Neuen Zeitplan '{state['name']}' (Schritt 5/6)*\n\nWie viel Wasser soll *maximal* fließen? (Volumenlimit)",
-                        get_volume_wizard_keyboard("wiz")
-                    )
-                except ValueError:
-                    telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:")
-                return
-            elif step == "custom_volume":
-                try:
-                    vol = int(text)
-                    if vol <= 0:
-                        raise ValueError
-                    state["volume"] = vol
-                    _state_touch(wizard_states, chat_id)
-                    text, kb = _wizard_valve_or_days(state)
-                    telegram_client.send_message(chat_id, text, kb)
-                except ValueError:
-                    telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl größer als 0 Liter ein:")
-                return
 
     man_state = _state_get(manual_states, chat_id)
     if man_state is not None:
-        step = man_state.get("step")
 
         if _is_menu_escape(text):
             _state_del(manual_states, chat_id)
@@ -1558,49 +1395,6 @@ def _process_message(msg_obj: dict):
             # akzeptiert Text; Sofort-Nebel ist rein Button-getrieben → fällt durch zur
             # normalen Verarbeitung „Unbekannter Befehl").
             if _drive_typed(manual_states, chat_id, text):
-                return
-        else:
-            if step == "man_custom_duration":
-                try:
-                    dur = int(text)
-                    if not (1 <= dur <= 25):
-                        raise ValueError
-                    man_state["duration"] = dur
-                    man_state["step"] = 2
-                    show_step(
-                        chat_id, man_state,
-                        "🚿 *Bewässern starten — Schritt 2/2*\n\nWie viel Wasser soll *maximal* fließen? (Volumenlimit)",
-                        get_volume_wizard_keyboard("man"),
-                    )
-                    _state_touch(manual_states, chat_id)
-                except ValueError:
-                    telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl zwischen 1 und 25 Minuten ein:")
-                return
-            elif step == "man_custom_volume":
-                try:
-                    vol = int(text)
-                    if vol <= 0:
-                        raise ValueError
-                    man_state["volume"] = vol
-                    dur = man_state["duration"]
-                    mqtt_name = man_state.get("mqtt_name", "garden_valve")
-                    pmid = man_state.get("prompt_msg_id")
-                    _state_del(manual_states, chat_id)
-                    # Flow endet — Keyboard des Eingabe-Prompts in beiden Fällen abräumen.
-                    if pmid is not None:
-                        telegram_client.edit_message_reply_markup(chat_id, pmid, None)
-
-                    # Feature 0020: Kontext prüfen; spricht er dagegen, Rückfrage statt Sofortstart.
-                    if _maybe_confirm_manual_watering(chat_id, dur, vol, mqtt_name):
-                        return
-                    if _watering_ctrl:
-                        success, response = _watering_ctrl.start_watering(dur, vol, "manual", mqtt_name=mqtt_name)
-                    else:
-                        success, response = False, "Guss-Steuerung nicht initialisiert."
-                    if not success:
-                        telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
-                except ValueError:
-                    telegram_client.send_message(chat_id, "❌ *Ungültige Eingabe.* Bitte gib eine Zahl größer als 0 Liter ein:")
                 return
 
     # Slash-Befehle exakt auflösen (Token vor Leerzeichen/@), damit z. B. /status nicht
