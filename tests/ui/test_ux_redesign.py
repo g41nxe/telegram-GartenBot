@@ -11,6 +11,11 @@ from unittest.mock import patch, MagicMock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from daemon.ui.telegram_ui import _process_message, _process_callback_query
+from daemon.core.watering_advice import WateringDecision
+
+# Kontext-Check vor manuellem Guss (Feature 0020) fragt _weather_adapter; ohne Mock hängt das
+# Testergebnis am Wetter in garden.db. Deterministische „voller Guss"-Entscheidung:
+_FULL_GUSS = WateringDecision(factor=1.0, verdict="🚿 Voller Guss", reasons=[], skip=False)
 
 
 def _msg(text, chat_id=100):
@@ -225,10 +230,12 @@ class TestGussFlow(unittest.TestCase):
         text = mock_tc.edit_message_text.call_args.args[2]
         self.assertIn("kein Ventil", text)
 
+    @patch("daemon.ui.telegram_ui._weather_adapter")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.database")
-    def test_guss_selected_valve_threads_mqtt_name(self, mock_db, mock_tc, mock_water):
+    def test_guss_selected_valve_threads_mqtt_name(self, mock_db, mock_tc, mock_water, mock_weather):
+        mock_weather.evaluate_watering_factor.return_value = _FULL_GUSS
         mock_db.get_valve_by_id.return_value = _valve(2, "Beet", "beet_valve")
         mock_water.start_watering.return_value = (True, "ok")
 
@@ -573,12 +580,14 @@ class TestInlineKeyboardCleanup(unittest.TestCase):
         tc.edit_message_reply_markup.assert_called_once_with(100, 1, None)
         telegram_ui.wizard_states.clear()
 
+    @patch("daemon.ui.telegram_ui._weather_adapter")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.database")
-    def test_guss_success_still_removes_keyboard(self, mock_db, tc, mock_water):
+    def test_guss_success_still_removes_keyboard(self, mock_db, tc, mock_water, mock_weather):
         """Referenzmuster: Erfolgspfad entfernt das Keyboard weiterhin (edit_message_text ohne Markup)."""
         _clear_states()
+        mock_weather.evaluate_watering_factor.return_value = _FULL_GUSS
         mock_db.get_valve_by_id.return_value = _valve(2, "Beet", "beet_valve")
         mock_water.start_watering.return_value = (True, "ok")
         _process_callback_query(_cb("water_valve_2"))
