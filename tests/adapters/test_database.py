@@ -572,5 +572,53 @@ class TestCameraPhotoTimesCRUD(unittest.TestCase):
         self.assertEqual(len(db.get_photo_times()), 1)
 
 
+class TestMetadataFlags(unittest.TestCase):
+    """Ticket l97: typisierte Bool-Primitive über system_metadata — das '1'/'0'-Encoding
+    lebt an einem Ort (konzern-agnostisch: nur key rein, bool raus)."""
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._patcher.start()
+        db.init_db()
+
+    def tearDown(self):
+        self._patcher.stop()
+        import gc
+        gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def test_unset_flag_is_false(self):
+        self.assertFalse(db.get_flag("noch_nie_gesetzt"))
+
+    def test_set_true_then_get(self):
+        db.set_flag("alarm_aktiv", True)
+        self.assertTrue(db.get_flag("alarm_aktiv"))
+        # roh gespeichert als "1" (Encoding an einem Ort)
+        self.assertEqual(db.get_metadata("alarm_aktiv"), "1")
+
+    def test_set_false_then_get(self):
+        db.set_flag("alarm_aktiv", True)
+        db.set_flag("alarm_aktiv", False)
+        self.assertFalse(db.get_flag("alarm_aktiv"))
+        self.assertEqual(db.get_metadata("alarm_aktiv"), "0")
+
+    def test_clear_flag_removes_key(self):
+        db.set_flag("kopplung_aktiv", True)
+        db.clear_flag("kopplung_aktiv")
+        self.assertFalse(db.get_flag("kopplung_aktiv"))
+        self.assertIsNone(db.get_metadata("kopplung_aktiv"))
+
+    def test_get_flag_reads_legacy_one(self):
+        # Bestandsdaten: alte Aufrufer schrieben roh "1"/"0" — muss weiter gelesen werden.
+        db.set_metadata("legacy", "1")
+        self.assertTrue(db.get_flag("legacy"))
+        db.set_metadata("legacy", "0")
+        self.assertFalse(db.get_flag("legacy"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -485,6 +485,26 @@ def delete_metadata(key: str) -> None:
     finally:
         conn.close()
 
+
+# --- Typisierte Bool-Flags über system_metadata (Ticket l97) ----------------------------
+# Das '1'/'0'-Encoding lebt hier an einem Ort. Diese Primitive sind konzern-AGNOSTISCH
+# (nur key rein, bool raus) — die Bedeutung eines Keys besitzt der jeweilige Konzern über
+# seine eigenen Key-Konstanten (ADR 0045).
+
+def get_flag(key: str) -> bool:
+    """True, wenn das Flag gesetzt und '1' ist. Fehlend/'0'/sonstiges → False."""
+    return get_metadata(key) == "1"
+
+
+def set_flag(key: str, value: bool) -> None:
+    """Setzt das Flag als '1' (True) bzw. '0' (False)."""
+    set_metadata(key, "1" if value else "0")
+
+
+def clear_flag(key: str) -> None:
+    """Entfernt das Flag komplett (z. B. Einmal-Flags wie die Regen-Übersteuerung)."""
+    delete_metadata(key)
+
 _DAILY_FORECAST_SNAPSHOT_KEY = "daily_forecast_snapshot"
 
 def set_daily_forecast_snapshot(date_str: str, rain_next_mm: float, window_start: str):
