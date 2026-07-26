@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 from daemon.ui.assistent import (
     ScheduleAssistent, GussAssistent, SofortNebelAssistent,
     CameraPairAssistent, CameraSettingsAssistent, PairingNameAssistent,
-    Prompt, Reject, Done,
+    DeleteConfirmAssistent, Prompt, Reject, Done,
 )
 
 
@@ -361,6 +361,24 @@ class TestPairingNameAssistent(unittest.TestCase):
         a.start()
         self.assertIsInstance(a.advance("   "), Reject)
         self.assertEqual(a.step, "wish_name")
+
+
+class TestDeleteConfirmAssistent(unittest.TestCase):
+
+    def test_confirm_yields_done_confirmed(self):
+        a = DeleteConfirmAssistent(schedule_id=5, name="Morgen")
+        self.assertEqual(a.start().view, "confirm")
+        result = a.advance("confirm")
+        self.assertIsInstance(result, Done)
+        self.assertTrue(result.data["confirmed"])
+        self.assertEqual(result.data["schedule_id"], 5)
+
+    def test_cancel_yields_done_not_confirmed(self):
+        a = DeleteConfirmAssistent(schedule_id=5, name="Morgen")
+        a.start()
+        result = a.advance("cancel")
+        self.assertIsInstance(result, Done)
+        self.assertFalse(result.data["confirmed"])
 
 
 class TestScheduleAssistentDays(unittest.TestCase):

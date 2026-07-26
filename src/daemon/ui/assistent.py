@@ -346,6 +346,31 @@ class PairingNameAssistent(Assistent):
         raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{self.step}'")
 
 
+class DeleteConfirmAssistent(Assistent):
+    """Zeitplan löschen: einstufige Ja/Nein-Bestätigung als Inline-Dialog (ADR 0039).
+    ``Done`` liefert schedule_id/name/confirmed; das Löschen bzw. der Abbruch liegen im Adapter."""
+
+    def __init__(self, schedule_id: int, name: str):
+        super().__init__()
+        self.data["schedule_id"] = schedule_id
+        self.data["name"] = name
+
+    def start(self) -> Prompt:
+        self.step = "confirm"
+        return Prompt("confirm", "delete_confirm")
+
+    def advance(self, value) -> Done:
+        if self.step == "confirm":
+            if value == "confirm":
+                self.data["confirmed"] = True
+                return Done(dict(self.data))
+            if value == "cancel":
+                self.data["confirmed"] = False
+                return Done(dict(self.data))
+
+        raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{self.step}'")
+
+
 class CameraSettingsAssistent(Assistent):
     """Kamera-Einstellung: nur das Sendeintervall ändern. Kamera (mac + wish_name) ist
     vorgewählt; ``Done`` liefert mac/wish_name/sleep_seconds, das DB-Update liegt im Adapter."""

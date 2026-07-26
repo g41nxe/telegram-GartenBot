@@ -442,23 +442,24 @@ class TestScheduleDeleteFlow(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_delete_ask_sets_delete_state(self, mock_client, mock_db):
+        # Ticket cy1: Löschen läuft jetzt über den DeleteConfirmAssistent (Inline-Dialog).
         mock_db.get_schedules.return_value = [self._schedule()]
         _process_callback_query(self._cb("sched_delete_ask_5"))
         state = _state_get(delete_states, 100)
         self.assertIsNotNone(state)
-        self.assertEqual(state["schedule_id"], 5)
-        self.assertEqual(state["name"], "Morgen")
+        self.assertIn("assistent", state)
+        self.assertEqual(state["assistent"].data["schedule_id"], 5)
+        self.assertEqual(state["assistent"].data["name"], "Morgen")
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_delete_ask_sends_reply_keyboard(self, mock_client, mock_db):
+    def test_delete_ask_shows_inline_confirm(self, mock_client, mock_db):
         mock_db.get_schedules.return_value = [self._schedule()]
         _process_callback_query(self._cb("sched_delete_ask_5"))
-        sent_kb = mock_client.send_message.call_args[0][2]
-        self.assertIn("keyboard", sent_kb)
-        texts = [btn["text"] for btn in sent_kb["keyboard"][0]]
-        self.assertIn("✅ Ja, löschen", texts)
-        self.assertIn("❌ Nein, abbrechen", texts)
+        kb = mock_client.edit_message_text.call_args[0][3]   # Inline-Dialog (ADR 0039)
+        cbs = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
+        self.assertIn("sched_del_yes", cbs)
+        self.assertIn("sched_del_no", cbs)
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")

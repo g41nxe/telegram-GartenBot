@@ -42,7 +42,7 @@ from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
 from .assistent import (
     ScheduleAssistent, GussAssistent, SofortNebelAssistent,
     CameraPairAssistent, CameraSettingsAssistent, PairingNameAssistent,
-    Prompt, Reject, Done,
+    DeleteConfirmAssistent, Prompt, Reject, Done,
 )
 
 logger = logging.getLogger("garden_telegram_ui")
@@ -2271,6 +2271,32 @@ def _valid_quality(v):
     return v if v in ("high", "medium", "low") else None
 
 
+def _delete_prompt_text(view: str, d: dict) -> str:
+    return (f"🗑️ *Zeitplan löschen*\n\nMöchtest du den Zeitplan *'{_md_escape(d['name'])}'* wirklich löschen?\n\n"
+            "Diese Aktion kann nicht rückgängig gemacht werden.")
+
+
+def _delete_keyboard(tag, a) -> dict:
+    return {"inline_keyboard": [[
+        {"text": "✅ Ja, löschen", "callback_data": "sched_del_yes"},
+        {"text": "❌ Nein, abbrechen", "callback_data": "sched_del_no"},
+    ]]}
+
+
+def _finish_delete_from_assistent(chat_id, state, message_id):
+    d = state["assistent"].data
+    _state_del(delete_states, chat_id)
+    if not d.get("confirmed"):
+        telegram_client.edit_message_text(chat_id, message_id, "❌ Löschvorgang abgebrochen.")
+        return
+    sched_id, name = d["schedule_id"], d["name"]
+    if database.delete_schedule(sched_id):
+        telegram_client.edit_message_text(chat_id, message_id, f"🗑️ Zeitplan *'{_md_escape(name)}'* wurde gelöscht.")
+        handle_schedules(chat_id)
+    else:
+        telegram_client.edit_message_text(chat_id, message_id, f"❌ Zeitplan ID {sched_id} nicht gefunden.")
+
+
 def _render_wizard(chat_id, state, a, prompt, spec, message_id=None):
     text = spec.text(prompt.view, a.data)
     kb = spec.keyboard(prompt.keyboard, a) if prompt.keyboard is not None else None
@@ -2342,13 +2368,17 @@ WIZARDS = {
     PairingNameAssistent: WizardSpec(
         store=wizard_states, text=_pairing_prompt_text, keyboard=_no_keyboard,
         callbacks=[], on_done=_start_valve_pairing_from_assistent, cancel="setup_cancel"),
+    DeleteConfirmAssistent: WizardSpec(
+        store=delete_states, text=_delete_prompt_text, keyboard=_delete_keyboard,
+        callbacks=[("sched_del_yes", "confirm"), ("sched_del_no", "cancel")],
+        on_done=_finish_delete_from_assistent, cancel=None, accepts_text=False),
 }
 
 
 def _dispatch_wizard_callback(chat_id, cb_id, data, message_id) -> bool:
     """Läuft ein Assistent, gehen seine Buttons (außer dem Flow-Abbrechen) durch die einheitliche
     Engine. Nicht zuständige Callbacks (globale Aktionen, Abbrechen) fallen zum Alt-Handler durch."""
-    for store in (wizard_states, manual_states):
+    for store in (wizard_states, manual_states, delete_states):
         st = _state_get(store, chat_id)
         if st and "assistent" in st:
             spec = WIZARDS.get(type(st["assistent"]))
@@ -3049,17 +3079,9 @@ def _process_callback_query(cb_obj: dict):
         schedules = database.get_schedules()
         target = next((s for s in schedules if s["id"] == sched_id), None)
         if target:
-            _state_set(delete_states, chat_id, {"schedule_id": sched_id, "name": target["name"]})
+            # Ticket cy1: Löschbestätigung als Inline-Dialog über den DeleteConfirmAssistent.
             telegram_client.answer_callback_query(cb_id)
-            telegram_client.send_message(
-                chat_id,
-                f"🗑️ *Zeitplan löschen*\n\nMöchtest du den Zeitplan *'{_md_escape(target['name'])}'* wirklich löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden.",
-                {
-                    "keyboard": [[{"text": "✅ Ja, löschen"}, {"text": "❌ Nein, abbrechen"}]],
-                    "resize_keyboard": True,
-                    "one_time_keyboard": True
-                }
-            )
+            _start_wizard(chat_id, DeleteConfirmAssistent(sched_id, target["name"]), message_id=message_id)
         else:
             telegram_client.answer_callback_query(cb_id, "Zeitplan nicht gefunden", show_alert=True)
 
