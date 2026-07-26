@@ -1,3 +1,10 @@
+## v1.18.2 — 2026-07-26
+
+### Wartung
+- Interne Aufräumung: einheitliche, getippte Zugriffe auf System-Flags (keine Verhaltensänderung)
+
+---
+
 ## v1.18.1 — 2026-07-24
 
 ### Behoben
