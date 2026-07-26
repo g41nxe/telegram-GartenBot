@@ -246,3 +246,38 @@ class GussAssistent(Assistent):
             return Done(dict(self.data))
 
         raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{step}'")
+
+
+class SofortNebelAssistent(Assistent):
+    """Sofort-Nebel (manueller Start): Stoß-Dauer → Pause → Laufzeit → Aktion. Das Ventil
+    (ganzer Datensatz, für mqtt_name + wish_name) ist vorgewählt und liegt außerhalb der
+    ``data``. ``Done`` liefert on_seconds/pause_minutes/minutes; die Auslösung (Deckelung auf
+    NEBEL_MANUAL_MAX_MINUTES) übernimmt der Live-Adapter. Rein Button-getrieben.
+    """
+
+    def __init__(self, valve: dict):
+        super().__init__()
+        self.valve = valve
+
+    def start(self) -> Prompt:
+        self.step = "on"
+        return Prompt("on", "nebel_now_on")
+
+    def advance(self, value) -> "Prompt | Done":
+        step = self.step
+
+        if step == "on":
+            self.data["on_seconds"] = int(value)
+            self.step = "pause"
+            return Prompt("pause", "nebel_now_pause")
+
+        if step == "pause":
+            self.data["pause_minutes"] = int(value)
+            self.step = "runtime"
+            return Prompt("runtime", "nebel_now_runtime")
+
+        if step == "runtime":
+            self.data["minutes"] = int(value)
+            return Done(dict(self.data))
+
+        raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{step}'")

@@ -264,7 +264,9 @@ class TestNebelTaktFlow(unittest.TestCase):
     def test_nebel_one_valve_shows_stoss_dauer(self, mock_db, mock_tc):
         mock_db.get_all_valves.return_value = [_valve(1, "Terrasse", "terrace_mist")]
         _process_callback_query(_cb("nebel_now"))
-        cb_data = _cb_data(_markup(mock_tc.send_message.call_args))
+        # Ticket cy1: Sofort-Nebel läuft über den SofortNebelAssistent — der erste Prompt kommt
+        # als lebende Prompt-Nachricht (send_message_id) statt send_message (ADR 0039).
+        cb_data = _cb_data(_markup(mock_tc.send_message_id.call_args))
         self.assertTrue(any("nebel_now_on_" in (d or "") for d in cb_data), f"Keine Stoß-Dauer: {cb_data}")
 
     @patch("daemon.ui.telegram_ui.telegram_client")

@@ -39,7 +39,7 @@ from ..core.sensor_events import RainSensorInactivityAlertTriggered, RainSensorI
 from ..core.system_events import SoftwareUpdateActivated, SoftwareUpdateRolledBack
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
-from .assistent import ScheduleAssistent, GussAssistent, Prompt, Reject, Done
+from .assistent import ScheduleAssistent, GussAssistent, SofortNebelAssistent, Prompt, Reject, Done
 
 logger = logging.getLogger("garden_telegram_ui")
 
@@ -1574,9 +1574,10 @@ def _process_message(msg_obj: dict):
 
         if text.startswith("/") or text in ["📊 Status anzeigen", "💧 Gießcheck", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             _state_del(manual_states, chat_id)
-        elif "assistent" in man_state:
+        elif isinstance(man_state.get("assistent"), GussAssistent):
             # Ticket cy1: getippte Eingabe geht durch den Guss-Assistenten (frische Prompt-
-            # Nachricht, altes Keyboard wird abgeräumt — ADR 0039).
+            # Nachricht, altes Keyboard wird abgeräumt — ADR 0039). Sofort-Nebel ist rein
+            # Button-getrieben und kennt keine getippten Schritte.
             _drive_guss(chat_id, text, message_id=None)
             return
         else:
@@ -2010,6 +2011,76 @@ def _drive_guss(chat_id, value, message_id=None) -> bool:
                             _render_guss_prompt, _start_guss_from_assistent, message_id)
 
 
+# --- Sofort-Nebel über den SofortNebelAssistent (Ticket cy1) --------------------------------
+
+def _sofort_nebel_prompt_text(view: str, d: dict) -> str:
+    if view == "on":
+        return "🌫️ *Sofort-Nebel — Stoß-Dauer*\n\nWie lange soll ein Nebelstoß dauern?"
+    if view == "pause":
+        return "🌫️ *Sofort-Nebel — Pause*\n\nWie lange Pause zwischen den Stößen?"
+    if view == "runtime":
+        return "🌫️ *Sofort-Nebel — Laufzeit*\n\nWie lange soll gekühlt werden?"
+    return ""
+
+
+def _sofort_nebel_keyboard(kind: str, a) -> dict:
+    if kind == "nebel_now_on":
+        return get_nebel_on_keyboard("nebel_now_on", "nebel_cancel")
+    if kind == "nebel_now_pause":
+        return get_nebel_pause_keyboard("nebel_now_pause", "nebel_cancel")
+    if kind == "nebel_now_runtime":
+        return get_nebel_now_keyboard()
+    return {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "nebel_cancel"}]]}
+
+
+def _normalize_sofort_nebel_callback(data: str):
+    """Sofort-Nebel-Callback → advance()-Wert. None = nicht zuständig."""
+    if data.startswith("nebel_now_on_"):
+        return int(data[len("nebel_now_on_"):])
+    if data.startswith("nebel_now_pause_"):
+        return int(data[len("nebel_now_pause_"):])
+    if data.startswith("nebel_dur_"):
+        return int(data[len("nebel_dur_"):])
+    return None
+
+
+def _render_sofort_nebel_prompt(chat_id, state, a, prompt, message_id=None):
+    text = _sofort_nebel_prompt_text(prompt.view, a.data)
+    kb = _sofort_nebel_keyboard(prompt.keyboard, a)
+    show_step(chat_id, state, text, kb, message_id=message_id)
+
+
+def _start_sofort_nebel_from_assistent(chat_id, state, message_id):
+    a = state["assistent"]
+    valve = a.valve
+    on_seconds = a.data["on_seconds"]
+    pause_minutes = a.data["pause_minutes"]
+    minutes = a.data["minutes"]
+    _state_del(manual_states, chat_id)
+    ok, msg = _start_sofort_nebel(valve, minutes, on_seconds, pause_minutes)
+    if ok:
+        telegram_client.edit_message_text(
+            chat_id, message_id,
+            f"🌫️ *Sofort-Nebel gestartet* für „{valve['wish_name']}“ "
+            f"({min(minutes, config.NEBEL_MANUAL_MAX_MINUTES)} Min, {on_seconds}s / {pause_minutes}min).")
+    else:
+        telegram_client.edit_message_text(chat_id, message_id, f"❌ Fehler: {msg}")
+
+
+def _drive_sofort_nebel(chat_id, value, message_id=None) -> bool:
+    return _drive_assistent(manual_states, chat_id, value,
+                            _render_sofort_nebel_prompt, _start_sofort_nebel_from_assistent, message_id)
+
+
+def _manual_driver(assistent):
+    """Wählt (Callback-Normalisierer, Treiber) für den aktiven manual_states-Assistenten."""
+    if isinstance(assistent, GussAssistent):
+        return _normalize_manual_callback, _drive_guss
+    if isinstance(assistent, SofortNebelAssistent):
+        return _normalize_sofort_nebel_callback, _drive_sofort_nebel
+    return None, None
+
+
 def _process_callback_query(cb_obj: dict):
     _cleanup_expired_states()
     cb_id = cb_obj["id"]
@@ -2027,13 +2098,15 @@ def _process_callback_query(cb_obj: dict):
             _drive_schedule(chat_id, _val, message_id=message_id)
             return
 
-    # Ticket cy1: läuft ein Guss-Assistent, gehen dessen Buttons (außer Abbrechen) durch ihn.
+    # Ticket cy1: läuft ein manueller Assistent (Guss / Sofort-Nebel), gehen dessen Buttons
+    # (außer Abbrechen) durch seine Zustandsmaschine. nebel_stop bleibt globaler Not-Aus.
     _man = _state_get(manual_states, chat_id)
-    if _man and "assistent" in _man and data != "man_cancel":
-        _val = _normalize_manual_callback(data)
+    if _man and "assistent" in _man and data not in ("man_cancel", "nebel_cancel"):
+        _norm, _drive = _manual_driver(_man["assistent"])
+        _val = _norm(data) if _norm else None
         if _val is not None:
             telegram_client.answer_callback_query(cb_id)
-            _drive_guss(chat_id, _val, message_id=message_id)
+            _drive(chat_id, _val, message_id=message_id)
             return
 
     if data == "cancel":
@@ -2570,12 +2643,10 @@ def _process_callback_query(cb_obj: dict):
                 "❌ Es ist noch kein Ventil gekoppelt. Koppel zuerst ein Ventil über Einstellungen."
             )
         elif len(valves) == 1:
-            _state_set(manual_states, chat_id, {"flow": "nebel_now", "valve": valves[0]})
-            telegram_client.send_message(
-                chat_id,
-                "🌫️ *Sofort-Nebel — Stoß-Dauer*\n\nWie lange soll ein Nebelstoß dauern?",
-                get_nebel_on_keyboard("nebel_now_on", "nebel_cancel")
-            )
+            # Ticket cy1: Sofort-Nebel läuft jetzt über den SofortNebelAssistent.
+            a = SofortNebelAssistent(valves[0])
+            _state_set(manual_states, chat_id, {"assistent": a})
+            _render_sofort_nebel_prompt(chat_id, _state_get(manual_states, chat_id), a, a.start())
         else:
             rows = [[{"text": f"🚰 {v['wish_name']}", "callback_data": f"nebel_now_valve_{v['id']}"}] for v in valves]
             rows.append([{"text": "❌ Abbrechen", "callback_data": "nebel_cancel"}])
@@ -2592,12 +2663,9 @@ def _process_callback_query(cb_obj: dict):
         if valve is None:
             telegram_client.edit_message_text(chat_id, message_id, "❌ Ventil nicht gefunden.")
         else:
-            _state_set(manual_states, chat_id, {"flow": "nebel_now", "valve": valve})
-            telegram_client.edit_message_text(
-                chat_id, message_id,
-                "🌫️ *Sofort-Nebel — Stoß-Dauer*\n\nWie lange soll ein Nebelstoß dauern?",
-                get_nebel_on_keyboard("nebel_now_on", "nebel_cancel")
-            )
+            a = SofortNebelAssistent(valve)
+            _state_set(manual_states, chat_id, {"assistent": a})
+            _render_sofort_nebel_prompt(chat_id, _state_get(manual_states, chat_id), a, a.start(), message_id=message_id)
 
     elif data.startswith("nebel_now_on_"):
         on_seconds = int(data[len("nebel_now_on_"):])

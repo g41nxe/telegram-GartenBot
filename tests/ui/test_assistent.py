@@ -10,7 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from daemon.ui.assistent import ScheduleAssistent, GussAssistent, Prompt, Reject, Done
+from daemon.ui.assistent import (
+    ScheduleAssistent, GussAssistent, SofortNebelAssistent, Prompt, Reject, Done,
+)
 
 
 def _valves(n):
@@ -262,6 +264,29 @@ class TestGussAssistent(unittest.TestCase):
     def test_default_mqtt_name(self):
         a = GussAssistent()
         self.assertEqual(a.data["mqtt_name"], "garden_valve")
+
+
+class TestSofortNebelAssistent(unittest.TestCase):
+    """Sofort-Nebel: on → pause → runtime → Done. Ventil vorgewählt (außerhalb data)."""
+
+    def test_full_flow_terminates_with_done(self):
+        valve = {"id": 3, "wish_name": "Terrasse", "mqtt_name": "terrace_mist"}
+        a = SofortNebelAssistent(valve)
+        p = a.start()
+        self.assertEqual(p.view, "on")
+        self.assertEqual(a.step, "on")
+        a.advance(30)
+        self.assertEqual(a.data["on_seconds"], 30)
+        self.assertEqual(a.step, "pause")
+        a.advance(5)
+        self.assertEqual(a.data["pause_minutes"], 5)
+        self.assertEqual(a.step, "runtime")
+        result = a.advance(60)
+        self.assertIsInstance(result, Done)
+        self.assertEqual(result.data["minutes"], 60)
+        self.assertEqual(result.data["on_seconds"], 30)
+        self.assertEqual(result.data["pause_minutes"], 5)
+        self.assertIs(a.valve, valve)
 
 
 class TestScheduleAssistentDays(unittest.TestCase):
