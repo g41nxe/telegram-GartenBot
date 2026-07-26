@@ -93,7 +93,8 @@ class TestZeitplanWizardFlow(unittest.TestCase):
     def test_empty_name_stays_on_name_step(self):
         _process_callback_query(self._cb("wiz_mode_watering", msg_id=10))
         _process_message(self._msg("   "))
-        self.assertEqual(wizard_states[self.CHAT]["step"], 1)   # kein Schritt-Wechsel
+        # kein Schritt-Wechsel: der Assistent bleibt im Namen-Schritt (ADR 0039)
+        self.assertEqual(wizard_states[self.CHAT]["assistent"].step, "name")
 
     def test_cancel_clears_state(self):
         _process_callback_query(self._cb("wiz_mode_watering", msg_id=10))
@@ -101,13 +102,11 @@ class TestZeitplanWizardFlow(unittest.TestCase):
         _process_callback_query(self._cb("wiz_cancel"))
         self.assertNotIn(self.CHAT, wizard_states)
 
-    @unittest.expectedFailure
     def test_custom_step_no_stale_inline_keyboard(self):
         """ADR 0039: Nach der getippten Custom-Dauer darf kein NEUES Inline-Keyboard per
         send_message entstehen (das lässt das alte Prompt-Keyboard stehen → zwei lebende
-        Tastaturen). Der Alt-Code tut genau das — daher @expectedFailure. Nach der
-        Assistent-Migration (durchgängig show_step) entfällt die Markierung und der Test
-        wird zum echten grünen Regel-Wächter."""
+        Tastaturen). Seit der Assistent-Migration (durchgängig show_step) erfüllt — echter
+        grüner Regel-Wächter (vorher @expectedFailure, Bug im Alt-Code reproduziert)."""
         _process_callback_query(self._cb("wiz_mode_watering", msg_id=10))
         _process_message(self._msg("Rasen"))
         _process_callback_query(self._cb("wiz_hour_14"))

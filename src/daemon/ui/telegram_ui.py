@@ -39,6 +39,7 @@ from ..core.sensor_events import RainSensorInactivityAlertTriggered, RainSensorI
 from ..core.system_events import SoftwareUpdateActivated, SoftwareUpdateRolledBack
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
+from .assistent import ScheduleAssistent, Prompt, Reject, Done
 
 logger = logging.getLogger("garden_telegram_ui")
 
@@ -1453,6 +1454,11 @@ def _process_message(msg_obj: dict):
 
         if text.startswith("/") or text in ["📊 Status anzeigen", "💧 Gießcheck", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             _state_del(wizard_states, chat_id)
+        elif "assistent" in state:
+            # Ticket cy1: getippte Eingabe geht durch den Zeitplan-Assistenten. message_id=None
+            # ⇒ frische Prompt-Nachricht, altes Keyboard wird abgeräumt (ADR 0039).
+            _drive_schedule(chat_id, text, message_id=None)
+            return
         else:
             if step == "setup_wish_name":
                 if not text:
@@ -1686,12 +1692,170 @@ def _process_message(msg_obj: dict):
             "Verwenden Sie die Buttons oder `/status` für eine Übersicht."
         )
 
+# --- Assistent-Laufzeit: Zeitplan-Wizard über die reine Zustandsmaschine (Ticket cy1) ------
+# Der ScheduleAssistent besitzt Zustand + Übergänge (reines advance()); hier lebt die
+# Präsentation: View → deutscher Prompt-Text, Keyboard-Typ → Inline-Keyboard, plus die lebende
+# Prompt-Nachricht (ADR 0039) über show_step. Nur der Wässern-Pfad; Nebel bleibt vorerst am
+# alten Wizard (inkrementelle Migration).
+
+def _schedule_prompt_text(view: str, d: dict) -> str:
+    name = d.get("name", "")
+    if view == "name":
+        return ("🆕 *Neuen Zeitplan anlegen — Name*\n\n"
+                "Bitte gib einen *Namen* ein (z. B. *Rasen morgens*):")
+    if view == "hour":
+        return (f"🆕 *Neuen Zeitplan '{name}' (Schritt 2/6)*\n\n"
+                "Zu welcher *Stunde* soll die Bewässerung starten?")
+    if view == "minute":
+        return (f"🆕 *Neuen Zeitplan '{name}' um {d['hour']:02d}:?? (Schritt 3/6)*\n\n"
+                "Zu welcher *Minute* soll die Bewässerung starten?")
+    if view == "duration":
+        return (f"🆕 *Neuen Zeitplan '{name}' um {d['hour']:02d}:{d['minute']:02d} (Schritt 4/6)*\n\n"
+                "Wie lange soll *maximal* bewässert werden? (Zeitlimit)\n\n"
+                "Aus Sicherheitsgründen max. 25 Min.")
+    if view == "duration_custom":
+        return (f"🆕 *Neuen Zeitplan '{name}' um {d['hour']:02d}:{d['minute']:02d} (Schritt 4/6)*\n\n"
+                "Bitte gib die gewünschte Dauer in Minuten über die Tastatur ein (Zahl von 1 bis 25):")
+    if view == "volume":
+        return (f"🆕 *Neuen Zeitplan '{name}' (Schritt 5/6)*\n\n"
+                "Wie viel Wasser soll *maximal* fließen? (Volumenlimit)")
+    if view == "volume_custom":
+        return (f"🆕 *Neuen Zeitplan '{name}' (Schritt 5/6)*\n\n"
+                "Bitte gib die gewünschte Wassermenge in Litern über die Tastatur ein (Zahl > 0):")
+    if view == "valve":
+        return f"🆕 *Zeitplan '{name}'*\n\nWelches *Ventil* soll dieser Zeitplan steuern?"
+    if view == "days":
+        sel = format_days_german(d["days"]) if d.get("days") else "Keine"
+        return (f"🆕 *Neuen Zeitplan '{name}' (Schritt 6/6)*\n\n"
+                f"Wähle die *Wochentage* aus, an denen bewässert werden soll:\n\n*Ausgewählt: {sel}*")
+    if view == "confirm":
+        valve_line = ""
+        if d.get("valve_id"):
+            v = database.get_valve_by_id(d["valve_id"])
+            if v:
+                valve_line = f"• *Ventil:* {_md_escape(v['wish_name'])}\n"
+        return (
+            "📝 *Zusammenfassung & Bestätigung*\n\n"
+            "Bitte überprüfe die Angaben für den neuen Zeitplan:\n\n"
+            f"• *Name:* {name}\n"
+            f"• *Startzeit:* {d['hour']:02d}:{d['minute']:02d} Uhr\n"
+            f"• *Dauer:* {d['duration']} Min\n"
+            f"• *Wassermenge:* {d['volume']} Liter\n"
+            f"{valve_line}"
+            f"• *Tage:* {format_days_german(d['days'])}\n\n"
+            "Soll dieser Zeitplan gespeichert werden?"
+        )
+    return name
+
+
+def _schedule_keyboard(kind: str, a: ScheduleAssistent) -> dict:
+    if kind == "hour":
+        return get_hour_keyboard()
+    if kind == "minute":
+        return get_minute_keyboard()
+    if kind == "duration":
+        return get_duration_wizard_keyboard("wiz")
+    if kind == "volume":
+        return get_volume_wizard_keyboard("wiz")
+    if kind == "days":
+        return get_days_wizard_keyboard(a.data.get("days", []))
+    if kind == "valve":
+        rows = [[{"text": f"🚰 {_md_escape(v['wish_name'])}", "callback_data": f"wv_valve_{v['id']}"}]
+                for v in a.valves]
+        rows.append([{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}])
+        return {"inline_keyboard": rows}
+    if kind == "confirm":
+        return {"inline_keyboard": [[
+            {"text": "❌ Abbrechen", "callback_data": "wiz_cancel"},
+            {"text": "✅ Speichern", "callback_data": "wiz_confirm_save"},
+        ]]}
+    return {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
+
+
+def _normalize_schedule_callback(data: str):
+    """Wizard-Callback → advance()-Wert (Zahl bzw. Marker). None = nicht zuständig."""
+    if data.startswith("wiz_hour_"):
+        return int(data[len("wiz_hour_"):])
+    if data.startswith("wiz_min_"):
+        return int(data[len("wiz_min_"):])
+    if data in ("wiz_dur_custom", "wiz_vol_custom"):
+        return "custom"
+    if data.startswith("wiz_dur_"):
+        return int(data[len("wiz_dur_"):])
+    if data.startswith("wiz_vol_"):
+        return int(data[len("wiz_vol_"):])
+    if data.startswith("wv_valve_"):
+        return int(data[len("wv_valve_"):])
+    if data == "wiz_day_everyday":
+        return "everyday"
+    if data.startswith("wiz_day_"):
+        return data[len("wiz_day_"):]
+    if data == "wiz_save":
+        return "save"
+    if data == "wiz_confirm_save":
+        return "confirm"
+    return None
+
+
+def _render_schedule_prompt(chat_id, a, prompt, message_id=None):
+    state = _state_get(wizard_states, chat_id)
+    text = _schedule_prompt_text(prompt.view, a.data)
+    kb = _schedule_keyboard(prompt.keyboard, a)
+    show_step(chat_id, state, text, kb, message_id=message_id)
+
+
+def _save_schedule_from_assistent(chat_id, a, message_id):
+    telegram_client.edit_message_reply_markup(chat_id, message_id, None)  # Confirm-Keyboard abräumen
+    d = a.data
+    name = d["name"]
+    time_str = f"{d['hour']:02d}:{d['minute']:02d}"
+    days_str = ",".join(d["days"])
+    db_id = database.add_schedule(name, time_str, days_str, d["duration"], d["volume"])
+    if db_id > 0 and d.get("valve_id"):
+        database.set_schedule_valves(db_id, [d["valve_id"]])
+    _state_del(wizard_states, chat_id)
+    if db_id > 0:
+        telegram_client.send_message(chat_id, f"📅 Zeitplan *'{_md_escape(name)}'* erfolgreich angelegt!", get_main_keyboard())
+        handle_schedules(chat_id)
+    else:
+        telegram_client.send_message(chat_id, "❌ Fehler beim Speichern des Zeitplans in der Datenbank.", get_main_keyboard())
+
+
+def _drive_schedule(chat_id, value, message_id=None) -> bool:
+    """Treibt den Zeitplan-Assistenten einen Schritt weiter und rendert die Absicht.
+    message_id=None (getippte Eingabe) → frische Prompt-Nachricht (altes Keyboard wird
+    abgeräumt, ADR 0039); message_id gesetzt (Button) → in-place editiert."""
+    state = _state_get(wizard_states, chat_id)
+    if not state or "assistent" not in state:
+        return False
+    result = state["assistent"].advance(value)
+    if isinstance(result, Reject):
+        telegram_client.send_message(chat_id, result.message)
+        _state_touch(wizard_states, chat_id)
+    elif isinstance(result, Done):
+        _save_schedule_from_assistent(chat_id, state["assistent"], message_id)
+    else:
+        _render_schedule_prompt(chat_id, state["assistent"], result, message_id)
+        _state_touch(wizard_states, chat_id)
+    return True
+
+
 def _process_callback_query(cb_obj: dict):
     _cleanup_expired_states()
     cb_id = cb_obj["id"]
     chat_id = cb_obj["message"]["chat"]["id"]
     message_id = cb_obj["message"]["message_id"]
     data = cb_obj["data"]
+
+    # Ticket cy1: läuft ein Zeitplan-Assistent, gehen alle Wizard-Buttons (außer Abbrechen)
+    # durch seine Zustandsmaschine.
+    _sched = _state_get(wizard_states, chat_id)
+    if _sched and "assistent" in _sched and data != "wiz_cancel":
+        _val = _normalize_schedule_callback(data)
+        if _val is not None:
+            telegram_client.answer_callback_query(cb_id)
+            _drive_schedule(chat_id, _val, message_id=message_id)
+            return
 
     if data == "cancel":
         _end_inline_flow(chat_id, message_id, cb_id, "❌ Vorgang abgebrochen.")
@@ -1724,15 +1888,21 @@ def _process_callback_query(cb_obj: dict):
             get_mode_wizard_keyboard()
         )
 
-    elif data in ("wiz_mode_watering", "wiz_mode_nebel"):
-        mode = "nebel" if data == "wiz_mode_nebel" else "watering"
-        _state_set(wizard_states, chat_id, {"step": 1, "mode": mode})
+    elif data == "wiz_mode_watering":
+        # Ticket cy1: der Zeitplan-Wizard läuft jetzt über den ScheduleAssistent.
+        a = ScheduleAssistent(mode="watering", valves=database.get_all_valves())
+        _state_set(wizard_states, chat_id, {"assistent": a})
         telegram_client.answer_callback_query(cb_id)
-        art = "Nebel-Intervall" if mode == "nebel" else "Zeitplan"
+        _render_schedule_prompt(chat_id, a, a.start(), message_id=message_id)
+
+    elif data == "wiz_mode_nebel":
+        # Nebel-Wizard bleibt (noch) auf dem alten Pfad (inkrementelle Migration).
+        _state_set(wizard_states, chat_id, {"step": 1, "mode": "nebel"})
+        telegram_client.answer_callback_query(cb_id)
         show_step(
             chat_id, _state_get(wizard_states, chat_id),
-            f"🆕 *Neues {art} anlegen — Name*\n\nBitte gib einen *Namen* ein "
-            f"(z. B. *{'Terrassen-Nebel' if mode == 'nebel' else 'Rasen morgens'}*):",
+            "🆕 *Neues Nebel-Intervall anlegen — Name*\n\nBitte gib einen *Namen* ein "
+            "(z. B. *Terrassen-Nebel*):",
             {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]},
             message_id=message_id,
         )
