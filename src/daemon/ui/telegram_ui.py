@@ -1841,47 +1841,6 @@ def _schedule_keyboard(kind: str, a: ScheduleAssistent) -> dict:
     return {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]}
 
 
-def _normalize_schedule_callback(data: str):
-    """Wizard-Callback → advance()-Wert (Zahl bzw. Marker). None = nicht zuständig."""
-    if data.startswith("wiz_hour_"):
-        return int(data[len("wiz_hour_"):])
-    if data.startswith("wiz_min_"):
-        return int(data[len("wiz_min_"):])
-    if data in ("wiz_dur_custom", "wiz_vol_custom"):
-        return "custom"
-    if data.startswith("wiz_dur_"):
-        return int(data[len("wiz_dur_"):])
-    if data.startswith("wiz_vol_"):
-        return int(data[len("wiz_vol_"):])
-    if data.startswith("nb_ehour_"):
-        return int(data[len("nb_ehour_"):])
-    if data.startswith("nb_emin_"):
-        return int(data[len("nb_emin_"):])
-    if data.startswith("nb_on_"):
-        return int(data[len("nb_on_"):])
-    if data.startswith("nb_pause_"):
-        return int(data[len("nb_pause_"):])
-    if data.startswith("nb_valve_"):
-        return int(data[len("nb_valve_"):])
-    if data.startswith("wv_valve_"):
-        return int(data[len("wv_valve_"):])
-    if data == "wiz_day_everyday":
-        return "everyday"
-    if data.startswith("wiz_day_"):
-        return data[len("wiz_day_"):]
-    if data == "wiz_save":
-        return "save"
-    if data == "wiz_confirm_save":
-        return "confirm"
-    return None
-
-
-def _render_schedule_prompt(chat_id, state, a, prompt, message_id=None):
-    text = _schedule_prompt_text(prompt.view, a.data)
-    kb = _schedule_keyboard(prompt.keyboard, a)
-    show_step(chat_id, state, text, kb, message_id=message_id)
-
-
 def _save_schedule_from_assistent(chat_id, state, message_id):
     a = state["assistent"]
     telegram_client.edit_message_reply_markup(chat_id, message_id, None)  # Confirm-Keyboard abräumen
@@ -1909,32 +1868,6 @@ def _save_schedule_from_assistent(chat_id, state, message_id):
         handle_schedules(chat_id)
     else:
         telegram_client.send_message(chat_id, error_msg, get_main_keyboard())
-
-
-def _drive_assistent(store, chat_id, value, render, on_done, message_id=None) -> bool:
-    """Generischer Assistenten-Treiber (Ticket cy1): ein advance()-Schritt und die Absicht
-    umsetzen. ``render(chat_id, state, assistent, prompt, message_id)`` malt einen Prompt,
-    ``on_done(chat_id, state, message_id)`` führt den Abschluss aus (DB-Speichern bzw. Aktion).
-    message_id=None (getippt) → frische Prompt-Nachricht (altes Keyboard weg, ADR 0039);
-    message_id gesetzt (Button) → in-place editiert."""
-    state = _state_get(store, chat_id)
-    if not state or "assistent" not in state:
-        return False
-    result = state["assistent"].advance(value)
-    if isinstance(result, Reject):
-        telegram_client.send_message(chat_id, result.message)
-        _state_touch(store, chat_id)
-    elif isinstance(result, Done):
-        on_done(chat_id, state, message_id)
-    else:
-        render(chat_id, state, state["assistent"], result, message_id)
-        _state_touch(store, chat_id)
-    return True
-
-
-def _drive_schedule(chat_id, value, message_id=None) -> bool:
-    return _drive_assistent(wizard_states, chat_id, value,
-                            _render_schedule_prompt, _save_schedule_from_assistent, message_id)
 
 
 # --- Sofort-Guss über den GussAssistent (Ticket cy1) ---------------------------------------
@@ -1966,23 +1899,6 @@ def _guss_keyboard(kind: str, a) -> dict:
     return {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]}
 
 
-def _normalize_manual_callback(data: str):
-    """Guss-Callback → advance()-Wert. None = nicht zuständig."""
-    if data in ("man_dur_custom", "man_vol_custom"):
-        return "custom"
-    if data.startswith("man_dur_"):
-        return int(data[len("man_dur_"):])
-    if data.startswith("man_vol_"):
-        return int(data[len("man_vol_"):])
-    return None
-
-
-def _render_guss_prompt(chat_id, state, a, prompt, message_id=None):
-    text = _guss_prompt_text(prompt.view, a.data)
-    kb = _guss_keyboard(prompt.keyboard, a)
-    show_step(chat_id, state, text, kb, message_id=message_id)
-
-
 def _start_guss_from_assistent(chat_id, state, message_id):
     """Abschluss des Guss-Assistenten: Kontext-Rückfrage (Feature 0020) oder Sofortstart.
     Das noch lebende Prompt-Keyboard wird abgeräumt — bei Button über message_id, bei getippter
@@ -2011,11 +1927,6 @@ def _start_guss_from_assistent(chat_id, state, message_id):
             chat_id, message_id, f"🟢 *Befehl gesendet:* Bewässerung gestartet ({dur} Min / {vol}l).")
 
 
-def _drive_guss(chat_id, value, message_id=None) -> bool:
-    return _drive_assistent(manual_states, chat_id, value,
-                            _render_guss_prompt, _start_guss_from_assistent, message_id)
-
-
 # --- Sofort-Nebel über den SofortNebelAssistent (Ticket cy1) --------------------------------
 
 def _sofort_nebel_prompt_text(view: str, d: dict) -> str:
@@ -2038,23 +1949,6 @@ def _sofort_nebel_keyboard(kind: str, a) -> dict:
     return {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "nebel_cancel"}]]}
 
 
-def _normalize_sofort_nebel_callback(data: str):
-    """Sofort-Nebel-Callback → advance()-Wert. None = nicht zuständig."""
-    if data.startswith("nebel_now_on_"):
-        return int(data[len("nebel_now_on_"):])
-    if data.startswith("nebel_now_pause_"):
-        return int(data[len("nebel_now_pause_"):])
-    if data.startswith("nebel_dur_"):
-        return int(data[len("nebel_dur_"):])
-    return None
-
-
-def _render_sofort_nebel_prompt(chat_id, state, a, prompt, message_id=None):
-    text = _sofort_nebel_prompt_text(prompt.view, a.data)
-    kb = _sofort_nebel_keyboard(prompt.keyboard, a)
-    show_step(chat_id, state, text, kb, message_id=message_id)
-
-
 def _start_sofort_nebel_from_assistent(chat_id, state, message_id):
     a = state["assistent"]
     valve = a.valve
@@ -2070,20 +1964,6 @@ def _start_sofort_nebel_from_assistent(chat_id, state, message_id):
             f"({min(minutes, config.NEBEL_MANUAL_MAX_MINUTES)} Min, {on_seconds}s / {pause_minutes}min).")
     else:
         telegram_client.edit_message_text(chat_id, message_id, f"❌ Fehler: {msg}")
-
-
-def _drive_sofort_nebel(chat_id, value, message_id=None) -> bool:
-    return _drive_assistent(manual_states, chat_id, value,
-                            _render_sofort_nebel_prompt, _start_sofort_nebel_from_assistent, message_id)
-
-
-def _manual_driver(assistent):
-    """Wählt (Callback-Normalisierer, Treiber) für den aktiven manual_states-Assistenten."""
-    if isinstance(assistent, GussAssistent):
-        return _normalize_manual_callback, _drive_guss
-    if isinstance(assistent, SofortNebelAssistent):
-        return _normalize_sofort_nebel_callback, _drive_sofort_nebel
-    return None, None
 
 
 # --- Kamera-Kopplung / -Einstellungen über die Assistenten (Ticket cy1) ---------------------
@@ -2123,23 +2003,6 @@ def _camera_keyboard(kind, a) -> dict:
     return None   # wish_name / interval: getippt, keyboardlos
 
 
-def _normalize_camera_callback(data: str):
-    """Kamera-Callback → advance()-Wert. None = nicht zuständig."""
-    if data.startswith("camsetup_res_"):
-        val = data[len("camsetup_res_"):]
-        return val if val in ("VGA", "XGA", "UXGA") else None
-    if data.startswith("camsetup_qual_"):
-        val = data[len("camsetup_qual_"):]
-        return val if val in ("high", "medium", "low") else None
-    return None
-
-
-def _render_camera_prompt(chat_id, state, a, prompt, message_id=None):
-    text = _camera_prompt_text(prompt.view, a.data)
-    kb = _camera_keyboard(prompt.keyboard, a)
-    show_step(chat_id, state, text, kb, message_id=message_id)
-
-
 def _start_camera_pairing_from_assistent(chat_id, state, message_id):
     from ..adapters import camera_pairing
     d = state["assistent"].data
@@ -2176,48 +2039,12 @@ def _save_camera_settings_from_assistent(chat_id, state, message_id):
         telegram_client.send_message(chat_id, "❌ Kamera nicht mehr in der Datenbank gefunden.", get_main_keyboard())
 
 
-def _drive_camera_pair(chat_id, value, message_id=None) -> bool:
-    return _drive_assistent(wizard_states, chat_id, value,
-                            _render_camera_prompt, _start_camera_pairing_from_assistent, message_id)
-
-
-def _drive_camera_settings(chat_id, value, message_id=None) -> bool:
-    return _drive_assistent(wizard_states, chat_id, value,
-                            _render_camera_prompt, _save_camera_settings_from_assistent, message_id)
-
-
 # --- Ventil-Kopplung über den PairingNameAssistent (Ticket cy1) -----------------------------
-
-def _render_pairing_name_prompt(chat_id, state, a, prompt, message_id=None):
-    show_step(chat_id, state,
-              "🔧 *Neues Ventil koppeln*\n\nWie soll dieses Ventil heißen?\nBitte tippe den Namen ein:",
-              None, message_id=message_id)
-
 
 def _start_valve_pairing_from_assistent(chat_id, state, message_id):
     wish_name = state["assistent"].data["wish_name"]
     _state_del(wizard_states, chat_id)
     _start_pairing(chat_id, wish_name)
-
-
-def _drive_pairing_name(chat_id, value, message_id=None) -> bool:
-    return _drive_assistent(wizard_states, chat_id, value,
-                            _render_pairing_name_prompt, _start_valve_pairing_from_assistent, message_id)
-
-
-def _wizard_driver(assistent):
-    """Wählt (Normalisierer, Treiber, Abbrechen-Callback) für den aktiven wizard_states-
-    Assistenten (Zeitplan/Nebel bzw. Kamera-Kopplung/-Einstellungen, Ventil-Kopplung)."""
-    if isinstance(assistent, ScheduleAssistent):
-        return _normalize_schedule_callback, _drive_schedule, "wiz_cancel"
-    if isinstance(assistent, CameraPairAssistent):
-        return _normalize_camera_callback, _drive_camera_pair, "camsetup_cancel"
-    if isinstance(assistent, CameraSettingsAssistent):
-        return _normalize_camera_callback, _drive_camera_settings, "camsetup_cancel"
-    if isinstance(assistent, PairingNameAssistent):
-        # rein getippt — keine Buttons; Abbrechen läuft über setup_cancel (Alt-Handler).
-        return (lambda data: None), _drive_pairing_name, "setup_cancel"
-    return None, None, None
 
 
 # =====================================================================================
