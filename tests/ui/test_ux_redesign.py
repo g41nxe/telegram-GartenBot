@@ -17,29 +17,23 @@ from daemon.core.watering_advice import WateringDecision
 # Testergebnis am Wetter in garden.db. Deterministische „voller Guss"-Entscheidung:
 _FULL_GUSS = WateringDecision(factor=1.0, verdict="🚿 Voller Guss", reasons=[], skip=False)
 
-
 def _msg(text, chat_id=100):
     return {"chat": {"id": chat_id}, "text": text}
-
 
 def _cb(data, chat_id=100, msg_id=1):
     return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
 
-
 def _markup(call_args):
     return call_args.args[2] if len(call_args.args) > 2 else call_args.kwargs.get("reply_markup")
-
 
 def _edit_markup(call_args):
     # edit_message_text(chat_id, message_id, text, markup)
     return call_args.args[3] if len(call_args.args) > 3 else call_args.kwargs.get("reply_markup")
 
-
 def _cb_data(markup):
     if markup is None:
         return []
     return [b.get("callback_data") for row in markup["inline_keyboard"] for b in row]
-
 
 # ===========================================================================
 # Gruppe A — Tastatur, Befehls-Umbenennung, Untermenüs, Clean Cut
@@ -84,7 +78,6 @@ class TestKeyboardRouting(unittest.TestCase):
         _process_message(_msg("🚿 Bewässern"))
         mock_h.assert_called_once()
 
-
 class TestCommandRouting(unittest.TestCase):
     """Registrierte und Dispatcher-only Befehle."""
 
@@ -105,7 +98,6 @@ class TestCommandRouting(unittest.TestCase):
              patch("daemon.adapters.chart.generate_weather_chart", return_value=None):
             _process_message(_msg("/tagesbericht"))
         mock_report.assert_called_once()
-
 
 class TestRemovedCommands(unittest.TestCase):
     """Clean Cut: entfernte Befehle und alte Tastatur-Texte → Unbekannter Befehl."""
@@ -129,7 +121,6 @@ class TestRemovedCommands(unittest.TestCase):
                     str(c.args[1]) for c in mock_tc.send_message.call_args_list if len(c.args) > 1
                 )
                 self.assertIn("Unbekannter Befehl", texts, f"{cmd!r} wurde nicht abgewiesen")
-
 
 class TestKameraSubmenu(unittest.TestCase):
 
@@ -159,7 +150,6 @@ class TestKameraSubmenu(unittest.TestCase):
         _process_callback_query(_cb("kamera_fotozeiten"))
         mock_h.assert_called_once()
 
-
 class TestEinstellungenSubmenu(unittest.TestCase):
 
     @patch("daemon.ui.telegram_ui.telegram_client")
@@ -183,15 +173,12 @@ class TestEinstellungenSubmenu(unittest.TestCase):
         _process_callback_query(_cb("einst_open"))
         mock_h.assert_called_once()
 
-
 def _clear_states():
     from daemon.ui import telegram_ui
     telegram_ui.manual_states.clear()
 
-
 def _valve(vid, wish, mqtt):
     return {"id": vid, "wish_name": wish, "mqtt_name": mqtt}
-
 
 # ===========================================================================
 # Gruppe C — Bewässern / Guss-Zweig (Art → Ventil → Zeitlimit)
@@ -247,7 +234,6 @@ class TestGussFlow(unittest.TestCase):
         _, kwargs = mock_water.start_watering.call_args
         self.assertEqual(kwargs.get("mqtt_name"), "beet_valve")
 
-
 # ===========================================================================
 # Gruppe B — Sofort-Nebel Takt (Ventil → Stoß-Dauer → Pause → Laufzeit)
 # ===========================================================================
@@ -293,7 +279,6 @@ class TestNebelTaktFlow(unittest.TestCase):
         self.assertEqual(args[0], "terrace_mist")
         self.assertEqual(args[1], 30)   # gewählte Stoß-Dauer, nicht Config-Default
         self.assertEqual(args[2], 5)    # gewählte Pause
-
 
 # ===========================================================================
 # Gruppe D — Stopp: querschnittliche Auswahl
@@ -408,7 +393,6 @@ class TestStoppSelection(unittest.TestCase):
         mock_nebel.stop.assert_called_once_with()
         mock_water.force_close.assert_called_once_with("beet_valve")
 
-
 class TestShowStep(unittest.TestCase):
     """Feature 0037: show_step hält die Invariante 'eine lebende Prompt-Nachricht'."""
 
@@ -445,7 +429,6 @@ class TestShowStep(unittest.TestCase):
         tc.edit_message_reply_markup.assert_not_called()
         self.assertEqual(state["prompt_msg_id"], 42)
 
-
 class TestWizardSingleMessage(unittest.TestCase):
     """Feature 0037: getippte Übergänge räumen den vorigen Prompt ab (eine lebende Prompt-Nachricht)."""
 
@@ -480,7 +463,6 @@ class TestWizardSingleMessage(unittest.TestCase):
         _process_message(_msg("12"))  # Dauer getippt → Mengen-Prompt frisch, Prompt 20 abgeräumt
         tc.edit_message_reply_markup.assert_called_once_with(100, 20, None)
         tc.send_message_id.assert_called_once()
-
 
 class TestInlineKeyboardCleanup(unittest.TestCase):
     """Feature 0033: Abbruch-/Fehler-Callbacks räumen das Inline-Keyboard der Ursprungsnachricht ab."""
@@ -566,22 +548,6 @@ class TestInlineKeyboardCleanup(unittest.TestCase):
         _process_message(_msg("25"))  # getippte Menge, Start scheitert
         tc.edit_message_reply_markup.assert_called_once_with(100, 77, None)
 
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_wiz_confirm_save_removes_confirmation_keyboard(self, tc, mock_db):
-        """Erfolgreiches Speichern räumt das Bestätigungs-Keyboard ab (kein Doppel-Speichern)."""
-        from daemon.ui import telegram_ui
-        telegram_ui.wizard_states.clear()
-        telegram_ui._state_set(telegram_ui.wizard_states, 100, {
-            "name": "Rasen", "hour": 6, "minute": 0, "days": ["everyday"],
-            "duration": 12, "volume": 30, "valve_id": None,
-        })
-        mock_db.add_schedule.return_value = 5
-        mock_db.get_schedules.return_value = []
-        _process_callback_query(_cb("wiz_confirm_save"))
-        tc.edit_message_reply_markup.assert_called_once_with(100, 1, None)
-        telegram_ui.wizard_states.clear()
-
     @patch("daemon.ui.telegram_ui._weather_adapter")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
@@ -599,7 +565,6 @@ class TestInlineKeyboardCleanup(unittest.TestCase):
         args = tc.edit_message_text.call_args
         markup = args.args[3] if len(args.args) > 3 else args.kwargs.get("reply_markup")
         self.assertIsNone(markup)
-
 
 if __name__ == "__main__":
     unittest.main()

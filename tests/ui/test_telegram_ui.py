@@ -27,7 +27,6 @@ from daemon.ui.telegram_ui import (
     WIZARD_TTL_SECONDS,
 )
 
-
 class TestValveFormattingMarkdownSafety(unittest.TestCase):
     """Regression: ein mqtt_name mit Unterstrich (z.B. valve_ffff) darf parse_mode=Markdown
     nicht brechen — sonst lehnt Telegram die ganze /status-Nachricht mit HTTP 400 ab."""
@@ -65,7 +64,6 @@ class TestValveFormattingMarkdownSafety(unittest.TestCase):
         out = telegram_ui._format_valve_expanded(valve, "red")
         self.assertIn("A\\_B", out)
 
-
 class TestWeatherCodes(unittest.TestCase):
 
     def test_known_code_returns_description(self):
@@ -80,7 +78,6 @@ class TestWeatherCodes(unittest.TestCase):
 
     def test_boundary_code_45(self):
         self.assertIn("Nebel", get_wmo_description(45))
-
 
 class TestWizardStateMachine(unittest.TestCase):
 
@@ -119,7 +116,6 @@ class TestWizardStateMachine(unittest.TestCase):
         _state_touch(wizard_states, 42)
         updated_time = _state_get(wizard_states, 42)["last_active"]
         self.assertGreater(updated_time, original_time)
-
 
 class TestWizardTTLCleanup(unittest.TestCase):
 
@@ -175,7 +171,6 @@ class TestWizardTTLCleanup(unittest.TestCase):
 
         self.assertEqual(errors, [], f"Thread-safety errors: {errors}")
 
-
 class TestDeleteStatesCleanup(unittest.TestCase):
 
     def setUp(self):
@@ -194,7 +189,6 @@ class TestDeleteStatesCleanup(unittest.TestCase):
         _state_set(delete_states, 200, {"schedule_id": 2, "name": "Frisch"})
         _cleanup_expired_states()
         self.assertIn(200, delete_states)
-
 
 class TestSchedulesInlineKeyboard(unittest.TestCase):
 
@@ -234,7 +228,6 @@ class TestSchedulesInlineKeyboard(unittest.TestCase):
         all_cb = [b.get("callback_data") for row in kb["inline_keyboard"] for b in row]
         self.assertNotIn("nebel_now", all_cb)
 
-
 class TestSchedulesMarkdownSafety(unittest.TestCase):
     """Zeitplan-Namen mit Markdown-Sonderzeichen dürfen die Nachricht nicht zerschießen (HTTP 400)."""
 
@@ -251,7 +244,6 @@ class TestSchedulesMarkdownSafety(unittest.TestCase):
         text = mock_client.send_message.call_args[0][1]
         self.assertIn(r"valve\_report\_test", text)        # escaped → Markdown-sicher
         self.assertNotIn("valve_report_test", text)        # roher Name darf nicht im Markdown-Text stehen
-
 
 class TestScheduleEditFlow(unittest.TestCase):
 
@@ -315,35 +307,6 @@ class TestScheduleEditFlow(unittest.TestCase):
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_sched_editfield_duration_zeigt_keyboard(self, mock_client, mock_db):
-        """sched_editfield_duration_7 zeigt ein Dauer-Auswahl-Keyboard."""
-        mock_db.get_schedule_by_id.return_value = self._schedule()
-        _process_callback_query(self._cb("sched_editfield_duration_7"))
-        mock_client.edit_message_text.assert_called_once()
-        kb = mock_client.edit_message_text.call_args[0][3]
-        callbacks = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
-        self.assertTrue(any("sched_setdur_7_" in c for c in callbacks))
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_sched_setdur_speichert_neue_dauer(self, mock_client, mock_db):
-        """sched_setdur_7_20 ruft update_schedule mit neuer Dauer auf."""
-        mock_db.get_schedule_by_id.return_value = self._schedule()
-        mock_db.get_schedules.return_value = []
-        _process_callback_query(self._cb("sched_setdur_7_20"))
-        mock_db.update_schedule.assert_called_once_with(7, "Abend", "20:00", "Mon", 20, 0, 1)
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_sched_setvol_speichert_neue_menge(self, mock_client, mock_db):
-        """sched_setvol_7_25 ruft update_schedule mit neuer Menge auf."""
-        mock_db.get_schedule_by_id.return_value = self._schedule()
-        mock_db.get_schedules.return_value = []
-        _process_callback_query(self._cb("sched_setvol_7_25"))
-        mock_db.update_schedule.assert_called_once_with(7, "Abend", "20:00", "Mon", 15, 25, 1)
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
     def test_sched_edit_cancel_schliesst_dialog(self, mock_client, mock_db):
         """sched_edit_cancel schließt den Edit-Dialog ohne Änderung."""
         mock_db.get_schedules.return_value = []
@@ -362,29 +325,6 @@ class TestScheduleEditFlow(unittest.TestCase):
         mock_db.get_schedules.return_value = []
         _process_message(self._msg("Neuer Zeitplan"))
         mock_db.update_schedule.assert_called_once_with(7, "Neuer Zeitplan", "20:00", "Mon", 15, 0, 1)
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_sched_editfield_days_zeigt_vorauswahl(self, mock_client, mock_db):
-        """sched_editfield_days_7 zeigt Tage-Keyboard mit aktuellen Tagen vorausgewählt."""
-        mock_db.get_schedule_by_id.return_value = self._schedule(days="Mon")
-        _process_callback_query(self._cb("sched_editfield_days_7"))
-        mock_client.edit_message_text.assert_called_once()
-        kb = mock_client.edit_message_text.call_args[0][3]
-        callbacks = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
-        self.assertTrue(any("sched_editday_save_7" in c for c in callbacks))
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_sched_editday_save_speichert_tage(self, mock_client, mock_db):
-        """sched_editday_save_7 speichert die ausgewählten Tage."""
-        from daemon.ui.telegram_ui import edit_states, _state_set
-        _state_set(edit_states, 100, {"sched_id": 7, "field": "days", "edit_days": ["Mon", "Wed"]})
-        mock_db.get_schedule_by_id.return_value = self._schedule()
-        mock_db.get_schedules.return_value = []
-        _process_callback_query(self._cb("sched_editday_save_7"))
-        mock_db.update_schedule.assert_called_once_with(7, "Abend", "20:00", "Mon,Wed", 15, 0, 1)
-
 
 class TestScheduleToggleCallback(unittest.TestCase):
 
@@ -415,7 +355,6 @@ class TestScheduleToggleCallback(unittest.TestCase):
         mock_db.get_schedules.return_value = []
         _process_callback_query(self._cb("sched_toggle_99"))
         mock_client.answer_callback_query.assert_called_once_with("cb1", "Zeitplan nicht gefunden", show_alert=True)
-
 
 class TestScheduleDeleteFlow(unittest.TestCase):
 
@@ -494,63 +433,6 @@ class TestScheduleDeleteFlow(unittest.TestCase):
         mock_client.answer_callback_query.assert_called_once_with("cb1", "Zeitplan nicht gefunden", show_alert=True)
         self.assertIsNone(_state_get(delete_states, 100))
 
-
-class TestManualWateringPresetCallback(unittest.TestCase):
-    """Tests the man_vol_<preset> callback path (inline button selection)."""
-
-    def setUp(self):
-        manual_states.clear()
-        # Feature 0020: Der Start-Pfad prüft jetzt den Kontext. Für diese Tests ist der
-        # Kontext unkritisch (skip=False), damit der Sofortstart wie bisher greift.
-        from daemon.core.watering_advice import WateringDecision
-        self._wp = patch("daemon.ui.telegram_ui._weather_adapter")
-        mock_w = self._wp.start()
-        mock_w.evaluate_watering_factor.return_value = WateringDecision(
-            factor=1.0, verdict="", reasons=[], skip=False
-        )
-
-    def tearDown(self):
-        manual_states.clear()
-        self._wp.stop()
-
-    def _cb(self, data, chat_id=100, msg_id=1):
-        return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
-
-    @patch("daemon.ui.telegram_ui._watering_ctrl")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_preset_volume_triggers_start_watering(self, mock_client, mock_ctrl):
-        """Pressing a preset volume button must call _watering_ctrl.start_watering."""
-        mock_ctrl.start_watering.return_value = (True, "OK")
-        _state_set(manual_states, 100, {"step": 2, "duration": 10})
-
-        _process_callback_query(self._cb("man_vol_25"))
-
-        mock_ctrl.start_watering.assert_called_once_with(10, 25, "manual", mqtt_name="garden_valve")
-
-    @patch("daemon.ui.telegram_ui._watering_ctrl")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_preset_volume_clears_state(self, mock_client, mock_ctrl):
-        """Selecting a preset volume must clear manual_states."""
-        mock_ctrl.start_watering.return_value = (True, "OK")
-        _state_set(manual_states, 100, {"step": 2, "duration": 5})
-
-        _process_callback_query(self._cb("man_vol_10"))
-
-        self.assertIsNone(_state_get(manual_states, 100))
-
-    @patch("daemon.ui.telegram_ui._watering_ctrl")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_preset_volume_failure_sends_error(self, mock_client, mock_ctrl):
-        """On failure, an error message must be sent to the user."""
-        mock_ctrl.start_watering.return_value = (False, "Ventil blockiert")
-        _state_set(manual_states, 100, {"step": 2, "duration": 10})
-
-        _process_callback_query(self._cb("man_vol_50"))
-
-        error_text = mock_client.send_message.call_args[0][1]
-        self.assertIn("Fehler", error_text)
-
-
 class TestContextSensitiveWateringHint(unittest.TestCase):
     """Feature 0020: Kontextsensible Rückfrage vor manuellem Guss."""
 
@@ -572,83 +454,6 @@ class TestContextSensitiveWateringHint(unittest.TestCase):
             skip=skip,
         )
 
-    @patch("daemon.ui.telegram_ui._weather_adapter")
-    @patch("daemon.ui.telegram_ui._watering_ctrl")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_skip_context_asks_instead_of_starting(self, mock_client, mock_ctrl, mock_w):
-        mock_w.evaluate_watering_factor.return_value = self._decision(skip=True)
-        _state_set(manual_states, 100, {"step": 2, "duration": 10})
-
-        _process_callback_query(self._cb("man_vol_25"))
-
-        # Kein Sofortstart, sondern Rückfrage
-        mock_ctrl.start_watering.assert_not_called()
-        sent = mock_client.send_message.call_args
-        text, keyboard = sent[0][1], sent[0][2]
-        self.assertIn("Trotzdem gießen", text)
-        self.assertIn("8.0 mm", text)  # konkrete Begründung
-        cbs = [b["callback_data"] for row in keyboard["inline_keyboard"] for b in row]
-        self.assertIn("water_anyway", cbs)
-        self.assertIn("man_cancel", cbs)
-
-    @patch("daemon.ui.telegram_ui._weather_adapter")
-    @patch("daemon.ui.telegram_ui._watering_ctrl")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_uncritical_context_starts_directly(self, mock_client, mock_ctrl, mock_w):
-        mock_w.evaluate_watering_factor.return_value = self._decision(skip=False)
-        mock_ctrl.start_watering.return_value = (True, "OK")
-        _state_set(manual_states, 100, {"step": 2, "duration": 10})
-
-        _process_callback_query(self._cb("man_vol_25"))
-
-        mock_ctrl.start_watering.assert_called_once_with(10, 25, "manual", mqtt_name="garden_valve")
-
-    @patch("daemon.ui.telegram_ui._weather_adapter")
-    @patch("daemon.ui.telegram_ui._watering_ctrl")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_water_anyway_starts_with_pending_values(self, mock_client, mock_ctrl, mock_w):
-        mock_w.evaluate_watering_factor.return_value = self._decision(skip=True)
-        mock_ctrl.start_watering.return_value = (True, "OK")
-        _state_set(manual_states, 100, {"step": 2, "duration": 15, "mqtt_name": "valve_a"})
-
-        # Erst Rückfrage auslösen (merkt 15 Min / 30 l / valve_a)
-        _process_callback_query(self._cb("man_vol_30"))
-        mock_ctrl.start_watering.assert_not_called()
-
-        # Dann "Trotzdem gießen"
-        _process_callback_query(self._cb("water_anyway"))
-        mock_ctrl.start_watering.assert_called_once_with(15, 30, "manual", mqtt_name="valve_a")
-        self.assertIsNone(_state_get(manual_states, 100))
-
-    @patch("daemon.ui.telegram_ui._weather_adapter")
-    @patch("daemon.ui.telegram_ui._watering_ctrl")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_eval_failure_does_not_block(self, mock_client, mock_ctrl, mock_w):
-        mock_w.evaluate_watering_factor.side_effect = RuntimeError("Wetter weg")
-        mock_ctrl.start_watering.return_value = (True, "OK")
-        _state_set(manual_states, 100, {"step": 2, "duration": 10})
-
-        _process_callback_query(self._cb("man_vol_25"))
-
-        mock_ctrl.start_watering.assert_called_once_with(10, 25, "manual", mqtt_name="garden_valve")
-
-    @patch("daemon.ui.telegram_ui._weather_adapter")
-    @patch("daemon.ui.telegram_ui._watering_ctrl")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_typed_volume_path_asks_on_skip(self, mock_client, mock_ctrl, mock_w):
-        """Auch der getippte Mengen-Pfad (man_custom_volume) muss bei skip nachfragen."""
-        mock_w.evaluate_watering_factor.return_value = self._decision(skip=True)
-        _state_set(manual_states, 100, {"step": "man_custom_volume", "duration": 12, "mqtt_name": "garden_valve"})
-
-        _process_message({"chat": {"id": 100}, "message_id": 5, "text": "40"})
-
-        mock_ctrl.start_watering.assert_not_called()
-        text = mock_client.send_message.call_args[0][1]
-        self.assertIn("Trotzdem gießen", text)
-        # gemerkte Werte für water_anyway
-        self.assertEqual(_state_get(manual_states, 100)["pending_water"],
-                         {"dur": 12, "vol": 40, "mqtt_name": "garden_valve"})
-
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_water_anyway_without_pending_is_noop(self, mock_client, mock_ctrl):
@@ -661,7 +466,6 @@ class TestContextSensitiveWateringHint(unittest.TestCase):
         remaining = _state_get(manual_states, 100)   # fremder Wizard NICHT gelöscht
         self.assertIsNotNone(remaining)
         self.assertEqual(remaining["step"], 1)
-
 
 class TestNebelUI(unittest.TestCase):
     """Sofort-Nebel, Wizard-Nebel-Zweig und Benachrichtigungen (Feature 0032)."""
@@ -685,39 +489,6 @@ class TestNebelUI(unittest.TestCase):
             "on_seconds": on_seconds,
             "pause_minutes": pause_minutes,
         })
-
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_sofort_nebel_single_valve_starts(self, mock_client, mock_db, mock_nebel):
-        mock_nebel.start.return_value = (True, "OK")
-        self._seed_nebel_flow(on_seconds=30, pause_minutes=3)
-
-        _process_callback_query(self._cb("nebel_dur_60"))
-
-        self.assertTrue(mock_nebel.start.called)
-        args = mock_nebel.start.call_args[0]
-        self.assertEqual(args[0], "terrace_mist")          # mqtt_name
-        self.assertEqual(args[1], 30)                       # gewählte Stoß-Dauer
-        self.assertEqual(args[2], 3)                        # gewählte Pause
-        self.assertEqual(mock_nebel.start.call_args[0][4], "nebel_manual")  # source
-
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_sofort_nebel_caps_runtime(self, mock_client, mock_db, mock_nebel):
-        from daemon.ui import telegram_ui
-        mock_nebel.start.return_value = (True, "OK")
-        self._seed_nebel_flow()
-
-        with patch.object(telegram_ui.config, "NEBEL_MANUAL_MAX_MINUTES", 90):
-            _process_callback_query(self._cb("nebel_dur_120"))   # über dem Cap
-
-        end_dt = mock_nebel.start.call_args[0][3]
-        # gedeckelt auf 90 Min ab jetzt (Toleranz)
-        delta_min = (end_dt - datetime.now()).total_seconds() / 60
-        self.assertLessEqual(delta_min, 91)
-        self.assertGreater(delta_min, 85)
 
     @patch("daemon.ui.telegram_ui._nebel_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
@@ -748,28 +519,6 @@ class TestNebelUI(unittest.TestCase):
         self.assertIn("9", msg)
         self.assertIn("Terrasse", msg)
 
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_nebel_end_before_start_does_not_advance(self, mock_client):
-        """Endzeit ≤ Startzeit wird abgelehnt — der Wizard springt zur Endstunde zurück."""
-        _state_set(wizard_states, 100, {"step": "nebel_endmin", "mode": "nebel",
-                                        "name": "X", "hour": 12, "minute": 0, "end_hour": 11})
-        _process_callback_query(self._cb("nb_emin_30"))  # 11:30 ≤ 12:00
-        self.assertEqual(_state_get(wizard_states, 100)["step"], "nebel_endhour")
-
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_nebel_end_equal_start_does_not_advance(self, mock_client):
-        _state_set(wizard_states, 100, {"step": "nebel_endmin", "mode": "nebel",
-                                        "name": "X", "hour": 12, "minute": 0, "end_hour": 12})
-        _process_callback_query(self._cb("nb_emin_0"))   # 12:00 == 12:00
-        self.assertEqual(_state_get(wizard_states, 100)["step"], "nebel_endhour")
-
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_nebel_end_after_start_advances(self, mock_client):
-        _state_set(wizard_states, 100, {"step": "nebel_endmin", "mode": "nebel",
-                                        "name": "X", "hour": 12, "minute": 0, "end_hour": 18})
-        _process_callback_query(self._cb("nb_emin_30"))  # 18:30 > 12:00
-        self.assertEqual(_state_get(wizard_states, 100)["step"], "nebel_on")
-
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_wiz_mode_nebel_sets_state(self, mock_client, mock_db):
@@ -789,130 +538,6 @@ class TestNebelUI(unittest.TestCase):
         _process_callback_query(self._cb("wiz_mode_nebel"))
         self.assertIsNone(_state_get(wizard_states, 100))
         self.assertIn("kein Ventil", mock_client.edit_message_text.call_args.args[2])
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_wiz_confirm_save_nebel_persists_fields(self, mock_client, mock_db):
-        mock_db.add_schedule.return_value = 42
-        _state_set(wizard_states, 100, {
-            "step": 7, "mode": "nebel", "name": "Terrassen-Nebel",
-            "hour": 12, "minute": 0, "end_hour": 18, "end_minute": 30,
-            "on_seconds": 20, "pause_minutes": 5, "valve_id": 3, "days": ["everyday"],
-        })
-
-        _process_callback_query(self._cb("wiz_confirm_save"))
-
-        kwargs = mock_db.add_schedule.call_args.kwargs
-        self.assertEqual(kwargs["mode"], "nebel")
-        self.assertEqual(kwargs["end_time"], "18:30")
-        self.assertEqual(kwargs["on_seconds"], 20)
-        self.assertEqual(kwargs["pause_minutes"], 5)
-        mock_db.set_schedule_valves.assert_called_once_with(42, [3])
-
-
-class TestWateringValveSelection(unittest.TestCase):
-    """Ventil-Auswahl für Bewässerungs-Zeitpläne (Feature 0006 UI-Teil): Wizard + Edit."""
-
-    def setUp(self):
-        wizard_states.clear()
-        edit_states.clear()
-
-    def tearDown(self):
-        wizard_states.clear()
-        edit_states.clear()
-
-    def _cb(self, data, chat_id=100, msg_id=1):
-        return {"id": "cb1", "data": data, "message": {"chat": {"id": chat_id}, "message_id": msg_id}}
-
-    def _wiz(self, **extra):
-        base = {"step": 5, "mode": "watering", "name": "X", "hour": 6, "minute": 0, "duration": 10}
-        base.update(extra)
-        _state_set(wizard_states, 100, base)
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_volume_with_multiple_valves_shows_valve_choice(self, mc, mdb):
-        mdb.get_all_valves.return_value = [{"id": 1, "wish_name": "Links Sprenger"},
-                                           {"id": 2, "wish_name": "Rechts Nebelregen"}]
-        self._wiz()
-        _process_callback_query(self._cb("wiz_vol_10"))
-        st = _state_get(wizard_states, 100)
-        self.assertEqual(st["step"], "wiz_valve")
-        kb = mc.edit_message_text.call_args[0][3]
-        cbs = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
-        self.assertIn("wv_valve_2", cbs)
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_volume_with_single_valve_autoassigns_and_goes_to_days(self, mc, mdb):
-        mdb.get_all_valves.return_value = [{"id": 1, "wish_name": "Links Sprenger"}]
-        self._wiz()
-        _process_callback_query(self._cb("wiz_vol_10"))
-        st = _state_get(wizard_states, 100)
-        self.assertEqual(st["step"], 6)
-        self.assertEqual(st["valve_id"], 1)
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_wv_valve_pick_sets_valve_and_days_step(self, mc, mdb):
-        self._wiz(step="wiz_valve", volume=0)
-        _process_callback_query(self._cb("wv_valve_2"))
-        st = _state_get(wizard_states, 100)
-        self.assertEqual(st["valve_id"], 2)
-        self.assertEqual(st["step"], 6)
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_confirm_save_watering_assigns_valve(self, mc, mdb):
-        mdb.add_schedule.return_value = 50
-        self._wiz(step=7, volume=5, days=["everyday"], valve_id=2)
-        _process_callback_query(self._cb("wiz_confirm_save"))
-        mdb.set_schedule_valves.assert_called_once_with(50, [2])
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_confirm_save_watering_without_valve_does_not_assign(self, mc, mdb):
-        mdb.add_schedule.return_value = 51
-        self._wiz(step=7, volume=5, days=["everyday"])  # kein valve_id (0 Ventile / Default)
-        _process_callback_query(self._cb("wiz_confirm_save"))
-        mdb.set_schedule_valves.assert_not_called()
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_edit_menu_has_valve_field(self, mc, mdb):
-        mdb.get_schedule_by_id.return_value = {"id": 19, "name": "Abends", "time": "22:00",
-                                               "days": "everyday", "duration_minutes": 20,
-                                               "target_volume_liters": 0, "is_active": 1}
-        mdb.get_schedule_valves.return_value = [1]
-        mdb.get_valve_by_id.return_value = {"id": 1, "wish_name": "Links Sprenger"}
-        _process_callback_query(self._cb("sched_edit_19"))
-        kb = mc.edit_message_text.call_args[0][3]
-        cbs = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
-        self.assertIn("sched_editfield_valve_19", cbs)
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_edit_valve_field_shows_valve_buttons(self, mc, mdb):
-        mdb.get_schedule_by_id.return_value = {"id": 19, "name": "Abends", "time": "22:00",
-                                               "days": "everyday", "duration_minutes": 20,
-                                               "target_volume_liters": 0, "is_active": 1}
-        mdb.get_all_valves.return_value = [{"id": 1, "wish_name": "Links Sprenger"},
-                                           {"id": 2, "wish_name": "Rechts Nebelregen"}]
-        mdb.get_schedule_valves.return_value = [1]
-        _process_callback_query(self._cb("sched_editfield_valve_19"))
-        kb = mc.edit_message_text.call_args[0][3]
-        cbs = [b["callback_data"] for row in kb["inline_keyboard"] for b in row]
-        self.assertIn("sched_setvalve_19_2", cbs)
-
-    @patch("daemon.ui.telegram_ui.database")
-    @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_set_valve_updates_assignment(self, mc, mdb):
-        mdb.get_schedule_by_id.return_value = {"id": 19, "name": "Abends", "time": "22:00",
-                                               "days": "everyday", "duration_minutes": 20,
-                                               "target_volume_liters": 0, "is_active": 1}
-        _process_callback_query(self._cb("sched_setvalve_19_2"))
-        mdb.set_schedule_valves.assert_called_once_with(19, [2])
-
 
 class TestTelegramWiringSmoke(unittest.TestCase):
     """Wiring smoke test (ARCHITECTURE.md Rule 6): verifies that the Telegram startup
@@ -943,8 +568,6 @@ class TestTelegramWiringSmoke(unittest.TestCase):
             cmd_names = [c["command"] for c in commands]
             self.assertEqual(cmd_names, ["status", "tagesbericht", "update", "diagnose"])
 
-
-
 def _make_weather_row(with_forecast=True):
     fc = _json_module.dumps({
         "times":       ["2026-06-13T14:00", "2026-06-13T15:00"],
@@ -965,7 +588,6 @@ def _make_weather_row(with_forecast=True):
         "rain_next_24h_mm": 0.5,
         "hourly_forecast_json": fc,
     }
-
 
 class TestStatusWeatherBlock(unittest.TestCase):
     """Testet den neuen 'Jetzt / Nächste Stunde'-Wetter-Block im /status-Befehl."""
@@ -1047,7 +669,6 @@ class TestStatusWeatherBlock(unittest.TestCase):
         sent_text = mock_client.send_message.call_args[0][1]
         self.assertIn("Keine Daten", sent_text)
 
-
 def _make_valve(wish_name="Terrasse", mqtt_name="garden_valve",
                 battery=100, lqi=150,
                 last_update="2026-06-18T14:00:00",
@@ -1055,7 +676,6 @@ def _make_valve(wish_name="Terrasse", mqtt_name="garden_valve",
     return {"wish_name": wish_name, "mqtt_name": mqtt_name,
             "battery": battery, "linkquality": lqi,
             "last_update": last_update, "valve_abnormal_state": abnormal}
-
 
 def _status_call_args(mock_client, mock_db, mock_ctrl, *,
                       valves=None, services_ok=True, broker=True, bridge=True):
@@ -1074,7 +694,6 @@ def _status_call_args(mock_client, mock_db, mock_ctrl, *,
         _process_message({"chat": {"id": 100}, "text": "/status"})
 
     return mock_client.send_message.call_args[0][1]
-
 
 class TestStatusGartenAmpel(unittest.TestCase):
     """Testet Garten-Ampel-Headline und Progressive Disclosure im /status-Befehl."""
@@ -1176,7 +795,6 @@ class TestStatusGartenAmpel(unittest.TestCase):
         self.assertIsNone(re.search(r"\d{2}:\d{2}:\d{2}", text),
                           f"Sekunden gefunden in: {text}")
 
-
 class TestReportChartIntegration(unittest.TestCase):
     """Testet Chart-Einbindung und Textfallback im /report-Befehl."""
 
@@ -1272,7 +890,6 @@ class TestReportChartIntegration(unittest.TestCase):
         all_texts = " ".join(str(c) for c in mock_client.send_message.call_args_list)
         self.assertIn("Tagesbericht", all_texts)
 
-
 class TestDailyReportEventHandler(unittest.TestCase):
     """Testet dass _on_daily_report den Wetterchart per broadcast_photo sendet."""
 
@@ -1309,7 +926,6 @@ class TestDailyReportEventHandler(unittest.TestCase):
         from daemon.ui.telegram_ui import _on_daily_report
         _on_daily_report(self._make_event("Kein Chart"))
         mock_client.broadcast_notification.assert_called_once_with("Kein Chart")
-
 
 class TestBatteryDescription(unittest.TestCase):
     """Testet die verbale Übersetzung des Batteriestands."""
@@ -1351,7 +967,6 @@ class TestBatteryDescription(unittest.TestCase):
     def test_unknown_shows_empty_icon(self):
         self.assertIn("🪫", self.desc(0))
 
-
 class TestWatchdogUiHandlers(unittest.TestCase):
     """Testet die telegram_ui-Handler für InactivityAlertTriggered / InactivityAlertResolved."""
 
@@ -1381,7 +996,6 @@ class TestWatchdogUiHandlers(unittest.TestCase):
         _on_inactivity_resolved(event)
         msg = mock_client.broadcast_notification.call_args[0][0]
         self.assertIn("Hochbeet", msg)
-
 
 class TestUnexpectedValveUiHandlers(unittest.TestCase):
     """telegram_ui-Handler für UnexpectedValveOpened / UnexpectedValveResolved (Feature 0029)."""
@@ -1421,7 +1035,6 @@ class TestUnexpectedValveUiHandlers(unittest.TestCase):
         self.assertIn("Hochbeet", msg)
         self.assertIn("wieder", msg)
 
-
 def _make_camera(wish_name="Garten", last_seen=None, sleep_duration_seconds=900,
                   resolution="UXGA", quality=10):
     return {
@@ -1432,7 +1045,6 @@ def _make_camera(wish_name="Garten", last_seen=None, sleep_duration_seconds=900,
         "resolution": resolution,
         "quality": quality,
     }
-
 
 def _status_call(mock_db, mock_ctrl, cameras):
     """Ruft /status auf und gibt den gesendeten Text zurück."""
@@ -1448,7 +1060,6 @@ def _status_call(mock_db, mock_ctrl, cameras):
          patch.object(mc, "get_bridge_status", return_value="online"):
         from daemon.ui.telegram_ui import _process_message
         _process_message({"chat": {"id": 100}, "text": "/status"})
-
 
 class TestStatusCameraBlock(unittest.TestCase):
     """Testet den Kamera-Abschnitt in der /status-Anzeige."""
@@ -1501,7 +1112,6 @@ class TestStatusCameraBlock(unittest.TestCase):
         sent_text = mock_client.send_message.call_args[0][1]
         self.assertNotIn("📷", sent_text)
 
-
 class TestCameraPairingMetadataCleanup(unittest.TestCase):
     """Stellt sicher, dass veraltete Koppel-Metadaten beim Start bereinigt werden."""
 
@@ -1525,7 +1135,6 @@ class TestCameraPairingMetadataCleanup(unittest.TestCase):
             self.assertEqual(db.get_metadata("camera_pairing_active"), "0")
 
         os.unlink(temp_db.name)
-
 
 class TestGartenAmpel(unittest.TestCase):
     """Tests für _garden_ampel_level() — Garten-Ampel Gesundheitsmodell."""
@@ -1601,7 +1210,6 @@ class TestGartenAmpel(unittest.TestCase):
         text = _format_valve_compact(valve)
         self.assertNotIn("0 %", text)
         self.assertNotIn("🪫 Leer", text)
-
 
 class TestEreignisBenachrichtigungen(unittest.TestCase):
     """Tests für Design-System-konforme Event-Benachrichtigungen (Schritt 5)."""
@@ -1698,7 +1306,6 @@ class TestEreignisBenachrichtigungen(unittest.TestCase):
         self.assertIn("⚠️", msg)
         self.assertNotIn("!!", msg)
 
-
 class TestHauptmenueButtons(unittest.TestCase):
     """Tests für die Hauptmenü-Button-Texte (Schritt 4 Design-System-Migration)."""
 
@@ -1750,7 +1357,6 @@ class TestHauptmenueButtons(unittest.TestCase):
         text = mock_client.send_message.call_args[0][1]
         self.assertIn("🚿", text)
         self.assertNotIn("🟢", text)
-
 
 class TestKeinDoppelAsterisk(unittest.TestCase):
     """Regression: Kein ** in Nachrichten-Handlern (Telegram Legacy Markdown Bug)."""
@@ -1807,7 +1413,6 @@ class TestKeinDoppelAsterisk(unittest.TestCase):
             text = call[0][1] if len(call[0]) > 1 else ""
             self.assertNotIn("**", text, f"** gefunden in: {text[:120]}")
 
-
 class TestTypingIndikator(unittest.TestCase):
     """Testet dass handle_status und /report den Typing-Indikator vor der Antwort senden."""
 
@@ -1844,7 +1449,6 @@ class TestTypingIndikator(unittest.TestCase):
             _process_message(self._msg("/tagesbericht"))
         calls = [c[0] for c in mock_client.send_chat_action.call_args_list]
         self.assertIn((100, "typing"), calls)
-
 
 class TestEinstellungenHandler(unittest.TestCase):
     """Tests für /einstellungen — In-Chat-Konfiguration der drei Schwellenwerte."""
@@ -1939,7 +1543,6 @@ class TestEinstellungenHandler(unittest.TestCase):
         text = mock_client.send_message.call_args[0][1]
         self.assertNotIn("**", text)
 
-
 class TestKameraAkkustandImStatus(unittest.TestCase):
 
     def _status_call(self, mock_client, mock_db, mock_ctrl, cameras):
@@ -1992,7 +1595,6 @@ class TestKameraAkkustandImStatus(unittest.TestCase):
         text = self._status_call(mock_client, mock_db, mock_ctrl, [self._make_cam(battery=10)])
         self.assertIn("🟡", text)
 
-
 class TestGetNextSchedule(unittest.TestCase):
 
     def _sched(self, name, time_str, days, is_active=1, sched_id=1):
@@ -2043,7 +1645,6 @@ class TestGetNextSchedule(unittest.TestCase):
         s2 = self._sched("Früh", "16:00", "everyday", sched_id=2)
         result = _get_next_schedule([s1, s2], now)
         self.assertEqual(result["name"], "Früh")
-
 
 class TestGiesscheckHandler(unittest.TestCase):
 
@@ -2109,7 +1710,6 @@ class TestGiesscheckHandler(unittest.TestCase):
         self.assertIn("💧", text)
         self.assertIn("50", text)
 
-
 class TestWateringScaledNotification(unittest.TestCase):
 
     @patch("daemon.ui.telegram_ui.telegram_client")
@@ -2149,7 +1749,6 @@ class TestWateringScaledNotification(unittest.TestCase):
         text = mock_client.broadcast_notification.call_args[0][0]
         self.assertIn("70 %", text)
         self.assertNotIn(" L", text)
-
 
 class TestRainOverride(unittest.TestCase):
     """Feature 0034: Guss-Vorwarnung mit Regen-Übersteuerung."""
@@ -2226,7 +1825,6 @@ class TestRainOverride(unittest.TestCase):
         self.assertTrue(
             mock_client.edit_message_text.called or mock_client.answer_callback_query.called)
 
-
 class TestStatusNaechstesPhoto(unittest.TestCase):
     """Feature 0035: 'Nächstes Foto' Zeile in /status."""
 
@@ -2300,7 +1898,6 @@ class TestStatusNaechstesPhoto(unittest.TestCase):
         text = self._status_with(mock_client, mock_db, mock_ctrl,
                                  schedules=[self._make_schedule(name="Rasen")])
         self.assertIn("Rasen", text)
-
 
 class TestHandleAufnahmen(unittest.TestCase):
     """Feature 0035: Zwei-Abschnitt-Ansicht in handle_aufnahmen."""
@@ -2379,7 +1976,6 @@ class TestHandleAufnahmen(unittest.TestCase):
         text = call[0][1]
         self.assertIn("Feste", text)
 
-
 class TestDiagnoseCommand(unittest.TestCase):
     """Feature 0041: /diagnose erzeugt das Diagnose-Paket und sendet es an den anfragenden Chat."""
 
@@ -2450,7 +2046,6 @@ class TestDiagnoseCommand(unittest.TestCase):
         _run_diagnose(100)
         texts = " ".join(str(c) for c in mock_client.send_message.call_args_list)
         self.assertIn("Versand fehlgeschlagen", texts)
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -102,6 +102,22 @@ class TestZeitplanWizardFlow(unittest.TestCase):
         _process_callback_query(self._cb("wiz_cancel"))
         self.assertNotIn(self.CHAT, wizard_states)
 
+    def test_multi_valve_flow_selects_and_assigns(self):
+        # Bei mehreren Ventilen fragt der Wizard nach der Menge nach dem Ventil und weist es zu.
+        self.db.get_all_valves.return_value = [{"id": 1, "wish_name": "A"}, {"id": 2, "wish_name": "B"}]
+        self.db.get_valve_by_id.return_value = {"id": 2, "wish_name": "B"}
+        _process_callback_query(self._cb("wiz_mode_watering", msg_id=10))
+        _process_message(self._msg("Rasen"))
+        _process_callback_query(self._cb("wiz_hour_14"))
+        _process_callback_query(self._cb("wiz_min_30"))
+        _process_callback_query(self._cb("wiz_dur_12"))
+        _process_callback_query(self._cb("wiz_vol_25"))
+        _process_callback_query(self._cb("wv_valve_2"))       # Ventil-Auswahl
+        _process_callback_query(self._cb("wiz_day_Mon"))
+        _process_callback_query(self._cb("wiz_save"))
+        _process_callback_query(self._cb("wiz_confirm_save"))
+        self.db.set_schedule_valves.assert_called_once_with(1, [2])
+
     def test_menu_button_aborts_wizard_not_swallowed(self):
         # Review-Befund: „🛑 Stopp" (Notaus) mitten im Wizard darf nicht als Zeitplan-Name
         # verschluckt werden — es bricht den Wizard ab und wird normal verarbeitet.

@@ -64,6 +64,20 @@ class TestSofortNebelFlow(unittest.TestCase):
         _process_callback_query(self._cb("nebel_cancel"))
         self.assertNotIn(self.CHAT, manual_states)
 
+    def test_runtime_is_capped(self):
+        # Laufzeit wird hart auf NEBEL_MANUAL_MAX_MINUTES gedeckelt.
+        from datetime import datetime
+        from daemon.ui import telegram_ui
+        _process_callback_query(self._cb("nebel_now", msg_id=10))
+        _process_callback_query(self._cb("nebel_now_on_30"))
+        _process_callback_query(self._cb("nebel_now_pause_5"))
+        with patch.object(telegram_ui.config, "NEBEL_MANUAL_MAX_MINUTES", 90):
+            _process_callback_query(self._cb("nebel_dur_120"))   # über dem Cap
+        end_dt = self.nebel.start.call_args[0][3]
+        delta_min = (end_dt - datetime.now()).total_seconds() / 60
+        self.assertLessEqual(delta_min, 91)
+        self.assertGreater(delta_min, 85)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -97,6 +97,48 @@ class TestGussFlow(unittest.TestCase):
         _process_callback_query(self._cb("man_cancel"))
         self.assertNotIn(self.CHAT, manual_states)
 
+    _SKIP = WateringDecision(factor=0.0, verdict="🌧 Kein Gießen", reasons=["8.0 mm Regen"], skip=True)
+
+    def test_context_skip_then_water_anyway_starts(self):
+        # Feature 0020: bei skip Rückfrage, „Trotzdem gießen" startet mit gemerkten Werten.
+        self.weather.evaluate_watering_factor.return_value = self._SKIP
+        _process_callback_query(self._cb("water_mode_guss", msg_id=10))
+        _process_callback_query(self._cb("man_dur_15"))
+        _process_callback_query(self._cb("man_vol_30"))
+        self.ctrl.start_watering.assert_not_called()
+        _process_callback_query(self._cb("water_anyway"))
+        self.ctrl.start_watering.assert_called_once()
+        self.assertEqual(self.ctrl.start_watering.call_args.args[0], 15)
+        self.assertEqual(self.ctrl.start_watering.call_args.args[1], 30)
+        self.assertNotIn(self.CHAT, manual_states)
+
+    def test_eval_failure_does_not_block(self):
+        # Fällt die Kontextprüfung aus, wird der Guss NICHT blockiert.
+        self.weather.evaluate_watering_factor.side_effect = RuntimeError("Wetter weg")
+        _process_callback_query(self._cb("water_mode_guss", msg_id=10))
+        _process_callback_query(self._cb("man_dur_10"))
+        _process_callback_query(self._cb("man_vol_25"))
+        self.ctrl.start_watering.assert_called_once()
+
+    def test_custom_volume_skip_asks(self):
+        # Auch der getippte Mengen-Pfad muss bei skip nachfragen (statt zu starten).
+        self.weather.evaluate_watering_factor.return_value = self._SKIP
+        _process_callback_query(self._cb("water_mode_guss", msg_id=10))
+        _process_callback_query(self._cb("man_dur_10"))
+        _process_callback_query(self._cb("man_vol_custom"))
+        _process_message(self._msg("40"))
+        self.ctrl.start_watering.assert_not_called()
+        self.assertIn("pending_water", manual_states.get(self.CHAT))
+
+    def test_start_failure_sends_error(self):
+        self.ctrl.start_watering.return_value = (False, "Ventil klemmt")
+        _process_callback_query(self._cb("water_mode_guss", msg_id=10))
+        _process_callback_query(self._cb("man_dur_10"))
+        _process_callback_query(self._cb("man_vol_25"))
+        texts = " || ".join(
+            a for call in self.tc.send_message.call_args_list for a in call.args if isinstance(a, str))
+        self.assertIn("Fehler beim Starten", texts)
+
 
 if __name__ == "__main__":
     unittest.main()

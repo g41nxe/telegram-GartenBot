@@ -65,6 +65,18 @@ class TestCameraPairFlow(unittest.TestCase):
         self.assertIn(self.CHAT, wizard_states)
         self.cp.start_pairing.assert_not_called()
 
+    def test_quality_medium_and_low_mapping(self):
+        for qual, expected in (("medium", 25), ("low", 40)):
+            self.start_pairing.reset_mock()
+            wizard_states.clear()
+            _process_callback_query(self._cb("camsetup_start", msg_id=10))
+            _process_message(self._msg("Cam"))
+            _process_message(self._msg("15"))
+            _process_callback_query(self._cb("camsetup_res_UXGA"))
+            _process_callback_query(self._cb(f"camsetup_qual_{qual}"))
+            self.assertEqual(self.start_pairing.call_args.kwargs.get("quality"), expected,
+                             f"Qualität {qual}")
+
 
 class TestCameraSettingsFlow(unittest.TestCase):
     CHAT = 501
