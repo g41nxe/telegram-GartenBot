@@ -39,7 +39,10 @@ from ..core.sensor_events import RainSensorInactivityAlertTriggered, RainSensorI
 from ..core.system_events import SoftwareUpdateActivated, SoftwareUpdateRolledBack
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
-from .assistent import ScheduleAssistent, GussAssistent, SofortNebelAssistent, Prompt, Reject, Done
+from .assistent import (
+    ScheduleAssistent, GussAssistent, SofortNebelAssistent,
+    CameraPairAssistent, CameraSettingsAssistent, Prompt, Reject, Done,
+)
 
 logger = logging.getLogger("garden_telegram_ui")
 
@@ -851,14 +854,10 @@ def handle_camera_setup(chat_id: int):
         telegram_client.send_message(chat_id, "⏳ Eine Kamera-Kopplung läuft bereits im Hintergrund. Bitte warten.")
         return
 
-    _state_set(wizard_states, chat_id, {"step": "setup_camera_wish_name"})
-    telegram_client.send_message(
-        chat_id,
-        "📷 *Neue Kamera koppeln*\n\n"
-        "Wie soll diese Kamera heißen?\n"
-        "_(Erlaubte Zeichen: a-z, A-Z, 0-9, Bindestrich, Unterstrich. Max 32 Zeichen)_\n\n"
-        "Bitte tippe den Namen ein:"
-    )
+    # Ticket cy1: Kamera-Kopplung läuft über den CameraPairAssistent.
+    a = CameraPairAssistent()
+    _state_set(wizard_states, chat_id, {"assistent": a})
+    _render_camera_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start())
 
 def handle_photo(chat_id: int):
     cameras = database.get_all_cameras()
@@ -1455,9 +1454,12 @@ def _process_message(msg_obj: dict):
         if text.startswith("/") or text in ["📊 Status anzeigen", "💧 Gießcheck", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             _state_del(wizard_states, chat_id)
         elif "assistent" in state:
-            # Ticket cy1: getippte Eingabe geht durch den Zeitplan-Assistenten. message_id=None
-            # ⇒ frische Prompt-Nachricht, altes Keyboard wird abgeräumt (ADR 0039).
-            _drive_schedule(chat_id, text, message_id=None)
+            # Ticket cy1: getippte Eingabe geht durch den aktiven wizard_states-Assistenten
+            # (Zeitplan/Nebel-Name bzw. Kamera-Name/-Intervall). message_id=None ⇒ frische
+            # Prompt-Nachricht, altes Keyboard wird abgeräumt (ADR 0039).
+            _, _drive, _ = _wizard_driver(state["assistent"])
+            if _drive:
+                _drive(chat_id, text, message_id=None)
             return
         else:
             if step == "setup_wish_name":
@@ -2081,6 +2083,118 @@ def _manual_driver(assistent):
     return None, None
 
 
+# --- Kamera-Kopplung / -Einstellungen über die Assistenten (Ticket cy1) ---------------------
+
+_CAMERA_QUALITY_MAP = {"high": 10, "medium": 25, "low": 40}
+_CAMERA_RES_LABELS = {"VGA": "💨 Niedrig (640×480)", "XGA": "⚡ Mittel (1024×768)", "UXGA": "🏔 Hoch (1600×1200)"}
+
+
+def _camera_prompt_text(view: str, d: dict) -> str:
+    if view == "wish_name":
+        return ("📷 *Neue Kamera koppeln*\n\n"
+                "Wie soll diese Kamera heißen?\n"
+                "_(Erlaubte Zeichen: a-z, A-Z, 0-9, Bindestrich, Unterstrich. Max 32 Zeichen)_\n\n"
+                "Bitte tippe den Namen ein:")
+    if view == "interval":
+        if d.get("mac"):   # Einstellungen-Flow (Kamera vorgewählt)
+            return (f"⏱ *Sendeintervall für '{d.get('wish_name')}' ändern*\n\n"
+                    "Bitte gib das neue Intervall in Minuten ein _(z.B. `30`)_:")
+        return ("⏱ *Wie oft soll die Kamera ein Bild senden?*\n\n"
+                "Bitte gib das Intervall in Minuten ein _(z.B. `15` für alle 15 Minuten)_:")
+    if view == "resolution":
+        return ("🖼 *Welche Auflösung soll die Kamera verwenden?*\n\n"
+                "Höhere Auflösung = schärfere Bilder, größere Dateien.")
+    if view == "quality":
+        res = d.get("resolution")
+        return ("🎨 *Welche Bildqualität soll die Kamera verwenden?*\n\n"
+                f"Gewählte Auflösung: {_CAMERA_RES_LABELS.get(res, res)}\n\n"
+                "Höhere Qualität = schärfere Bilder, größere Dateien.")
+    return ""
+
+
+def _camera_keyboard(kind, a) -> dict:
+    if kind == "cam_resolution":
+        return get_camera_resolution_keyboard()
+    if kind == "cam_quality":
+        return get_camera_quality_keyboard()
+    return None   # wish_name / interval: getippt, keyboardlos
+
+
+def _normalize_camera_callback(data: str):
+    """Kamera-Callback → advance()-Wert. None = nicht zuständig."""
+    if data.startswith("camsetup_res_"):
+        val = data[len("camsetup_res_"):]
+        return val if val in ("VGA", "XGA", "UXGA") else None
+    if data.startswith("camsetup_qual_"):
+        val = data[len("camsetup_qual_"):]
+        return val if val in ("high", "medium", "low") else None
+    return None
+
+
+def _render_camera_prompt(chat_id, state, a, prompt, message_id=None):
+    text = _camera_prompt_text(prompt.view, a.data)
+    kb = _camera_keyboard(prompt.keyboard, a)
+    show_step(chat_id, state, text, kb, message_id=message_id)
+
+
+def _start_camera_pairing_from_assistent(chat_id, state, message_id):
+    from ..adapters import camera_pairing
+    d = state["assistent"].data
+    wish_name, sleep_seconds, resolution = d["wish_name"], d["sleep_seconds"], d["resolution"]
+    quality = _CAMERA_QUALITY_MAP.get(d["quality"], 25)
+    _state_del(wizard_states, chat_id)
+    telegram_client.edit_message_text(
+        chat_id, message_id,
+        f"🔧 *Kamera-Kopplung gestartet* — \"{wish_name}\"\n"
+        f"Intervall: {sleep_seconds // 60} Min · Auflösung: {resolution} · Qualität: {d['quality']}\n\n"
+        "Bitte schalte die Kamera jetzt ein oder drücke Reset.\n"
+        "⏱️ Das System wartet bis zu 90 Sekunden."
+    )
+    camera_pairing.start_pairing(
+        chat_id, telegram_client.send_message, wish_name,
+        sleep_seconds=sleep_seconds, resolution=resolution, quality=quality,
+    )
+
+
+def _save_camera_settings_from_assistent(chat_id, state, message_id):
+    d = state["assistent"].data
+    mac, wish_name, sleep_seconds = d["mac"], d["wish_name"], d["sleep_seconds"]
+    _state_del(wizard_states, chat_id)
+    camera = database.get_camera(mac)
+    if camera:
+        database.update_camera_settings(
+            mac, sleep_seconds=sleep_seconds,
+            resolution=camera["resolution"], quality=camera["quality"])
+        telegram_client.send_message(
+            chat_id,
+            f"✅ Sendeintervall für Kamera *'{wish_name}'* auf {sleep_seconds // 60} Minuten gesetzt.",
+            get_main_keyboard())
+    else:
+        telegram_client.send_message(chat_id, "❌ Kamera nicht mehr in der Datenbank gefunden.", get_main_keyboard())
+
+
+def _drive_camera_pair(chat_id, value, message_id=None) -> bool:
+    return _drive_assistent(wizard_states, chat_id, value,
+                            _render_camera_prompt, _start_camera_pairing_from_assistent, message_id)
+
+
+def _drive_camera_settings(chat_id, value, message_id=None) -> bool:
+    return _drive_assistent(wizard_states, chat_id, value,
+                            _render_camera_prompt, _save_camera_settings_from_assistent, message_id)
+
+
+def _wizard_driver(assistent):
+    """Wählt (Normalisierer, Treiber, Abbrechen-Callback) für den aktiven wizard_states-
+    Assistenten (Zeitplan/Nebel bzw. Kamera-Kopplung/-Einstellungen)."""
+    if isinstance(assistent, ScheduleAssistent):
+        return _normalize_schedule_callback, _drive_schedule, "wiz_cancel"
+    if isinstance(assistent, CameraPairAssistent):
+        return _normalize_camera_callback, _drive_camera_pair, "camsetup_cancel"
+    if isinstance(assistent, CameraSettingsAssistent):
+        return _normalize_camera_callback, _drive_camera_settings, "camsetup_cancel"
+    return None, None, None
+
+
 def _process_callback_query(cb_obj: dict):
     _cleanup_expired_states()
     cb_id = cb_obj["id"]
@@ -2088,15 +2202,17 @@ def _process_callback_query(cb_obj: dict):
     message_id = cb_obj["message"]["message_id"]
     data = cb_obj["data"]
 
-    # Ticket cy1: läuft ein Zeitplan-Assistent, gehen alle Wizard-Buttons (außer Abbrechen)
-    # durch seine Zustandsmaschine.
-    _sched = _state_get(wizard_states, chat_id)
-    if _sched and "assistent" in _sched and data != "wiz_cancel":
-        _val = _normalize_schedule_callback(data)
-        if _val is not None:
-            telegram_client.answer_callback_query(cb_id)
-            _drive_schedule(chat_id, _val, message_id=message_id)
-            return
+    # Ticket cy1: läuft ein wizard_states-Assistent (Zeitplan/Nebel bzw. Kamera), gehen dessen
+    # Buttons (außer dem Abbrechen des jeweiligen Flows) durch seine Zustandsmaschine.
+    _wiz = _state_get(wizard_states, chat_id)
+    if _wiz and "assistent" in _wiz:
+        _norm, _drive, _cancel = _wizard_driver(_wiz["assistent"])
+        if _norm and data != _cancel:
+            _val = _norm(data)
+            if _val is not None:
+                telegram_client.answer_callback_query(cb_id)
+                _drive(chat_id, _val, message_id=message_id)
+                return
 
     # Ticket cy1: läuft ein manueller Assistent (Guss / Sofort-Nebel), gehen dessen Buttons
     # (außer Abbrechen) durch seine Zustandsmaschine. nebel_stop bleibt globaler Not-Aus.
@@ -2846,16 +2962,9 @@ def _process_callback_query(cb_obj: dict):
             return
         if len(cameras) == 1:
             cam = cameras[0]
-            _state_set(wizard_states, chat_id, {
-                "step": "camsetup_settings_interval",
-                "mac": cam["mac_address"],
-                "wish_name": cam["wish_name"],
-            })
-            telegram_client.send_message(
-                chat_id,
-                f"⏱ *Sendeintervall für '{cam['wish_name']}' ändern*\n\n"
-                "Bitte gib das neue Intervall in Minuten ein _(z.B. `30`)_:"
-            )
+            a = CameraSettingsAssistent(mac=cam["mac_address"], wish_name=cam["wish_name"])
+            _state_set(wizard_states, chat_id, {"assistent": a})
+            _render_camera_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start())
         else:
             rows = [[{"text": c["wish_name"], "callback_data": f"camsetup_settings_sel_{c['mac_address']}"}]
                     for c in cameras]
@@ -2872,16 +2981,9 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.answer_callback_query(cb_id, "Kamera nicht gefunden", show_alert=True)
             return
         telegram_client.answer_callback_query(cb_id)
-        _state_set(wizard_states, chat_id, {
-            "step": "camsetup_settings_interval",
-            "mac": mac,
-            "wish_name": camera["wish_name"],
-        })
-        telegram_client.edit_message_text(
-            chat_id, message_id,
-            f"⏱ *Sendeintervall für '{camera['wish_name']}' ändern*\n\n"
-            "Bitte gib das neue Intervall in Minuten ein _(z.B. `30`)_:"
-        )
+        a = CameraSettingsAssistent(mac=mac, wish_name=camera["wish_name"])
+        _state_set(wizard_states, chat_id, {"assistent": a})
+        _render_camera_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start(), message_id=message_id)
 
     elif data.startswith("camsetup_res_"):
         val = data[len("camsetup_res_"):]

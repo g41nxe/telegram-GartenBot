@@ -11,7 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from daemon.ui.assistent import (
-    ScheduleAssistent, GussAssistent, SofortNebelAssistent, Prompt, Reject, Done,
+    ScheduleAssistent, GussAssistent, SofortNebelAssistent,
+    CameraPairAssistent, CameraSettingsAssistent, Prompt, Reject, Done,
 )
 
 
@@ -287,6 +288,61 @@ class TestSofortNebelAssistent(unittest.TestCase):
         self.assertEqual(result.data["on_seconds"], 30)
         self.assertEqual(result.data["pause_minutes"], 5)
         self.assertIs(a.valve, valve)
+
+
+class TestCameraPairAssistent(unittest.TestCase):
+    """Kopplung: wish_name → interval → resolution → quality → Done."""
+
+    def test_full_flow_terminates_with_done(self):
+        a = CameraPairAssistent()
+        p = a.start()
+        self.assertEqual(p.view, "wish_name")
+        a.advance("Terrasse-Cam")
+        self.assertEqual(a.data["wish_name"], "Terrasse-Cam")
+        self.assertEqual(a.step, "interval")
+        a.advance("15")
+        self.assertEqual(a.data["sleep_seconds"], 900)
+        self.assertEqual(a.step, "resolution")
+        a.advance("XGA")
+        self.assertEqual(a.data["resolution"], "XGA")
+        self.assertEqual(a.step, "quality")
+        result = a.advance("high")
+        self.assertIsInstance(result, Done)
+        self.assertEqual(result.data["quality"], "high")
+        self.assertEqual(result.data["sleep_seconds"], 900)
+
+    def test_invalid_name_rejected(self):
+        a = CameraPairAssistent()
+        a.start()
+        self.assertIsInstance(a.advance("ungültig name!"), Reject)   # Leerzeichen/Sonderzeichen
+        self.assertEqual(a.step, "wish_name")
+        self.assertIsInstance(a.advance(""), Reject)
+        self.assertEqual(a.step, "wish_name")
+
+    def test_interval_out_of_range_rejected(self):
+        a = CameraPairAssistent()
+        a.start(); a.advance("Cam")
+        self.assertIsInstance(a.advance("0"), Reject)
+        self.assertIsInstance(a.advance("1441"), Reject)
+        self.assertIsInstance(a.advance("abc"), Reject)
+        self.assertEqual(a.step, "interval")
+
+
+class TestCameraSettingsAssistent(unittest.TestCase):
+
+    def test_interval_update_done(self):
+        a = CameraSettingsAssistent(mac="AA:BB", wish_name="Cam")
+        p = a.start()
+        self.assertEqual(p.view, "interval")
+        result = a.advance("30")
+        self.assertIsInstance(result, Done)
+        self.assertEqual(result.data["mac"], "AA:BB")
+        self.assertEqual(result.data["sleep_seconds"], 1800)
+
+    def test_invalid_interval_rejected(self):
+        a = CameraSettingsAssistent(mac="AA:BB", wish_name="Cam")
+        a.start()
+        self.assertIsInstance(a.advance("nope"), Reject)
 
 
 class TestScheduleAssistentDays(unittest.TestCase):

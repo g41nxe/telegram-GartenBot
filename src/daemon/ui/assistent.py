@@ -13,7 +13,10 @@ Der Kern trägt **keine** Präsentations-Texte oder Keyboards — nur die symbol
 und ``keyboard``-Namen. Damit bleibt die Zustandsmaschine rein testbar; die lebende Prompt-
 Nachricht (ADR 0039) und die deutschen Texte leben im Live-Adapter (telegram_ui).
 """
+import re
 from typing import NamedTuple
+
+_CAMERA_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]{1,32}$")
 
 
 def _as_int(value) -> "int | None":
@@ -281,3 +284,68 @@ class SofortNebelAssistent(Assistent):
             return Done(dict(self.data))
 
         raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{step}'")
+
+
+class CameraPairAssistent(Assistent):
+    """Kamera-Kopplung: Name → Intervall → Auflösung → Qualität → Aktion. ``Done`` liefert
+    wish_name/sleep_seconds/resolution/quality; das eigentliche start_pairing (inkl. Qualitäts-
+    Mapping Label→Zahl) liegt im Live-Adapter. Name- und Intervall-Schritte sind getippt.
+    """
+
+    def start(self) -> Prompt:
+        self.step = "wish_name"
+        return Prompt("wish_name", None)
+
+    def advance(self, value) -> "Prompt | Reject | Done":
+        step = self.step
+
+        if step == "wish_name":
+            name = (value or "").strip()
+            if not _CAMERA_NAME_RE.match(name):
+                return Reject("❌ Ungültiger Name. Erlaubt: a-z, A-Z, 0-9, -, _ (Max 32 Zeichen). Bitte erneut eingeben:")
+            self.data["wish_name"] = name
+            self.step = "interval"
+            return Prompt("interval", None)
+
+        if step == "interval":
+            m = _as_int(value)
+            if m is None or not 1 <= m <= 1440:
+                return Reject("❌ Ungültige Eingabe. Bitte eine Zahl zwischen 1 und 1440 eingeben:")
+            self.data["sleep_seconds"] = m * 60
+            self.step = "resolution"
+            return Prompt("resolution", "cam_resolution")
+
+        if step == "resolution":
+            self.data["resolution"] = value          # VGA / XGA / UXGA (Button)
+            self.step = "quality"
+            return Prompt("quality", "cam_quality")
+
+        if step == "quality":
+            self.data["quality"] = value             # high / medium / low (Button, Mapping im Adapter)
+            return Done(dict(self.data))
+
+        raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{step}'")
+
+
+class CameraSettingsAssistent(Assistent):
+    """Kamera-Einstellung: nur das Sendeintervall ändern. Kamera (mac + wish_name) ist
+    vorgewählt; ``Done`` liefert mac/wish_name/sleep_seconds, das DB-Update liegt im Adapter."""
+
+    def __init__(self, mac: str, wish_name: str):
+        super().__init__()
+        self.data["mac"] = mac
+        self.data["wish_name"] = wish_name
+
+    def start(self) -> Prompt:
+        self.step = "interval"
+        return Prompt("interval", None)
+
+    def advance(self, value) -> "Prompt | Reject | Done":
+        if self.step == "interval":
+            m = _as_int(value)
+            if m is None or not 1 <= m <= 1440:
+                return Reject("❌ Ungültige Eingabe. Bitte eine Zahl zwischen 1 und 1440 eingeben:")
+            self.data["sleep_seconds"] = m * 60
+            return Done(dict(self.data))
+
+        raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{self.step}'")
