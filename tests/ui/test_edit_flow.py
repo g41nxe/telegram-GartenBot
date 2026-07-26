@@ -101,6 +101,23 @@ class TestEditFlow(unittest.TestCase):
         self.db.update_schedule.assert_not_called()
         self.assertNotIn(self.CHAT, edit_states)
 
+    def test_editing_nebel_schedule_preserves_nebel_fields(self):
+        # Review-Befund: Bearbeiten darf ein Nebel-Intervall nicht auf „watering" zurücksetzen.
+        self.db.get_schedule_by_id.return_value = {
+            "id": 9, "name": "Terrasse", "time": "18:00", "days": "Mon", "duration_minutes": 0,
+            "target_volume_liters": 0, "is_active": 1, "mode": "nebel", "end_time": "20:00",
+            "on_seconds": 10, "pause_minutes": 5}
+        _process_callback_query(self._cb("sched_edit_9"))
+        _process_callback_query(self._cb("sched_editfield_days_9"))
+        _process_callback_query(self._cb("sched_editday_9_Fri"))
+        _process_callback_query(self._cb("sched_editday_save_9"))
+        _process_callback_query(self._cb("sched_edit_done"))
+        kwargs = self.db.update_schedule.call_args.kwargs
+        self.assertEqual(kwargs.get("mode"), "nebel")
+        self.assertEqual(kwargs.get("end_time"), "20:00")
+        self.assertEqual(kwargs.get("on_seconds"), 10)
+        self.assertEqual(kwargs.get("pause_minutes"), 5)
+
 
 if __name__ == "__main__":
     unittest.main()

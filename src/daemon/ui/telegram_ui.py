@@ -240,6 +240,21 @@ def _cleanup_expired_states():
             del delete_states[cid]
 
 
+# Beschriftungen der Haupttastatur (get_main_keyboard). Tippt/tappt der Nutzer eine davon oder
+# einen Slash-Befehl, bricht ein laufender Assistent ab und die Eingabe wird normal verarbeitet.
+# WICHTIG: exakt mit get_main_keyboard() synchron halten — sonst wird u. a. „🛑 Stopp" mitten im
+# Wizard verschluckt (Review-Befund).
+_MAIN_MENU_BUTTONS = frozenset({
+    "📊 Status", "💧 Gießcheck", "🚿 Bewässern", "🛑 Stopp",
+    "📅 Zeitpläne", "📷 Kamera", "⚙️ Einstellungen",
+})
+
+
+def _is_menu_escape(text: str) -> bool:
+    """Ob ``text`` einen laufenden Assistenten abbrechen soll (Slash-Befehl oder Menü-Button)."""
+    return text.startswith("/") or text in _MAIN_MENU_BUTTONS
+
+
 def _state_get(d: dict, chat_id: int) -> dict | None:
     """Thread-safely retrieve a state entry; returns None if absent."""
     with _state_lock:
@@ -1431,8 +1446,8 @@ def _process_message(msg_obj: dict):
     ed_state = _state_get(edit_states, chat_id)
     if ed_state is not None and "assistent" in ed_state:
         # Ticket cy1: getippter Name im EditAssistent (nur im name-Schritt verarbeitet, sonst
-        # ignoriert). Ein Slash-Befehl bricht die Bearbeitung ab und wird normal verarbeitet.
-        if not text.startswith("/"):
+        # ignoriert). Ein Slash-Befehl oder Menü-Button bricht die Bearbeitung ab.
+        if not _is_menu_escape(text):
             _drive_typed(edit_states, chat_id, text)
             return
         _state_del(edit_states, chat_id)
@@ -1457,7 +1472,7 @@ def _process_message(msg_obj: dict):
     if state is not None:
         step = state.get("step")
 
-        if text.startswith("/") or text in ["📊 Status anzeigen", "💧 Gießcheck", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
+        if _is_menu_escape(text):
             _state_del(wizard_states, chat_id)
         elif "assistent" in state:
             # Ticket cy1: getippte Eingabe geht durch die einheitliche Wizard-Engine
@@ -1577,7 +1592,7 @@ def _process_message(msg_obj: dict):
     if man_state is not None:
         step = man_state.get("step")
 
-        if text.startswith("/") or text in ["📊 Status anzeigen", "💧 Gießcheck", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
+        if _is_menu_escape(text):
             _state_del(manual_states, chat_id)
         elif "assistent" in man_state:
             # Ticket cy1: getippte Eingabe an den aktiven manuellen Assistenten (nur Guss
@@ -2217,7 +2232,9 @@ def _finish_edit_from_assistent(chat_id, state, message_id):
     time_str = f"{d['hour']:02d}:{d['minute']:02d}"
     days_str = ",".join(d["days"])
     database.update_schedule(d["sched_id"], d["name"], time_str, days_str,
-                             d["duration"], d["volume"], d.get("is_active", 1))
+                             d["duration"], d["volume"], d.get("is_active", 1),
+                             mode=d.get("mode", "watering"), end_time=d.get("end_time"),
+                             on_seconds=d.get("on_seconds"), pause_minutes=d.get("pause_minutes"))
     if d.get("valve_id"):
         database.set_schedule_valves(d["sched_id"], [d["valve_id"]])
     telegram_client.edit_message_reply_markup(chat_id, message_id, None)
@@ -2238,7 +2255,13 @@ def _drive_wizard(chat_id, spec, value, message_id=None) -> bool:
     state = _state_get(spec.store, chat_id)
     if not state or "assistent" not in state:
         return False
-    result = state["assistent"].advance(value)
+    try:
+        result = state["assistent"].advance(value)
+    except ValueError as e:
+        # Verirrter/veralteter Callback für den aktuellen Schritt — verwerfen statt abstürzen.
+        logger.warning(f"Assistent-Übergang verworfen ({type(state['assistent']).__name__}, "
+                       f"value={value!r}): {e}")
+        return True
     if isinstance(result, Reject):
         telegram_client.send_message(chat_id, result.message)
         _state_touch(spec.store, chat_id)
@@ -2251,8 +2274,13 @@ def _drive_wizard(chat_id, spec, value, message_id=None) -> bool:
 
 
 def _start_wizard(chat_id, assistent, message_id=None):
-    """Assistenten in seinem Store ablegen und den Start-Prompt rendern (einheitlicher Einstieg)."""
+    """Assistenten in seinem Store ablegen und den Start-Prompt rendern (einheitlicher Einstieg).
+    Garantiert *einen* aktiven Flow pro Chat: evtl. hängende Dialoge in anderen Stores werden
+    verworfen (sonst könnte der Dispatch-Loop einen zweiten aktiven Store verschatten — Review)."""
     spec = WIZARDS[type(assistent)]
+    for store in (wizard_states, manual_states, delete_states, edit_states):
+        if store is not spec.store:
+            _state_del(store, chat_id)
     _state_set(spec.store, chat_id, {"assistent": assistent})
     _render_wizard(chat_id, _state_get(spec.store, chat_id), assistent, assistent.start(), spec, message_id=message_id)
 

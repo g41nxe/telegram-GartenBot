@@ -102,6 +102,14 @@ class TestZeitplanWizardFlow(unittest.TestCase):
         _process_callback_query(self._cb("wiz_cancel"))
         self.assertNotIn(self.CHAT, wizard_states)
 
+    def test_menu_button_aborts_wizard_not_swallowed(self):
+        # Review-Befund: „🛑 Stopp" (Notaus) mitten im Wizard darf nicht als Zeitplan-Name
+        # verschluckt werden — es bricht den Wizard ab und wird normal verarbeitet.
+        _process_callback_query(self._cb("wiz_mode_watering", msg_id=10))
+        _process_message(self._msg("🛑 Stopp"))
+        self.assertNotIn(self.CHAT, wizard_states)               # Wizard abgebrochen
+        self.db.add_schedule.assert_not_called()                 # kein Zeitplan „🛑 Stopp"
+
     def test_custom_step_no_stale_inline_keyboard(self):
         """ADR 0039: Nach der getippten Custom-Dauer darf kein NEUES Inline-Keyboard per
         send_message entstehen (das lässt das alte Prompt-Keyboard stehen → zwei lebende

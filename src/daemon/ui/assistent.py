@@ -437,6 +437,12 @@ class EditAssistent(Assistent):
             "volume": schedule.get("target_volume_liters") or 0,
             "valve_id": schedule.get("valve_id"),
             "is_active": schedule.get("is_active", 1),
+            # Nebel-Felder unverändert durchreichen, damit das Bearbeiten eines Nebel-Intervalls
+            # es nicht auf „watering" zurücksetzt (Review-Befund).
+            "mode": schedule.get("mode", "watering"),
+            "end_time": schedule.get("end_time"),
+            "on_seconds": schedule.get("on_seconds"),
+            "pause_minutes": schedule.get("pause_minutes"),
         })
 
     def start(self) -> Prompt:
