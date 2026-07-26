@@ -111,6 +111,34 @@ class TestScheduleAssistentValidation(unittest.TestCase):
         a.advance(40)
         self.assertEqual(a.data["volume"], 40)
 
+    def test_custom_duration_non_numeric_rejected(self):
+        """Review-Befund: getippter Unsinn darf nicht crashen (alter Wizard fing ValueError)."""
+        a = ScheduleAssistent(mode="watering", valves=_valves(1))
+        a.start(); a.advance("Rasen"); a.advance(14); a.advance(30)
+        a.advance("custom")
+        r = a.advance("abc")
+        self.assertIsInstance(r, Reject)
+        self.assertEqual(a.step, "duration_custom")
+
+    def test_custom_volume_non_numeric_rejected(self):
+        a = ScheduleAssistent(mode="watering", valves=_valves(1))
+        a.start(); a.advance("Rasen"); a.advance(14); a.advance(30); a.advance(10)
+        a.advance("custom")
+        r = a.advance("13,5")   # Komma ist keine ganze Zahl
+        self.assertIsInstance(r, Reject)
+        self.assertEqual(a.step, "volume_custom")
+
+
+class TestScheduleAssistentModeGuard(unittest.TestCase):
+
+    def test_nebel_mode_not_yet_supported_fails_loudly(self):
+        """Review-Befund: Nebel-Zweig ist noch nicht migriert — soll laut scheitern, nicht
+        still in den Wässern-Pfad fallen."""
+        a = ScheduleAssistent(mode="nebel", valves=_valves(1))
+        a.start(); a.advance("Kühlung"); a.advance(14)
+        with self.assertRaises(NotImplementedError):
+            a.advance(30)
+
 
 class TestScheduleAssistentDays(unittest.TestCase):
 

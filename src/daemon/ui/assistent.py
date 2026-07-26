@@ -16,6 +16,14 @@ dabei ``prompt_msg_id`` pflegt. Das Keyboard ist hier nur ein **Tag** (z. B. ``"
 from typing import Any, NamedTuple
 
 
+def _as_int(value) -> "int | None":
+    """Robustes int-Parsen für getippte Eingaben: None statt Ausnahme bei Unsinn."""
+    try:
+        return int(str(value).strip())
+    except (ValueError, TypeError):
+        return None
+
+
 class Prompt(NamedTuple):
     text: str
     keyboard: Any = None   # symbolischer Tag; der Live-Adapter mappt ihn auf ein Inline-Keyboard
@@ -79,6 +87,9 @@ class ScheduleAssistent(Assistent):
 
         if step == "minute":
             self.data["minute"] = int(value)
+            if self.data["mode"] != "watering":
+                # Nebel zweigt hier ab; die Nebel-Kette folgt als eigener Migrationsschritt.
+                raise NotImplementedError("Nebel-Zweig ist noch nicht migriert")
             self.step = "duration"
             return Prompt("Wie lange soll *maximal* bewässert werden? (Zeitlimit)", "duration")
 
@@ -91,8 +102,8 @@ class ScheduleAssistent(Assistent):
             return Prompt("Wie viel Wasser soll *maximal* fließen? (Volumenlimit)", "volume")
 
         if step == "duration_custom":
-            v = int(value)
-            if not 1 <= v <= 25:
+            v = _as_int(value)
+            if v is None or not 1 <= v <= 25:
                 return Reject("❌ Ungültige Eingabe. Bitte eine Zahl zwischen 1 und 25:")
             self.data["duration"] = v
             self.step = "volume"
@@ -106,8 +117,8 @@ class ScheduleAssistent(Assistent):
             return self._after_volume()
 
         if step == "volume_custom":
-            v = int(value)
-            if v <= 0:
+            v = _as_int(value)
+            if v is None or v <= 0:
                 return Reject("❌ Ungültige Eingabe. Bitte eine Zahl größer als 0:")
             self.data["volume"] = v
             return self._after_volume()
