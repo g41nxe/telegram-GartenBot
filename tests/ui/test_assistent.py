@@ -129,15 +129,77 @@ class TestScheduleAssistentValidation(unittest.TestCase):
         self.assertEqual(a.step, "volume_custom")
 
 
-class TestScheduleAssistentModeGuard(unittest.TestCase):
+class TestScheduleAssistentNebel(unittest.TestCase):
+    """Nebel-Pfad: name → hour → minute → end_hour → end_minute → nebel_on → nebel_pause
+    → (valve) → days → confirm. Teilt Präfix und Suffix mit dem Wässern-Pfad."""
 
-    def test_nebel_mode_not_yet_supported_fails_loudly(self):
-        """Review-Befund: Nebel-Zweig ist noch nicht migriert — soll laut scheitern, nicht
-        still in den Wässern-Pfad fallen."""
+    def _run_to_days(self, valves):
+        a = ScheduleAssistent(mode="nebel", valves=valves)
+        a.start()
+        a.advance("Kühlung"); a.advance(8); a.advance(0)
+        self.assertEqual(a.step, "end_hour")
+        a.advance(20)
+        self.assertEqual(a.data["end_hour"], 20)
+        self.assertEqual(a.step, "end_minute")
+        a.advance(30)
+        self.assertEqual(a.data["end_minute"], 30)
+        self.assertEqual(a.step, "nebel_on")
+        a.advance(10)
+        self.assertEqual(a.data["on_seconds"], 10)
+        self.assertEqual(a.step, "nebel_pause")
+        return a
+
+    def test_single_valve_skips_valve_step(self):
+        a = self._run_to_days(_valves(1))
+        a.advance(5)                                 # pause_minutes
+        self.assertEqual(a.data["pause_minutes"], 5)
+        self.assertEqual(a.data["valve_id"], 1)      # auto-zugewiesen
+        self.assertEqual(a.step, "days")
+
+    def test_multi_valve_asks_valve(self):
+        a = self._run_to_days(_valves(3))
+        p = a.advance(5)
+        self.assertEqual(p.view, "valve")
+        self.assertEqual(a.step, "valve")
+        a.advance(2)
+        self.assertEqual(a.data["valve_id"], 2)
+        self.assertEqual(a.step, "days")
+
+    def test_full_flow_terminates_with_done(self):
+        a = self._run_to_days(_valves(1))
+        a.advance(5)
+        a.advance("Mon")
+        a.advance("save")
+        self.assertEqual(a.step, "confirm")
+        result = a.advance("confirm")
+        self.assertIsInstance(result, Done)
+        self.assertEqual(result.data["mode"], "nebel")
+        self.assertEqual(result.data["name"], "Kühlung")
+        self.assertEqual(result.data["hour"], 8)
+        self.assertEqual(result.data["minute"], 0)
+        self.assertEqual(result.data["end_hour"], 20)
+        self.assertEqual(result.data["end_minute"], 30)
+        self.assertEqual(result.data["on_seconds"], 10)
+        self.assertEqual(result.data["pause_minutes"], 5)
+        self.assertEqual(result.data["days"], ["Mon"])
+        self.assertEqual(result.data["valve_id"], 1)
+
+    def test_end_before_start_returns_to_end_hour(self):
         a = ScheduleAssistent(mode="nebel", valves=_valves(1))
-        a.start(); a.advance("Kühlung"); a.advance(14)
-        with self.assertRaises(NotImplementedError):
-            a.advance(30)
+        a.start(); a.advance("Kühlung"); a.advance(12); a.advance(0)
+        a.advance(11)                                # end_hour 11 < start 12
+        p = a.advance(30)                            # 11:30 <= 12:00 ⇒ zurück
+        self.assertIsInstance(p, Prompt)
+        self.assertEqual(a.step, "end_hour")
+        self.assertNotIn("end_minute", a.data)       # nicht übernommen
+
+    def test_end_equal_start_returns_to_end_hour(self):
+        a = ScheduleAssistent(mode="nebel", valves=_valves(1))
+        a.start(); a.advance("Kühlung"); a.advance(12); a.advance(0)
+        a.advance(12)
+        p = a.advance(0)                             # 12:00 == 12:00 ⇒ zurück
+        self.assertEqual(a.step, "end_hour")
+        self.assertNotIn("end_minute", a.data)
 
 
 class TestScheduleAssistentDays(unittest.TestCase):

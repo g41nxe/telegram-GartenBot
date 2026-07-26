@@ -769,13 +769,25 @@ class TestNebelUI(unittest.TestCase):
         _process_callback_query(self._cb("nb_emin_30"))  # 18:30 > 12:00
         self.assertEqual(_state_get(wizard_states, 100)["step"], "nebel_on")
 
+    @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_wiz_mode_nebel_sets_state(self, mock_client):
+    def test_wiz_mode_nebel_sets_state(self, mock_client, mock_db):
+        # Ticket cy1: Nebel läuft jetzt über den ScheduleAssistent (mode="nebel").
+        mock_db.get_all_valves.return_value = [{"id": 7, "wish_name": "Terrasse"}]
         _process_callback_query(self._cb("wiz_mode_nebel"))
         state = _state_get(wizard_states, 100)
         self.assertIsNotNone(state)
-        self.assertEqual(state["mode"], "nebel")
-        self.assertEqual(state["step"], 1)
+        self.assertIn("assistent", state)
+        self.assertEqual(state["assistent"].data["mode"], "nebel")
+        self.assertEqual(state["assistent"].step, "name")
+
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_wiz_mode_nebel_without_valve_aborts(self, mock_client, mock_db):
+        mock_db.get_all_valves.return_value = []
+        _process_callback_query(self._cb("wiz_mode_nebel"))
+        self.assertIsNone(_state_get(wizard_states, 100))
+        self.assertIn("kein Ventil", mock_client.edit_message_text.call_args.args[2])
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")

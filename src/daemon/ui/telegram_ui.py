@@ -1698,7 +1698,58 @@ def _process_message(msg_obj: dict):
 # Prompt-Nachricht (ADR 0039) über show_step. Nur der Wässern-Pfad; Nebel bleibt vorerst am
 # alten Wizard (inkrementelle Migration).
 
+def _nebel_prompt_text(view: str, d: dict) -> str:
+    """Prompt-Texte des Nebel-Zweigs (mode='nebel'). Faithful zu den alten Wizard-Texten."""
+    name = d.get("name", "")
+    if view == "name":
+        return ("🆕 *Neues Nebel-Intervall anlegen — Name*\n\n"
+                "Bitte gib einen *Namen* ein (z. B. *Terrassen-Nebel*):")
+    if view == "hour":
+        return (f"🌫️ *Nebel-Intervall '{name}'*\n\n"
+                "Zu welcher *Stunde* soll das Nebel-Fenster starten?")
+    if view == "minute":
+        return (f"🌫️ *Nebel '{name}' um {d['hour']:02d}:??*\n\n"
+                "Zu welcher *Minute* soll das Nebel-Fenster starten?")
+    if view == "end_hour":
+        return (f"🌫️ *Nebel '{name}' ab {d['hour']:02d}:{d['minute']:02d}*\n\n"
+                "Bis zu welcher *Stunde* soll genebelt werden? (Fensterende)")
+    if view == "end_hour_retry":
+        return (f"🌫️ *Nebel '{name}' ab {d['hour']:02d}:{d['minute']:02d}*\n\n"
+                "Das Fensterende muss *nach* dem Start liegen. Bis zu welcher *Stunde* soll genebelt werden?")
+    if view == "end_minute":
+        return (f"🌫️ *Nebel '{name}'*\n\n"
+                "Zu welcher *Minute* soll das Fenster enden?")
+    if view == "nebel_on":
+        return (f"🌫️ *Nebel '{name}' bis {d['end_hour']:02d}:{d['end_minute']:02d}*\n\n"
+                "Wie lange soll ein einzelner *Nebelstoß* dauern?")
+    if view == "nebel_pause":
+        return (f"🌫️ *Nebel '{name}' — {d['on_seconds']}s pro Stoß*\n\n"
+                "Wie lange soll die *Pause* zwischen zwei Nebelstößen sein?")
+    if view == "valve":
+        return f"🌫️ *Nebel '{name}'*\n\nWelches *Ventil* steuert die Nebeldüse?"
+    if view == "days":
+        sel = format_days_german(d["days"]) if d.get("days") else "Keine"
+        return (f"🌫️ *Nebel '{name}'*\n\n"
+                f"Wähle die *Wochentage* aus, an denen genebelt werden soll:\n\n*Ausgewählt: {sel}*")
+    if view == "confirm":
+        valve = database.get_valve_by_id(d.get("valve_id"))
+        valve_name = _md_escape(valve["wish_name"]) if valve else "—"
+        return (
+            "📝 *Zusammenfassung & Bestätigung*\n\n"
+            "Bitte überprüfe das neue Nebel-Intervall:\n\n"
+            f"• *Name:* {name}\n"
+            f"• *Fenster:* {d['hour']:02d}:{d['minute']:02d} – {d['end_hour']:02d}:{d['end_minute']:02d} Uhr\n"
+            f"• *Nebelstoß:* {d['on_seconds']} s · *Pause:* {d['pause_minutes']} min\n"
+            f"• *Ventil:* {valve_name}\n"
+            f"• *Tage:* {format_days_german(d['days'])}\n\n"
+            "Soll dieses Nebel-Intervall gespeichert werden?"
+        )
+    return name
+
+
 def _schedule_prompt_text(view: str, d: dict) -> str:
+    if d.get("mode") == "nebel":
+        return _nebel_prompt_text(view, d)
     name = d.get("name", "")
     if view == "name":
         return ("🆕 *Neuen Zeitplan anlegen — Name*\n\n"
@@ -1757,6 +1808,14 @@ def _schedule_keyboard(kind: str, a: ScheduleAssistent) -> dict:
         return get_duration_wizard_keyboard("wiz")
     if kind == "volume":
         return get_volume_wizard_keyboard("wiz")
+    if kind == "nebel_end_hour":
+        return get_nebel_end_hour_keyboard()
+    if kind == "nebel_end_minute":
+        return get_nebel_end_minute_keyboard()
+    if kind == "nebel_on":
+        return get_nebel_on_keyboard()
+    if kind == "nebel_pause":
+        return get_nebel_pause_keyboard()
     if kind == "days":
         return get_days_wizard_keyboard(a.data.get("days", []))
     if kind == "valve":
@@ -1784,6 +1843,16 @@ def _normalize_schedule_callback(data: str):
         return int(data[len("wiz_dur_"):])
     if data.startswith("wiz_vol_"):
         return int(data[len("wiz_vol_"):])
+    if data.startswith("nb_ehour_"):
+        return int(data[len("nb_ehour_"):])
+    if data.startswith("nb_emin_"):
+        return int(data[len("nb_emin_"):])
+    if data.startswith("nb_on_"):
+        return int(data[len("nb_on_"):])
+    if data.startswith("nb_pause_"):
+        return int(data[len("nb_pause_"):])
+    if data.startswith("nb_valve_"):
+        return int(data[len("nb_valve_"):])
     if data.startswith("wv_valve_"):
         return int(data[len("wv_valve_"):])
     if data == "wiz_day_everyday":
@@ -1810,15 +1879,26 @@ def _save_schedule_from_assistent(chat_id, a, message_id):
     name = d["name"]
     time_str = f"{d['hour']:02d}:{d['minute']:02d}"
     days_str = ",".join(d["days"])
-    db_id = database.add_schedule(name, time_str, days_str, d["duration"], d["volume"])
+    if d.get("mode") == "nebel":
+        end_str = f"{d['end_hour']:02d}:{d['end_minute']:02d}"
+        db_id = database.add_schedule(
+            name, time_str, days_str, 0, mode="nebel", end_time=end_str,
+            on_seconds=d["on_seconds"], pause_minutes=d["pause_minutes"],
+        )
+        success_msg = f"🌫️ Nebel-Intervall *'{_md_escape(name)}'* erfolgreich angelegt!"
+        error_msg = "❌ Fehler beim Speichern des Nebel-Intervalls in der Datenbank."
+    else:
+        db_id = database.add_schedule(name, time_str, days_str, d["duration"], d["volume"])
+        success_msg = f"📅 Zeitplan *'{_md_escape(name)}'* erfolgreich angelegt!"
+        error_msg = "❌ Fehler beim Speichern des Zeitplans in der Datenbank."
     if db_id > 0 and d.get("valve_id"):
         database.set_schedule_valves(db_id, [d["valve_id"]])
     _state_del(wizard_states, chat_id)
     if db_id > 0:
-        telegram_client.send_message(chat_id, f"📅 Zeitplan *'{_md_escape(name)}'* erfolgreich angelegt!", get_main_keyboard())
+        telegram_client.send_message(chat_id, success_msg, get_main_keyboard())
         handle_schedules(chat_id)
     else:
-        telegram_client.send_message(chat_id, "❌ Fehler beim Speichern des Zeitplans in der Datenbank.", get_main_keyboard())
+        telegram_client.send_message(chat_id, error_msg, get_main_keyboard())
 
 
 def _drive_schedule(chat_id, value, message_id=None) -> bool:
@@ -1896,16 +1976,21 @@ def _process_callback_query(cb_obj: dict):
         _render_schedule_prompt(chat_id, a, a.start(), message_id=message_id)
 
     elif data == "wiz_mode_nebel":
-        # Nebel-Wizard bleibt (noch) auf dem alten Pfad (inkrementelle Migration).
-        _state_set(wizard_states, chat_id, {"step": 1, "mode": "nebel"})
+        # Ticket cy1: der Nebel-Wizard läuft jetzt über denselben ScheduleAssistent (mode="nebel").
         telegram_client.answer_callback_query(cb_id)
-        show_step(
-            chat_id, _state_get(wizard_states, chat_id),
-            "🆕 *Neues Nebel-Intervall anlegen — Name*\n\nBitte gib einen *Namen* ein "
-            "(z. B. *Terrassen-Nebel*):",
-            {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}]]},
-            message_id=message_id,
-        )
+        valves = database.get_all_valves()
+        if not valves:
+            # Nebel braucht eine Düse — früh scheitern statt am Ende des Dialogs (UX-Verbesserung
+            # ggü. dem Alt-Wizard, der erst nach der Pause-Auswahl abbrach).
+            telegram_client.edit_message_text(
+                chat_id, message_id,
+                "❌ Es ist noch kein Ventil gekoppelt. Koppel zuerst ein Ventil über "
+                "⚙️ Einstellungen ▸ 🔧 Ventil koppeln."
+            )
+        else:
+            a = ScheduleAssistent(mode="nebel", valves=valves)
+            _state_set(wizard_states, chat_id, {"assistent": a})
+            _render_schedule_prompt(chat_id, a, a.start(), message_id=message_id)
 
     elif data.startswith("wiz_hour_"):
         hour = int(data.split("_")[2])

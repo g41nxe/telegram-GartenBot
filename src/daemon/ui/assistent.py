@@ -53,11 +53,12 @@ class Assistent:
 
 
 class ScheduleAssistent(Assistent):
-    """Zeitplan-anlegen-Assistent (Wässern-Pfad). Ventile werden beim Start hereingereicht,
-    damit die Ventil-Verzweigung rein bleibt (kein DB-Zugriff im Kern).
+    """Zeitplan-anlegen-Assistent (Wässern- und Nebel-Pfad). Ventile werden beim Start
+    hereingereicht, damit die Ventil-Verzweigung rein bleibt (kein DB-Zugriff im Kern).
 
-    Der Nebel-Modus teilt die frühen Schritte, zweigt aber nach der Minute ab — die
-    Nebel-Kette folgt als eigener Migrationsschritt und ist hier noch nicht abgebildet.
+    Beide Modi teilen Name/Stunde/Minute und ab der Ventil-Auswahl auch Wochentage +
+    Bestätigung. Nach der Minute zweigt ``mode="nebel"`` in Fensterende → Nebelstoß →
+    Pause ab (statt Dauer → Volumen im Wässern-Pfad).
     """
 
     def __init__(self, mode: str = "watering", valves=None):
@@ -87,10 +88,37 @@ class ScheduleAssistent(Assistent):
 
         if step == "minute":
             self.data["minute"] = int(value)
-            if self.data["mode"] != "watering":
-                raise NotImplementedError("Nebel-Zweig ist noch nicht migriert")
+            if self.data["mode"] == "nebel":
+                self.step = "end_hour"
+                return Prompt("end_hour", "nebel_end_hour")
             self.step = "duration"
             return Prompt("duration", "duration")
+
+        # --- Nebel-Zweig: Fensterende → Stoß → Pause ------------------------------------
+        if step == "end_hour":
+            self.data["end_hour"] = int(value)
+            self.step = "end_minute"
+            return Prompt("end_minute", "nebel_end_minute")
+
+        if step == "end_minute":
+            end_minute = int(value)
+            # Fensterende muss NACH dem Start liegen — sonst matcht der Scheduler nie
+            # (start <= jetzt < end). Zurück zur Endstunde, ohne die Startzeit zu verlieren.
+            if (self.data["end_hour"], end_minute) <= (self.data["hour"], self.data["minute"]):
+                self.step = "end_hour"
+                return Prompt("end_hour_retry", "nebel_end_hour")
+            self.data["end_minute"] = end_minute
+            self.step = "nebel_on"
+            return Prompt("nebel_on", "nebel_on")
+
+        if step == "nebel_on":
+            self.data["on_seconds"] = int(value)
+            self.step = "nebel_pause"
+            return Prompt("nebel_pause", "nebel_pause")
+
+        if step == "nebel_pause":
+            self.data["pause_minutes"] = int(value)
+            return self._branch_valve_or_days()
 
         if step == "duration":
             if value == "custom":
@@ -113,14 +141,14 @@ class ScheduleAssistent(Assistent):
                 self.step = "volume_custom"
                 return Prompt("volume_custom", "cancel")
             self.data["volume"] = int(value)
-            return self._after_volume()
+            return self._branch_valve_or_days()
 
         if step == "volume_custom":
             v = _as_int(value)
             if v is None or v <= 0:
                 return Reject("❌ Ungültige Eingabe. Bitte eine Zahl größer als 0:")
             self.data["volume"] = v
-            return self._after_volume()
+            return self._branch_valve_or_days()
 
         if step == "valve":
             self.data["valve_id"] = int(value)
@@ -137,9 +165,9 @@ class ScheduleAssistent(Assistent):
 
     # --- Verzweigungen ---------------------------------------------------------------------
 
-    def _after_volume(self) -> Prompt:
-        """Nach dem Volumen: bei mehreren Ventilen fragen, bei genau einem auto-zuweisen,
-        bei keinem ohne valve_id weiter zu den Wochentagen."""
+    def _branch_valve_or_days(self) -> Prompt:
+        """Nach den Detail-Schritten (Volumen bzw. Nebel-Pause): bei mehreren Ventilen fragen,
+        bei genau einem auto-zuweisen, bei keinem ohne valve_id weiter zu den Wochentagen."""
         if len(self.valves) > 1:
             self.step = "valve"
             return Prompt("valve", "valve")
