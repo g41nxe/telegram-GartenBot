@@ -12,7 +12,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from daemon.ui.assistent import (
     ScheduleAssistent, GussAssistent, SofortNebelAssistent,
-    CameraPairAssistent, CameraSettingsAssistent, Prompt, Reject, Done,
+    CameraPairAssistent, CameraSettingsAssistent, PairingNameAssistent,
+    Prompt, Reject, Done,
 )
 
 
@@ -343,6 +344,23 @@ class TestCameraSettingsAssistent(unittest.TestCase):
         a = CameraSettingsAssistent(mac="AA:BB", wish_name="Cam")
         a.start()
         self.assertIsInstance(a.advance("nope"), Reject)
+
+
+class TestPairingNameAssistent(unittest.TestCase):
+
+    def test_name_terminates_with_done(self):
+        a = PairingNameAssistent()
+        p = a.start()
+        self.assertEqual(p.view, "wish_name")
+        result = a.advance("Beet-Ventil")
+        self.assertIsInstance(result, Done)
+        self.assertEqual(result.data["wish_name"], "Beet-Ventil")
+
+    def test_empty_name_rejected(self):
+        a = PairingNameAssistent()
+        a.start()
+        self.assertIsInstance(a.advance("   "), Reject)
+        self.assertEqual(a.step, "wish_name")
 
 
 class TestScheduleAssistentDays(unittest.TestCase):

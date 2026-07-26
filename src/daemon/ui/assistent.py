@@ -327,6 +327,25 @@ class CameraPairAssistent(Assistent):
         raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{step}'")
 
 
+class PairingNameAssistent(Assistent):
+    """Ventil-Kopplung: einziger Schritt ist der Wunschname. ``Done`` liefert den Namen;
+    das eigentliche Pairing (Mittelweg-Dienst) startet der Live-Adapter."""
+
+    def start(self) -> Prompt:
+        self.step = "wish_name"
+        return Prompt("wish_name", None)
+
+    def advance(self, value) -> "Reject | Done":
+        if self.step == "wish_name":
+            name = (value or "").strip()
+            if not name:
+                return Reject("❌ Der Name darf nicht leer sein. Bitte gib einen Namen ein:")
+            self.data["wish_name"] = name
+            return Done(dict(self.data))
+
+        raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{self.step}'")
+
+
 class CameraSettingsAssistent(Assistent):
     """Kamera-Einstellung: nur das Sendeintervall ändern. Kamera (mac + wish_name) ist
     vorgewählt; ``Done`` liefert mac/wish_name/sleep_seconds, das DB-Update liegt im Adapter."""

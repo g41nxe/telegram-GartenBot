@@ -41,7 +41,8 @@ from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
 from .assistent import (
     ScheduleAssistent, GussAssistent, SofortNebelAssistent,
-    CameraPairAssistent, CameraSettingsAssistent, Prompt, Reject, Done,
+    CameraPairAssistent, CameraSettingsAssistent, PairingNameAssistent,
+    Prompt, Reject, Done,
 )
 
 logger = logging.getLogger("garden_telegram_ui")
@@ -2183,15 +2184,37 @@ def _drive_camera_settings(chat_id, value, message_id=None) -> bool:
                             _render_camera_prompt, _save_camera_settings_from_assistent, message_id)
 
 
+# --- Ventil-Kopplung über den PairingNameAssistent (Ticket cy1) -----------------------------
+
+def _render_pairing_name_prompt(chat_id, state, a, prompt, message_id=None):
+    show_step(chat_id, state,
+              "🔧 *Neues Ventil koppeln*\n\nWie soll dieses Ventil heißen?\nBitte tippe den Namen ein:",
+              None, message_id=message_id)
+
+
+def _start_valve_pairing_from_assistent(chat_id, state, message_id):
+    wish_name = state["assistent"].data["wish_name"]
+    _state_del(wizard_states, chat_id)
+    _start_pairing(chat_id, wish_name)
+
+
+def _drive_pairing_name(chat_id, value, message_id=None) -> bool:
+    return _drive_assistent(wizard_states, chat_id, value,
+                            _render_pairing_name_prompt, _start_valve_pairing_from_assistent, message_id)
+
+
 def _wizard_driver(assistent):
     """Wählt (Normalisierer, Treiber, Abbrechen-Callback) für den aktiven wizard_states-
-    Assistenten (Zeitplan/Nebel bzw. Kamera-Kopplung/-Einstellungen)."""
+    Assistenten (Zeitplan/Nebel bzw. Kamera-Kopplung/-Einstellungen, Ventil-Kopplung)."""
     if isinstance(assistent, ScheduleAssistent):
         return _normalize_schedule_callback, _drive_schedule, "wiz_cancel"
     if isinstance(assistent, CameraPairAssistent):
         return _normalize_camera_callback, _drive_camera_pair, "camsetup_cancel"
     if isinstance(assistent, CameraSettingsAssistent):
         return _normalize_camera_callback, _drive_camera_settings, "camsetup_cancel"
+    if isinstance(assistent, PairingNameAssistent):
+        # rein getippt — keine Buttons; Abbrechen läuft über setup_cancel (Alt-Handler).
+        return (lambda data: None), _drive_pairing_name, "setup_cancel"
     return None, None, None
 
 
@@ -2887,11 +2910,9 @@ def _process_callback_query(cb_obj: dict):
 
     elif data == "setup_confirm":
         telegram_client.answer_callback_query(cb_id, "Bitte Namen eingeben...")
-        _state_set(wizard_states, chat_id, {"step": "setup_wish_name"})
-        telegram_client.send_message(
-            chat_id,
-            "🔧 *Neues Ventil koppeln*\n\nWie soll dieses Ventil heißen?\nBitte tippe den Namen ein:"
-        )
+        a = PairingNameAssistent()
+        _state_set(wizard_states, chat_id, {"assistent": a})
+        _render_pairing_name_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start())
 
     elif data == "setup_cancel":
         _end_inline_flow(chat_id, message_id, cb_id, "❌ Ventil-Kopplung abgebrochen.")
