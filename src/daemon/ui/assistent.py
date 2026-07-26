@@ -195,3 +195,54 @@ class ScheduleAssistent(Assistent):
             days = [d for d in days if d != value] if value in days else days + [value]
             self.data["days"] = days
         return Prompt("days", "days")
+
+
+class GussAssistent(Assistent):
+    """Sofort-Guss (manueller Start): Dauer → Volumen → Aktion. Das Ventil ist bereits vor
+    dem Assistenten gewählt und wird als ``mqtt_name`` durchgereicht; ``Done`` liefert
+    ``duration``/``volume``/``mqtt_name``. Die eigentliche Guss-Auslösung inklusive
+    Kontext-Rückfrage (Feature 0020) liegt im Live-Adapter, nicht im Kern.
+    """
+
+    def __init__(self, mqtt_name: str = "garden_valve"):
+        super().__init__()
+        self.data["mqtt_name"] = mqtt_name
+
+    def start(self) -> Prompt:
+        self.step = "duration"
+        return Prompt("duration", "man_duration")
+
+    def advance(self, value) -> "Prompt | Reject | Done":
+        step = self.step
+
+        if step == "duration":
+            if value == "custom":
+                self.step = "duration_custom"
+                return Prompt("duration_custom", "man_cancel")
+            self.data["duration"] = int(value)
+            self.step = "volume"
+            return Prompt("volume", "man_volume")
+
+        if step == "duration_custom":
+            v = _as_int(value)
+            if v is None or not 1 <= v <= 25:
+                return Reject("❌ Ungültige Eingabe. Bitte eine Zahl zwischen 1 und 25:")
+            self.data["duration"] = v
+            self.step = "volume"
+            return Prompt("volume", "man_volume")
+
+        if step == "volume":
+            if value == "custom":
+                self.step = "volume_custom"
+                return Prompt("volume_custom", "man_cancel")
+            self.data["volume"] = int(value)
+            return Done(dict(self.data))
+
+        if step == "volume_custom":
+            v = _as_int(value)
+            if v is None or v <= 0:
+                return Reject("❌ Ungültige Eingabe. Bitte eine Zahl größer als 0:")
+            self.data["volume"] = v
+            return Done(dict(self.data))
+
+        raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{step}'")

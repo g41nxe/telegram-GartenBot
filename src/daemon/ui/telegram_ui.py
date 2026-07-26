@@ -39,7 +39,7 @@ from ..core.sensor_events import RainSensorInactivityAlertTriggered, RainSensorI
 from ..core.system_events import SoftwareUpdateActivated, SoftwareUpdateRolledBack
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
-from .assistent import ScheduleAssistent, Prompt, Reject, Done
+from .assistent import ScheduleAssistent, GussAssistent, Prompt, Reject, Done
 
 logger = logging.getLogger("garden_telegram_ui")
 
@@ -1574,6 +1574,11 @@ def _process_message(msg_obj: dict):
 
         if text.startswith("/") or text in ["📊 Status anzeigen", "💧 Gießcheck", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             _state_del(manual_states, chat_id)
+        elif "assistent" in man_state:
+            # Ticket cy1: getippte Eingabe geht durch den Guss-Assistenten (frische Prompt-
+            # Nachricht, altes Keyboard wird abgeräumt — ADR 0039).
+            _drive_guss(chat_id, text, message_id=None)
+            return
         else:
             if step == "man_custom_duration":
                 try:
@@ -1695,8 +1700,7 @@ def _process_message(msg_obj: dict):
 # --- Assistent-Laufzeit: Zeitplan-Wizard über die reine Zustandsmaschine (Ticket cy1) ------
 # Der ScheduleAssistent besitzt Zustand + Übergänge (reines advance()); hier lebt die
 # Präsentation: View → deutscher Prompt-Text, Keyboard-Typ → Inline-Keyboard, plus die lebende
-# Prompt-Nachricht (ADR 0039) über show_step. Nur der Wässern-Pfad; Nebel bleibt vorerst am
-# alten Wizard (inkrementelle Migration).
+# Prompt-Nachricht (ADR 0039) über show_step. Wässern- UND Nebel-Pfad (mode-Verzweigung).
 
 def _nebel_prompt_text(view: str, d: dict) -> str:
     """Prompt-Texte des Nebel-Zweigs (mode='nebel'). Faithful zu den alten Wizard-Texten."""
@@ -1866,14 +1870,14 @@ def _normalize_schedule_callback(data: str):
     return None
 
 
-def _render_schedule_prompt(chat_id, a, prompt, message_id=None):
-    state = _state_get(wizard_states, chat_id)
+def _render_schedule_prompt(chat_id, state, a, prompt, message_id=None):
     text = _schedule_prompt_text(prompt.view, a.data)
     kb = _schedule_keyboard(prompt.keyboard, a)
     show_step(chat_id, state, text, kb, message_id=message_id)
 
 
-def _save_schedule_from_assistent(chat_id, a, message_id):
+def _save_schedule_from_assistent(chat_id, state, message_id):
+    a = state["assistent"]
     telegram_client.edit_message_reply_markup(chat_id, message_id, None)  # Confirm-Keyboard abräumen
     d = a.data
     name = d["name"]
@@ -1901,23 +1905,109 @@ def _save_schedule_from_assistent(chat_id, a, message_id):
         telegram_client.send_message(chat_id, error_msg, get_main_keyboard())
 
 
-def _drive_schedule(chat_id, value, message_id=None) -> bool:
-    """Treibt den Zeitplan-Assistenten einen Schritt weiter und rendert die Absicht.
-    message_id=None (getippte Eingabe) → frische Prompt-Nachricht (altes Keyboard wird
-    abgeräumt, ADR 0039); message_id gesetzt (Button) → in-place editiert."""
-    state = _state_get(wizard_states, chat_id)
+def _drive_assistent(store, chat_id, value, render, on_done, message_id=None) -> bool:
+    """Generischer Assistenten-Treiber (Ticket cy1): ein advance()-Schritt und die Absicht
+    umsetzen. ``render(chat_id, state, assistent, prompt, message_id)`` malt einen Prompt,
+    ``on_done(chat_id, state, message_id)`` führt den Abschluss aus (DB-Speichern bzw. Aktion).
+    message_id=None (getippt) → frische Prompt-Nachricht (altes Keyboard weg, ADR 0039);
+    message_id gesetzt (Button) → in-place editiert."""
+    state = _state_get(store, chat_id)
     if not state or "assistent" not in state:
         return False
     result = state["assistent"].advance(value)
     if isinstance(result, Reject):
         telegram_client.send_message(chat_id, result.message)
-        _state_touch(wizard_states, chat_id)
+        _state_touch(store, chat_id)
     elif isinstance(result, Done):
-        _save_schedule_from_assistent(chat_id, state["assistent"], message_id)
+        on_done(chat_id, state, message_id)
     else:
-        _render_schedule_prompt(chat_id, state["assistent"], result, message_id)
-        _state_touch(wizard_states, chat_id)
+        render(chat_id, state, state["assistent"], result, message_id)
+        _state_touch(store, chat_id)
     return True
+
+
+def _drive_schedule(chat_id, value, message_id=None) -> bool:
+    return _drive_assistent(wizard_states, chat_id, value,
+                            _render_schedule_prompt, _save_schedule_from_assistent, message_id)
+
+
+# --- Sofort-Guss über den GussAssistent (Ticket cy1) ---------------------------------------
+
+def _guss_prompt_text(view: str, d: dict) -> str:
+    if view == "duration":
+        return ("🚿 *Bewässern starten — Schritt 1/2*\n\n"
+                "Wie lange soll *maximal* bewässert werden? (Zeitlimit)\n\n"
+                "*Aus Sicherheitsgründen max. 25 Min.*")
+    if view == "duration_custom":
+        return ("🚿 *Bewässern starten — Schritt 1/2*\n\n"
+                "Bitte gib die gewünschte Dauer in Minuten über die Tastatur ein (Zahl von 1 bis 25):")
+    if view == "volume":
+        dur = d.get("duration")
+        extra = f"\n\n*Ausgewählte Dauer: {dur} Min.*" if dur else ""
+        return ("🚿 *Bewässern starten — Schritt 2/2*\n\n"
+                "Wie viel Wasser soll *maximal* fließen? (Volumenlimit)" + extra)
+    if view == "volume_custom":
+        return ("🚿 *Bewässern starten — Schritt 2/2*\n\n"
+                "Bitte gib die gewünschte Wassermenge in Litern über die Tastatur ein (Zahl > 0):")
+    return ""
+
+
+def _guss_keyboard(kind: str, a) -> dict:
+    if kind == "man_duration":
+        return get_duration_wizard_keyboard("man")
+    if kind == "man_volume":
+        return get_volume_wizard_keyboard("man")
+    return {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "man_cancel"}]]}
+
+
+def _normalize_manual_callback(data: str):
+    """Guss-Callback → advance()-Wert. None = nicht zuständig."""
+    if data in ("man_dur_custom", "man_vol_custom"):
+        return "custom"
+    if data.startswith("man_dur_"):
+        return int(data[len("man_dur_"):])
+    if data.startswith("man_vol_"):
+        return int(data[len("man_vol_"):])
+    return None
+
+
+def _render_guss_prompt(chat_id, state, a, prompt, message_id=None):
+    text = _guss_prompt_text(prompt.view, a.data)
+    kb = _guss_keyboard(prompt.keyboard, a)
+    show_step(chat_id, state, text, kb, message_id=message_id)
+
+
+def _start_guss_from_assistent(chat_id, state, message_id):
+    """Abschluss des Guss-Assistenten: Kontext-Rückfrage (Feature 0020) oder Sofortstart.
+    Das noch lebende Prompt-Keyboard wird abgeräumt — bei Button über message_id, bei getippter
+    Menge über das gespeicherte prompt_msg_id (ADR 0039)."""
+    d = state["assistent"].data
+    dur, vol, mqtt_name = d["duration"], d["volume"], d["mqtt_name"]
+    strip_id = message_id if message_id is not None else state.get("prompt_msg_id")
+    _state_del(manual_states, chat_id)
+
+    if _maybe_confirm_manual_watering(chat_id, dur, vol, mqtt_name):
+        if strip_id is not None:
+            telegram_client.edit_message_reply_markup(chat_id, strip_id, None)
+        return
+
+    if strip_id is not None:
+        telegram_client.edit_message_reply_markup(chat_id, strip_id, None)
+    if _watering_ctrl:
+        success, response = _watering_ctrl.start_watering(dur, vol, "manual", mqtt_name=mqtt_name)
+    else:
+        success, response = False, "Guss-Steuerung nicht initialisiert."
+    if not success:
+        telegram_client.send_message(chat_id, f"❌ Fehler beim Starten: {response}", get_main_keyboard())
+    elif message_id is not None:
+        # Button-Pfad: bestätige in place. Getippter Pfad: die Guss-Events übernehmen die Meldung.
+        telegram_client.edit_message_text(
+            chat_id, message_id, f"🟢 *Befehl gesendet:* Bewässerung gestartet ({dur} Min / {vol}l).")
+
+
+def _drive_guss(chat_id, value, message_id=None) -> bool:
+    return _drive_assistent(manual_states, chat_id, value,
+                            _render_guss_prompt, _start_guss_from_assistent, message_id)
 
 
 def _process_callback_query(cb_obj: dict):
@@ -1935,6 +2025,15 @@ def _process_callback_query(cb_obj: dict):
         if _val is not None:
             telegram_client.answer_callback_query(cb_id)
             _drive_schedule(chat_id, _val, message_id=message_id)
+            return
+
+    # Ticket cy1: läuft ein Guss-Assistent, gehen dessen Buttons (außer Abbrechen) durch ihn.
+    _man = _state_get(manual_states, chat_id)
+    if _man and "assistent" in _man and data != "man_cancel":
+        _val = _normalize_manual_callback(data)
+        if _val is not None:
+            telegram_client.answer_callback_query(cb_id)
+            _drive_guss(chat_id, _val, message_id=message_id)
             return
 
     if data == "cancel":
@@ -1973,7 +2072,7 @@ def _process_callback_query(cb_obj: dict):
         a = ScheduleAssistent(mode="watering", valves=database.get_all_valves())
         _state_set(wizard_states, chat_id, {"assistent": a})
         telegram_client.answer_callback_query(cb_id)
-        _render_schedule_prompt(chat_id, a, a.start(), message_id=message_id)
+        _render_schedule_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start(), message_id=message_id)
 
     elif data == "wiz_mode_nebel":
         # Ticket cy1: der Nebel-Wizard läuft jetzt über denselben ScheduleAssistent (mode="nebel").
@@ -1990,7 +2089,7 @@ def _process_callback_query(cb_obj: dict):
         else:
             a = ScheduleAssistent(mode="nebel", valves=valves)
             _state_set(wizard_states, chat_id, {"assistent": a})
-            _render_schedule_prompt(chat_id, a, a.start(), message_id=message_id)
+            _render_schedule_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start(), message_id=message_id)
 
     elif data.startswith("wiz_hour_"):
         hour = int(data.split("_")[2])
@@ -2437,12 +2536,10 @@ def _process_callback_query(cb_obj: dict):
                 "❌ Es ist noch kein Ventil gekoppelt. Koppel zuerst ein Ventil über Einstellungen."
             )
         elif len(valves) == 1:
-            _state_set(manual_states, chat_id, {"step": 1, "mqtt_name": valves[0]["mqtt_name"]})
-            telegram_client.edit_message_text(
-                chat_id, message_id,
-                "🚿 *Bewässern starten — Schritt 1/2*\n\nWie lange soll *maximal* bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
-                get_duration_wizard_keyboard("man")
-            )
+            # Ticket cy1: der Sofort-Guss läuft jetzt über den GussAssistent.
+            a = GussAssistent(mqtt_name=valves[0]["mqtt_name"])
+            _state_set(manual_states, chat_id, {"assistent": a})
+            _render_guss_prompt(chat_id, _state_get(manual_states, chat_id), a, a.start(), message_id=message_id)
         else:
             rows = [[{"text": f"🚰 {v['wish_name']}", "callback_data": f"water_valve_{v['id']}"}] for v in valves]
             rows.append([{"text": "❌ Abbrechen", "callback_data": "man_cancel"}])
@@ -2459,12 +2556,9 @@ def _process_callback_query(cb_obj: dict):
         if valve is None:
             telegram_client.edit_message_text(chat_id, message_id, "❌ Ventil nicht gefunden.")
         else:
-            _state_set(manual_states, chat_id, {"step": 1, "mqtt_name": valve["mqtt_name"]})
-            telegram_client.edit_message_text(
-                chat_id, message_id,
-                "🚿 *Bewässern starten — Schritt 1/2*\n\nWie lange soll *maximal* bewässert werden? (Zeitlimit)\n\n*Aus Sicherheitsgründen max. 25 Min.*",
-                get_duration_wizard_keyboard("man")
-            )
+            a = GussAssistent(mqtt_name=valve["mqtt_name"])
+            _state_set(manual_states, chat_id, {"assistent": a})
+            _render_guss_prompt(chat_id, _state_get(manual_states, chat_id), a, a.start(), message_id=message_id)
 
     # --- Sofort-Nebel: Ventil → Stoß-Dauer → Pause → Laufzeit (Feature 0031) ---
     elif data == "nebel_now":

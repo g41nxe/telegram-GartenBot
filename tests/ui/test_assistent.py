@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
-from daemon.ui.assistent import ScheduleAssistent, Prompt, Reject, Done
+from daemon.ui.assistent import ScheduleAssistent, GussAssistent, Prompt, Reject, Done
 
 
 def _valves(n):
@@ -200,6 +200,68 @@ class TestScheduleAssistentNebel(unittest.TestCase):
         p = a.advance(0)                             # 12:00 == 12:00 ⇒ zurück
         self.assertEqual(a.step, "end_hour")
         self.assertNotIn("end_minute", a.data)
+
+
+class TestGussAssistent(unittest.TestCase):
+    """Sofort-Guss (manueller Start): duration → volume → Done. Das Ventil ist vorgewählt
+    und wird als mqtt_name durchgereicht; Done liefert dur/vol/mqtt_name (Aktion im Adapter)."""
+
+    def test_preset_path_terminates_with_done(self):
+        a = GussAssistent(mqtt_name="beet_1")
+        p = a.start()
+        self.assertEqual(p.view, "duration")
+        self.assertEqual(a.step, "duration")
+        a.advance(10)
+        self.assertEqual(a.data["duration"], 10)
+        self.assertEqual(a.step, "volume")
+        result = a.advance(25)
+        self.assertIsInstance(result, Done)
+        self.assertEqual(result.data["duration"], 10)
+        self.assertEqual(result.data["volume"], 25)
+        self.assertEqual(result.data["mqtt_name"], "beet_1")
+
+    def test_custom_duration_path(self):
+        a = GussAssistent()
+        a.start()
+        p = a.advance("custom")
+        self.assertEqual(a.step, "duration_custom")
+        self.assertEqual(p.view, "duration_custom")
+        a.advance(7)
+        self.assertEqual(a.data["duration"], 7)
+        self.assertEqual(a.step, "volume")
+
+    def test_custom_volume_path(self):
+        a = GussAssistent()
+        a.start(); a.advance(10)
+        a.advance("custom")
+        self.assertEqual(a.step, "volume_custom")
+        result = a.advance(40)
+        self.assertIsInstance(result, Done)
+        self.assertEqual(result.data["volume"], 40)
+
+    def test_custom_duration_out_of_range_rejected(self):
+        a = GussAssistent()
+        a.start(); a.advance("custom")
+        self.assertIsInstance(a.advance(99), Reject)   # > 25
+        self.assertEqual(a.step, "duration_custom")
+        self.assertIsInstance(a.advance(0), Reject)    # < 1
+        self.assertEqual(a.step, "duration_custom")
+
+    def test_custom_duration_non_numeric_rejected(self):
+        a = GussAssistent()
+        a.start(); a.advance("custom")
+        self.assertIsInstance(a.advance("abc"), Reject)
+        self.assertEqual(a.step, "duration_custom")
+
+    def test_custom_volume_non_positive_rejected(self):
+        a = GussAssistent()
+        a.start(); a.advance(10); a.advance("custom")
+        self.assertIsInstance(a.advance(0), Reject)
+        self.assertEqual(a.step, "volume_custom")
+
+    def test_default_mqtt_name(self):
+        a = GussAssistent()
+        self.assertEqual(a.data["mqtt_name"], "garden_valve")
 
 
 class TestScheduleAssistentDays(unittest.TestCase):
