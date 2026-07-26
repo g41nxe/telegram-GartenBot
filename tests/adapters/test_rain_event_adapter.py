@@ -26,6 +26,9 @@ class TestRainEventAdapter(unittest.TestCase):
         self.addCleanup(p.stop)
         db.get_metadata.side_effect = lambda k, d=None: self.store.get(k, d)
         db.set_metadata.side_effect = lambda k, v: self.store.__setitem__(k, v)
+        # Ticket l97: die Flag-Primitive an denselben Store koppeln (spiegelt database.get/set_flag).
+        db.get_flag.side_effect = lambda k: self.store.get(k) == "1"
+        db.set_flag.side_effect = lambda k, v: self.store.__setitem__(k, "1" if v else "0")
 
     def _feed(self, adapter, mm, when):
         with patch("daemon.adapters.rain_event_adapter.datetime") as dt:

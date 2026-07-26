@@ -77,7 +77,7 @@ def _ensure_nebel_window(sched: dict, now: datetime) -> None:
 def _rain_override_key(schedule_id, date_iso=None):
     """Schlüssel des Regen-Übersteuerungs-Flags für einen Zeitplan-Lauf an einem Datum."""
     d = date_iso or datetime.now().date().isoformat()
-    return f"rain_override:{schedule_id}:{d}"
+    return database.rain_override_key(schedule_id, d)
 
 
 def _resolve_schedule_valve_names(sched: dict) -> list:
@@ -192,10 +192,10 @@ def _trigger_scheduled_watering(sched: dict):
     schedule_id = sched.get("id")
 
     override_key = _rain_override_key(schedule_id) if schedule_id else None
-    if override_key and database.get_metadata(override_key) == "1":
+    if override_key and database.get_flag(override_key):
         # Regen-Übersteuerung (ADR 0035): voller Original-Guss, Wetter-Bewertung komplett
         # umgangen; das Flag gilt nur für diesen einen Lauf und wird verbraucht.
-        database.delete_metadata(override_key)
+        database.clear_flag(override_key)
         logger.info(f"Regen-Übersteuerung aktiv für Zeitplan '{name}' — voller Guss.")
         decision = None
     else:

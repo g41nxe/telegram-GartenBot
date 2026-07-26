@@ -21,7 +21,7 @@ def init_pairing(event_bus: EventBus):
     """
     global _global_bus
     _global_bus = event_bus
-    database.set_metadata("camera_pairing_active", "0")
+    database.set_flag(database.KEY_CAMERA_PAIRING_ACTIVE, False)
     database.set_metadata("camera_pairing_wish_name", "")
     database.set_metadata("camera_pairing_expires_at", "0")
 
@@ -63,7 +63,7 @@ def _pairing_worker(chat_id: int, notify_fn, wish_name: str,
     try:
         # DB-Metadaten zuerst schreiben, damit camera_receiver das Fenster sofort sieht
         expires_at = time.time() + PAIRING_TIMEOUT
-        database.set_metadata("camera_pairing_active", "1")
+        database.set_flag(database.KEY_CAMERA_PAIRING_ACTIVE, True)
         database.set_metadata("camera_pairing_wish_name", wish_name)
         database.set_metadata("camera_pairing_expires_at", str(expires_at))
 
@@ -107,7 +107,7 @@ def _pairing_worker(chat_id: int, notify_fn, wish_name: str,
         logger.error(f"Kamera-Kopplung: Unerwarteter Fehler: {e}")
         notify_fn(chat_id, f"❌ Fehler bei der Kamera-Kopplung: {e}")
     finally:
-        database.set_metadata("camera_pairing_active", "0")
+        database.set_flag(database.KEY_CAMERA_PAIRING_ACTIVE, False)
         database.set_metadata("camera_pairing_wish_name", "")
         database.set_metadata("camera_pairing_expires_at", "0")
         if _global_bus:

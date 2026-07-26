@@ -505,6 +505,31 @@ def clear_flag(key: str) -> None:
     """Entfernt das Flag komplett (z. B. Einmal-Flags wie die Regen-Übersteuerung)."""
     delete_metadata(key)
 
+
+# --- Geteilte system_metadata-Schlüssel (Ticket l97) ---------------------------------------
+# Konzern-lokale Keys leben in ihrem Modul; DIESE hier werden von Writer UND Reader in
+# verschiedenen Adaptern gebraucht — Rule 1 verbietet Adapter→Adapter, also leben ihre Namen
+# hier in der gemeinsamen Persistenz-Ebene (ADR 0045). Nur der Name, nicht die Bedeutung.
+
+KEY_CAMERA_PAIRING_ACTIVE = "camera_pairing_active"
+KEY_WATCHDOG_RAIN_SENSOR_ALERT = "watchdog_alert_active_rain_sensor"
+
+
+def watchdog_valve_alert_key(valve_id) -> str:
+    return f"watchdog_alert_active_valve_{valve_id}"
+
+
+def watchdog_camera_alert_key(mac) -> str:
+    return f"watchdog_alert_active_camera_{mac}"
+
+
+def watchdog_camera_delay_alert_key(mac) -> str:
+    return f"watchdog_delay_alert_active_camera_{mac}"
+
+
+def rain_override_key(schedule_id, date_iso: str) -> str:
+    return f"rain_override:{schedule_id}:{date_iso}"
+
 _DAILY_FORECAST_SNAPSHOT_KEY = "daily_forecast_snapshot"
 
 def set_daily_forecast_snapshot(date_str: str, rain_next_mm: float, window_start: str):

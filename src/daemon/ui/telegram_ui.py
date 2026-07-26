@@ -1708,7 +1708,7 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.answer_callback_query(
                 cb_id, "Zu spät — der Guss ist bereits durch.", show_alert=True)
         else:
-            database.set_metadata(f"rain_override:{sid_str}:{datum}", "1")
+            database.set_flag(database.rain_override_key(sid_str, datum), True)
             telegram_client.answer_callback_query(cb_id, "🚿 Regen wird ignoriert")
             telegram_client.edit_message_text(
                 chat_id, message_id,

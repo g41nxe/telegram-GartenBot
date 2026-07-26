@@ -30,7 +30,7 @@ class RainEventAdapter:
         self.event_bus.subscribe(RainSensorMeasured, self._on_rain_sensor_measured)
 
     def _load(self) -> RainEventState:
-        if database.get_metadata(_ACTIVE, "0") != "1":
+        if not database.get_flag(_ACTIVE):
             return RainEventState()
         try:
             return RainEventState(
@@ -44,7 +44,7 @@ class RainEventAdapter:
             return RainEventState()
 
     def _save(self, state: RainEventState) -> None:
-        database.set_metadata(_ACTIVE, "1" if state.active else "0")
+        database.set_flag(_ACTIVE, state.active)
         if state.active:
             database.set_metadata(_START, state.start.isoformat())
             database.set_metadata(_LAST_TICK, state.last_tick.isoformat())

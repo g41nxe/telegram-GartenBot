@@ -31,18 +31,18 @@ def _on_valve_status(event: ValveStatusReported):
     if not valve:
         return
     valve_id = valve["id"]
-    flag_key = f"watchdog_alert_active_valve_{valve_id}"
-    if database.get_metadata(flag_key) == "1":
-        database.set_metadata(flag_key, "0")
+    flag_key = database.watchdog_valve_alert_key(valve_id)
+    if database.get_flag(flag_key):
+        database.set_flag(flag_key, False)
         _global_bus.publish(InactivityAlertResolved(valve["wish_name"], valve_id))
 
 
 def _on_camera_image(event: CameraImageReceived):
     """Sofortige Entwarnung sobald ein Kamerabild erfolgreich empfangen wurde."""
     mac = event.mac_address
-    flag_key = f"watchdog_alert_active_camera_{mac}"
-    if database.get_metadata(flag_key) == "1":
-        database.set_metadata(flag_key, "0")
+    flag_key = database.watchdog_camera_alert_key(mac)
+    if database.get_flag(flag_key):
+        database.set_flag(flag_key, False)
         _global_bus.publish(CameraInactivityAlertResolved(mac, event.wish_name))
 
 
@@ -64,7 +64,7 @@ def _on_timed_photo_captured(event: TimedPhotoCaptured):
 
     # Ist die Kamera bereits als inaktiv gemeldet, schweigt die Verzugs-Warnung —
     # die Inaktivität ist die umfassendere Aussage.
-    if database.get_metadata(f"watchdog_alert_active_camera_{event.mac_address}") == "1":
+    if database.get_flag(database.watchdog_camera_alert_key(event.mac_address)):
         return
 
     schwelle = config.AUFNAHME_VERZUG_SCHWELLE_MINUTEN
@@ -91,12 +91,12 @@ def _bewerte_stoerung(mac: str, wish_name: str, gestoert: bool, grund: str,
     Gemeldet wird beim **zweiten** Vorfall in Folge; ein Wechsel der Störungsart zählt mit.
     """
     streak_key = f"watchdog_delay_streak_camera_{mac}"
-    flag_key = f"watchdog_delay_alert_active_camera_{mac}"
+    flag_key = database.watchdog_camera_delay_alert_key(mac)
 
     if not gestoert:
         database.set_metadata(streak_key, "0")
-        if database.get_metadata(flag_key) == "1":
-            database.set_metadata(flag_key, "0")
+        if database.get_flag(flag_key):
+            database.set_flag(flag_key, False)
             _global_bus.publish(CameraDelayAlertResolved(mac, wish_name))
             logger.info(
                 f"Watchdog-Entwarnung: Kamera '{wish_name}' trifft ihre Aufnahme-Zeitpunkte wieder."
@@ -110,8 +110,8 @@ def _bewerte_stoerung(mac: str, wish_name: str, gestoert: bool, grund: str,
     streak += 1
     database.set_metadata(streak_key, str(streak))
 
-    if streak >= 2 and database.get_metadata(flag_key) != "1":
-        database.set_metadata(flag_key, "1")
+    if streak >= 2 and not database.get_flag(flag_key):
+        database.set_flag(flag_key, True)
         _global_bus.publish(
             CameraDelayAlertTriggered(
                 mac, wish_name, grund,
@@ -134,9 +134,9 @@ def _bewerte_stoerung(mac: str, wish_name: str, gestoert: bool, grund: str,
 
 def _on_rain_sensor_measurement(event: RainSensorMeasured):
     """Sofortige Entwarnung sobald der Regensensor wieder eine Messung sendet."""
-    flag_key = "watchdog_alert_active_rain_sensor"
-    if database.get_metadata(flag_key) == "1":
-        database.set_metadata(flag_key, "0")
+    flag_key = database.KEY_WATCHDOG_RAIN_SENSOR_ALERT
+    if database.get_flag(flag_key):
+        database.set_flag(flag_key, False)
         _global_bus.publish(RainSensorInactivityAlertResolved())
         logger.info("Watchdog-Entwarnung: Regensensor wieder aktiv.")
 
@@ -168,7 +168,7 @@ def run_watchdog_check():
 
         valve_id = valve["id"]
         wish_name = valve["wish_name"]
-        flag_key = f"watchdog_alert_active_valve_{valve_id}"
+        flag_key = database.watchdog_valve_alert_key(valve_id)
 
         try:
             last_up = datetime.fromisoformat(last_update_str)
@@ -176,19 +176,19 @@ def run_watchdog_check():
             continue
 
         hours_silent = (now - last_up).total_seconds() / 3600
-        flag = database.get_metadata(flag_key)
+        flag = database.get_flag(flag_key)
 
         if hours_silent > timeout_hours:
-            if flag != "1":
-                database.set_metadata(flag_key, "1")
+            if not flag:
+                database.set_flag(flag_key, True)
                 _global_bus.publish(
                     InactivityAlertTriggered(wish_name, valve_id, hours_silent, int(timeout_hours))
                 )
                 logger.warning(f"Watchdog-Alert: Ventil '{wish_name}' seit {hours_silent:.1f}h still.")
         else:
-            if flag == "1":
+            if flag:
                 # Ventil wurde zwischen zwei Checks reaktiviert (z.B. nach Daemon-Neustart)
-                database.set_metadata(flag_key, "0")
+                database.set_flag(flag_key, False)
                 _global_bus.publish(InactivityAlertResolved(wish_name, valve_id))
                 logger.info(f"Watchdog-Entwarnung (Check): Ventil '{wish_name}' wieder aktiv.")
 
@@ -200,7 +200,7 @@ def run_watchdog_check():
             
         mac = camera["mac_address"]
         wish_name = camera["wish_name"]
-        flag_key = f"watchdog_alert_active_camera_{mac}"
+        flag_key = database.watchdog_camera_alert_key(mac)
         sleep_sec = camera.get("sleep_duration_seconds", 900)
         
         # Dynamisches Limit: 3 * sleep_duration_seconds, mind. 3600 Sekunden (1h)
@@ -212,18 +212,18 @@ def run_watchdog_check():
             continue
             
         seconds_silent = (now - last_seen).total_seconds()
-        flag = database.get_metadata(flag_key)
+        flag = database.get_flag(flag_key)
         
         if seconds_silent > timeout_seconds:
-            if flag != "1":
-                database.set_metadata(flag_key, "1")
+            if not flag:
+                database.set_flag(flag_key, True)
                 _global_bus.publish(
                     CameraInactivityAlertTriggered(mac, wish_name, int(seconds_silent), timeout_seconds)
                 )
                 logger.warning(f"Watchdog-Alert: Kamera '{wish_name}' seit {seconds_silent:.0f}s still.")
         else:
-            if flag == "1":
-                database.set_metadata(flag_key, "0")
+            if flag:
+                database.set_flag(flag_key, False)
                 _global_bus.publish(CameraInactivityAlertResolved(mac, wish_name))
                 logger.info(f"Watchdog-Entwarnung (Check): Kamera '{wish_name}' wieder aktiv.")
 
@@ -240,7 +240,7 @@ def run_watchdog_check():
         wish_name = camera["wish_name"]
 
         # Ist die Kamera bereits als inaktiv gemeldet, schweigt die Verzugs-Warnung.
-        if database.get_metadata(f"watchdog_alert_active_camera_{mac}") == "1":
+        if database.get_flag(database.watchdog_camera_alert_key(mac)):
             continue
 
         zuletzt = _als_zeitpunkt(database.get_metadata(f"last_delivered_target:{mac}"))
@@ -273,20 +273,20 @@ def run_watchdog_check():
     # --- Regensensor ---
     last_rain = database.get_last_rain_measurement()
     if last_rain:
-        flag_key = "watchdog_alert_active_rain_sensor"
+        flag_key = database.KEY_WATCHDOG_RAIN_SENSOR_ALERT
         timeout_hours = config.RAIN_SENSOR_OFFLINE_HOURS
         try:
             last_rain_time = datetime.fromisoformat(last_rain["timestamp"])
             hours_silent = (now - last_rain_time).total_seconds() / 3600
-            flag = database.get_metadata(flag_key)
+            flag = database.get_flag(flag_key)
             if hours_silent > timeout_hours:
-                if flag != "1":
-                    database.set_metadata(flag_key, "1")
+                if not flag:
+                    database.set_flag(flag_key, True)
                     _global_bus.publish(RainSensorInactivityAlertTriggered(hours_silent, timeout_hours))
                     logger.warning(f"Watchdog-Alert: Regensensor seit {hours_silent:.1f}h still.")
             else:
-                if flag == "1":
-                    database.set_metadata(flag_key, "0")
+                if flag:
+                    database.set_flag(flag_key, False)
                     _global_bus.publish(RainSensorInactivityAlertResolved())
                     logger.info("Watchdog-Entwarnung (Check): Regensensor wieder aktiv.")
         except Exception:

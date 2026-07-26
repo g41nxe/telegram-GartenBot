@@ -23,7 +23,7 @@ def _sensor_issues() -> list:
     battery = last.get("battery_pct")
     if battery is not None and int(battery) <= threshold:
         issues.append(f"🟡 Regensensor: Batterie schwach ({int(battery)}%)")
-    if database.get_metadata("watchdog_alert_active_rain_sensor") == "1":
+    if database.get_flag(database.KEY_WATCHDOG_RAIN_SENSOR_ALERT):
         issues.append("⚠️ Regensensor: kein Signal (Watchdog aktiv)")
     return issues
 
@@ -41,9 +41,9 @@ def _kamera_issues() -> list:
         name = camera.get("wish_name", "?")
         # Vorrang der Inaktivität (ADR 0041): Eine stumme Kamera trifft ihre Aufnahme-Zeitpunkte
         # selbstverständlich nicht — die mildere Diagnose würde hier nur in die Irre führen.
-        if database.get_metadata(f"watchdog_alert_active_camera_{mac}") == "1":
+        if database.get_flag(database.watchdog_camera_alert_key(mac)):
             issues.append(f"⚠️ Kamera „{name}“: kein Bild (Watchdog aktiv)")
-        elif database.get_metadata(f"watchdog_delay_alert_active_camera_{mac}") == "1":
+        elif database.get_flag(database.watchdog_camera_delay_alert_key(mac)):
             issues.append(f"⚠️ Kamera „{name}“: erfüllt ihre Aufnahme-Zeitpunkte nicht mehr")
     return issues
 
@@ -59,8 +59,8 @@ def _is_report_green(valves: list, services_ok: bool) -> bool:
             return False
         if (valve.get("valve_abnormal_state") or "normal") != "normal":
             return False
-        flag_key = f"watchdog_alert_active_valve_{valve['id']}"
-        if database.get_metadata(flag_key) == "1":
+        flag_key = database.watchdog_valve_alert_key(valve['id'])
+        if database.get_flag(flag_key):
             return False
     if _sensor_issues() or _kamera_issues():
         return False
@@ -223,8 +223,8 @@ def _collect_issues(valves: list, services_ok: bool) -> list:
         wish_name = valve["wish_name"]
         abnormal = (valve.get("valve_abnormal_state") or "normal")
         battery = valve.get("battery")
-        flag_key = f"watchdog_alert_active_valve_{valve['id']}"
-        has_watchdog = database.get_metadata(flag_key) == "1"
+        flag_key = database.watchdog_valve_alert_key(valve['id'])
+        has_watchdog = database.get_flag(flag_key)
 
         if abnormal != "normal":
             issues.append(f"🚨 {wish_name}: Anomalie erkannt ({abnormal})")

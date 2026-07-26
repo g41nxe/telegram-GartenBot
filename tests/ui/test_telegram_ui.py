@@ -2191,8 +2191,9 @@ class TestRainOverride(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_rainoverride_callback_sets_flag(self, mock_client, mock_db):
+        mock_db.rain_override_key.return_value = "rain_override:7:2099-01-01"
         _process_callback_query(self._cb("rainoverride_7_2099-01-01"))
-        mock_db.set_metadata.assert_called_once_with("rain_override:7:2099-01-01", "1")
+        mock_db.set_flag.assert_called_once_with("rain_override:7:2099-01-01", True)
         mock_client.answer_callback_query.assert_called()
 
     @patch("daemon.ui.telegram_ui.database")
@@ -2200,7 +2201,7 @@ class TestRainOverride(unittest.TestCase):
     def test_rainoverride_callback_too_late_sets_no_flag(self, mock_client, mock_db):
         """Vergangener Lauf (ADR 0035): kein Flag, nur sachlicher Hinweis."""
         _process_callback_query(self._cb("rainoverride_7_2000-01-01"))
-        mock_db.set_metadata.assert_not_called()
+        mock_db.set_flag.assert_not_called()
         mock_client.answer_callback_query.assert_called_once()
         self.assertIn("Zu spät", mock_client.answer_callback_query.call_args[0][1])
 

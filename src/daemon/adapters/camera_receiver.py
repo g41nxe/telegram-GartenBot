@@ -93,8 +93,8 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
             return
             
         # 2. Prüfe Koppel-Metadaten in der DB
-        is_active = database.get_metadata("camera_pairing_active")
-        if is_active != "1":
+        is_active = database.get_flag(database.KEY_CAMERA_PAIRING_ACTIVE)
+        if not is_active:
             self.send_response(403)
             self.end_headers()
             return

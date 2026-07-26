@@ -34,6 +34,7 @@ class TestSendDailyReport(unittest.TestCase):
         mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = valves or []
         mocks["db"].get_metadata.return_value = None
+        mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
 
     def test_send_daily_report_does_not_sleep(self):
         """send_daily_report() must not block — scheduler thread owns the wait."""
@@ -170,6 +171,7 @@ class TestDailyReportDesignSystem(unittest.TestCase):
             mock_db.get_nebel_stats_last_24h.return_value = (0, 0.0)
             mock_db.get_all_valves.return_value = []
             mock_db.get_metadata.return_value = None
+            mock_db.get_flag.side_effect = lambda k, _m=mock_db: _m.get_metadata(k) == "1"
             mock_weather.get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 15.0, 25.0, 5, "measured")
             mock_mqtt.HAS_PAHO = False
             return generate_daily_report("2026-06-18")
@@ -207,6 +209,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = valves or []
         mocks["db"].get_metadata.return_value = None
+        mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
         mocks["weather"].get_weather_data.return_value = (0.5, 0.0, 20.0, 0, 14.0, 24.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
         return generate_daily_report("2026-06-19")
@@ -220,6 +223,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks["db"].get_nebel_stats_last_24h.return_value = (2, 360.0)
         mocks["db"].get_all_valves.return_value = []
         mocks["db"].get_metadata.return_value = None
+        mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
         mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 28.0, 0, 18.0, 30.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
         result = generate_daily_report("2026-06-27")
@@ -241,6 +245,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = []
         mocks["db"].get_metadata.return_value = None
+        mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
         mocks["weather"].get_weather_data.return_value = (1.2, 0.0, 18.0, 3, 20.0, 31.0, 20, "measured")
         mocks["weather"].get_yesterday_temp_stats.return_value = (17.4, 22.1)
         mocks["mqtt"].HAS_PAHO = False
@@ -280,6 +285,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = [valve]
         mocks["db"].get_metadata.return_value = None
+        mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
         mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 14.0, 24.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
         with patch("daemon.adapters.daily_report.config") as mock_cfg:
@@ -301,6 +307,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = [valve]
         mocks["db"].get_metadata.return_value = None
+        mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
         mocks["weather"].get_weather_data.return_value = (0.0, 0.0, 20.0, 0, 14.0, 24.0, 5, "measured")
         mocks["mqtt"].HAS_PAHO = False
         with patch("daemon.adapters.daily_report.config") as mock_cfg:
@@ -324,6 +331,7 @@ class TestIsReportGreen(unittest.TestCase):
     def _patched(self, mock_db, *, watchdog=None, sensor=None):
         """Standard-Mock: Watchdog-Flag aus, kein Regensensor."""
         mock_db.get_metadata.return_value = watchdog
+        mock_db.get_flag.side_effect = lambda k, _m=mock_db: _m.get_metadata(k) == "1"
         mock_db.get_last_rain_measurement.return_value = sensor
 
     def test_all_healthy_services_ok_returns_true(self):
@@ -390,6 +398,7 @@ class TestIsReportGreen(unittest.TestCase):
         with patch("daemon.adapters.daily_report.database") as mock_db, \
              patch("daemon.adapters.daily_report.config") as mock_cfg:
             mock_db.get_metadata.return_value = "1"  # Sensor-Watchdog-Flag aktiv
+            mock_db.get_flag.side_effect = lambda k, _m=mock_db: _m.get_metadata(k) == "1"
             mock_db.get_last_rain_measurement.return_value = {"battery_pct": 100}
             mock_cfg.get_setting.return_value = 20
             result = dr._is_report_green([], services_ok=True)
@@ -409,6 +418,7 @@ class TestSensorIssues(unittest.TestCase):
              patch("daemon.adapters.daily_report.config") as mock_cfg:
             mock_db.get_last_rain_measurement.return_value = {"battery_pct": 18}
             mock_db.get_metadata.return_value = None
+            mock_db.get_flag.side_effect = lambda k, _m=mock_db: _m.get_metadata(k) == "1"
             mock_cfg.get_setting.return_value = 20
             issues = dr._sensor_issues()
         self.assertEqual(issues, ["🟡 Regensensor: Batterie schwach (18%)"])
@@ -418,6 +428,7 @@ class TestSensorIssues(unittest.TestCase):
              patch("daemon.adapters.daily_report.config") as mock_cfg:
             mock_db.get_last_rain_measurement.return_value = {"battery_pct": 100}
             mock_db.get_metadata.return_value = "1"
+            mock_db.get_flag.side_effect = lambda k, _m=mock_db: _m.get_metadata(k) == "1"
             mock_cfg.get_setting.return_value = 20
             issues = dr._sensor_issues()
         self.assertIn("⚠️ Regensensor: kein Signal (Watchdog aktiv)", issues)
