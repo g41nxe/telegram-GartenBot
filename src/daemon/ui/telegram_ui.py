@@ -855,10 +855,8 @@ def handle_camera_setup(chat_id: int):
         telegram_client.send_message(chat_id, "⏳ Eine Kamera-Kopplung läuft bereits im Hintergrund. Bitte warten.")
         return
 
-    # Ticket cy1: Kamera-Kopplung läuft über den CameraPairAssistent.
-    a = CameraPairAssistent()
-    _state_set(wizard_states, chat_id, {"assistent": a})
-    _render_camera_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start())
+    # Ticket cy1: Kamera-Kopplung läuft über den CameraPairAssistent (einheitliche Engine).
+    _start_wizard(chat_id, CameraPairAssistent())
 
 def handle_photo(chat_id: int):
     cameras = database.get_all_cameras()
@@ -1455,12 +1453,9 @@ def _process_message(msg_obj: dict):
         if text.startswith("/") or text in ["📊 Status anzeigen", "💧 Gießcheck", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             _state_del(wizard_states, chat_id)
         elif "assistent" in state:
-            # Ticket cy1: getippte Eingabe geht durch den aktiven wizard_states-Assistenten
-            # (Zeitplan/Nebel-Name bzw. Kamera-Name/-Intervall). message_id=None ⇒ frische
-            # Prompt-Nachricht, altes Keyboard wird abgeräumt (ADR 0039).
-            _, _drive, _ = _wizard_driver(state["assistent"])
-            if _drive:
-                _drive(chat_id, text, message_id=None)
+            # Ticket cy1: getippte Eingabe geht durch die einheitliche Wizard-Engine
+            # (message_id=None ⇒ frische Prompt-Nachricht, altes Keyboard weg — ADR 0039).
+            _drive_typed(wizard_states, chat_id, text)
             return
         else:
             if step == "setup_wish_name":
@@ -1577,12 +1572,12 @@ def _process_message(msg_obj: dict):
 
         if text.startswith("/") or text in ["📊 Status anzeigen", "💧 Gießcheck", "📅 Zeitsteuerung", "📅 Zeitpläne", "🚿 Bewässern starten", "🛑 Sofort Stopp", "🟢 Bewässern starten", "🔴 Sofort Stopp"]:
             _state_del(manual_states, chat_id)
-        elif isinstance(man_state.get("assistent"), GussAssistent):
-            # Ticket cy1: getippte Eingabe geht durch den Guss-Assistenten (frische Prompt-
-            # Nachricht, altes Keyboard wird abgeräumt — ADR 0039). Sofort-Nebel ist rein
-            # Button-getrieben und kennt keine getippten Schritte.
-            _drive_guss(chat_id, text, message_id=None)
-            return
+        elif "assistent" in man_state:
+            # Ticket cy1: getippte Eingabe an den aktiven manuellen Assistenten (nur Guss
+            # akzeptiert Text; Sofort-Nebel ist rein Button-getrieben → fällt durch zur
+            # normalen Verarbeitung „Unbekannter Befehl").
+            if _drive_typed(manual_states, chat_id, text):
+                return
         else:
             if step == "man_custom_duration":
                 try:
@@ -2218,6 +2213,155 @@ def _wizard_driver(assistent):
     return None, None, None
 
 
+# =====================================================================================
+# Einheitliche Wizard-Engine (Ticket cy1). Ein Assistent = eine reine Zustandsmaschine
+# (assistent.py) + ein WizardSpec-Eintrag (Präsentation + Verdrahtung). Ein generischer
+# Renderer/Normalisierer/Treiber/Dispatch bedient ALLE Wizards — kein Wizard-spezifisches
+# Glue mehr. Neuen Wizard anlegen = 1 Assistent-Klasse + 1 Spec-Eintrag.
+# =====================================================================================
+
+class WizardSpec:
+    """Präsentation + Verdrahtung eines Assistenten. ``text``/``keyboard`` liefern View→Text
+    bzw. Keyboard-Tag→Inline-Keyboard, ``callbacks`` ist eine Regel-Liste (prefix→cast bzw.
+    exakt→wert), ``on_done`` führt den Abschluss aus (DB-Schreiben/Aktion), ``cancel`` ist der
+    Abbrechen-Callback (fällt zum Alt-Handler durch), ``accepts_text`` erlaubt getippte Schritte."""
+
+    __slots__ = ("store", "text", "keyboard", "callbacks", "on_done", "cancel", "accepts_text")
+
+    def __init__(self, store, text, keyboard, callbacks, on_done, cancel, accepts_text=True):
+        self.store = store
+        self.text = text
+        self.keyboard = keyboard
+        self.callbacks = callbacks
+        self.on_done = on_done
+        self.cancel = cancel
+        self.accepts_text = accepts_text
+
+
+def _apply_rules(data: str, rules):
+    """Callback-String → advance()-Wert nach den Regeln einer Spec. Präfix-Regeln (``"wiz_hour_"``)
+    casten den Rest, exakte Regeln (``"wiz_save"``) liefern einen Konstantwert. None = unzuständig."""
+    for pat, cast in rules:
+        if pat.endswith("_"):
+            if data.startswith(pat):
+                if not callable(cast):
+                    return cast
+                try:
+                    return cast(data[len(pat):])
+                except (ValueError, TypeError):
+                    return None
+        elif data == pat:
+            return cast(data) if callable(cast) else cast
+    return None
+
+
+def _no_keyboard(tag, a):
+    return None
+
+
+def _pairing_prompt_text(view: str, d: dict) -> str:
+    return ("🔧 *Neues Ventil koppeln*\n\nWie soll dieses Ventil heißen?\nBitte tippe den Namen ein:")
+
+
+def _valid_resolution(v):
+    return v if v in ("VGA", "XGA", "UXGA") else None
+
+
+def _valid_quality(v):
+    return v if v in ("high", "medium", "low") else None
+
+
+def _render_wizard(chat_id, state, a, prompt, spec, message_id=None):
+    text = spec.text(prompt.view, a.data)
+    kb = spec.keyboard(prompt.keyboard, a) if prompt.keyboard is not None else None
+    show_step(chat_id, state, text, kb, message_id=message_id)
+
+
+def _drive_wizard(chat_id, spec, value, message_id=None) -> bool:
+    """Ein advance()-Schritt und die Absicht umsetzen (generisch, für JEDEN Wizard).
+    message_id=None (getippt) → frische Prompt-Nachricht (altes Keyboard weg, ADR 0039);
+    message_id gesetzt (Button) → in-place editiert."""
+    state = _state_get(spec.store, chat_id)
+    if not state or "assistent" not in state:
+        return False
+    result = state["assistent"].advance(value)
+    if isinstance(result, Reject):
+        telegram_client.send_message(chat_id, result.message)
+        _state_touch(spec.store, chat_id)
+    elif isinstance(result, Done):
+        spec.on_done(chat_id, state, message_id)
+    else:
+        _render_wizard(chat_id, state, state["assistent"], result, spec, message_id)
+        _state_touch(spec.store, chat_id)
+    return True
+
+
+def _start_wizard(chat_id, assistent, message_id=None):
+    """Assistenten in seinem Store ablegen und den Start-Prompt rendern (einheitlicher Einstieg)."""
+    spec = WIZARDS[type(assistent)]
+    _state_set(spec.store, chat_id, {"assistent": assistent})
+    _render_wizard(chat_id, _state_get(spec.store, chat_id), assistent, assistent.start(), spec, message_id=message_id)
+
+
+def _drive_typed(store, chat_id, text) -> bool:
+    """Getippte Eingabe an den aktiven Assistenten des Stores geben (falls er Text akzeptiert)."""
+    st = _state_get(store, chat_id)
+    if st and "assistent" in st:
+        spec = WIZARDS.get(type(st["assistent"]))
+        if spec and spec.accepts_text:
+            _drive_wizard(chat_id, spec, text, message_id=None)
+            return True
+    return False
+
+
+WIZARDS = {
+    ScheduleAssistent: WizardSpec(
+        store=wizard_states, text=_schedule_prompt_text, keyboard=_schedule_keyboard,
+        callbacks=[("wiz_dur_custom", "custom"), ("wiz_vol_custom", "custom"),
+                   ("wiz_hour_", int), ("wiz_min_", int), ("wiz_dur_", int), ("wiz_vol_", int),
+                   ("nb_ehour_", int), ("nb_emin_", int), ("nb_on_", int), ("nb_pause_", int),
+                   ("nb_valve_", int), ("wv_valve_", int),
+                   ("wiz_save", "save"), ("wiz_confirm_save", "confirm"), ("wiz_day_", str)],
+        on_done=_save_schedule_from_assistent, cancel="wiz_cancel"),
+    GussAssistent: WizardSpec(
+        store=manual_states, text=_guss_prompt_text, keyboard=_guss_keyboard,
+        callbacks=[("man_dur_custom", "custom"), ("man_vol_custom", "custom"),
+                   ("man_dur_", int), ("man_vol_", int)],
+        on_done=_start_guss_from_assistent, cancel="man_cancel"),
+    SofortNebelAssistent: WizardSpec(
+        store=manual_states, text=_sofort_nebel_prompt_text, keyboard=_sofort_nebel_keyboard,
+        callbacks=[("nebel_now_on_", int), ("nebel_now_pause_", int), ("nebel_dur_", int)],
+        on_done=_start_sofort_nebel_from_assistent, cancel="nebel_cancel", accepts_text=False),
+    CameraPairAssistent: WizardSpec(
+        store=wizard_states, text=_camera_prompt_text, keyboard=_camera_keyboard,
+        callbacks=[("camsetup_res_", _valid_resolution), ("camsetup_qual_", _valid_quality)],
+        on_done=_start_camera_pairing_from_assistent, cancel="camsetup_cancel"),
+    CameraSettingsAssistent: WizardSpec(
+        store=wizard_states, text=_camera_prompt_text, keyboard=_camera_keyboard,
+        callbacks=[], on_done=_save_camera_settings_from_assistent, cancel="camsetup_cancel"),
+    PairingNameAssistent: WizardSpec(
+        store=wizard_states, text=_pairing_prompt_text, keyboard=_no_keyboard,
+        callbacks=[], on_done=_start_valve_pairing_from_assistent, cancel="setup_cancel"),
+}
+
+
+def _dispatch_wizard_callback(chat_id, cb_id, data, message_id) -> bool:
+    """Läuft ein Assistent, gehen seine Buttons (außer dem Flow-Abbrechen) durch die einheitliche
+    Engine. Nicht zuständige Callbacks (globale Aktionen, Abbrechen) fallen zum Alt-Handler durch."""
+    for store in (wizard_states, manual_states):
+        st = _state_get(store, chat_id)
+        if st and "assistent" in st:
+            spec = WIZARDS.get(type(st["assistent"]))
+            if spec and data != spec.cancel:
+                val = _apply_rules(data, spec.callbacks)
+                if val is not None:
+                    telegram_client.answer_callback_query(cb_id)
+                    _drive_wizard(chat_id, spec, val, message_id=message_id)
+                    return True
+            return False
+    return False
+
+
 def _process_callback_query(cb_obj: dict):
     _cleanup_expired_states()
     cb_id = cb_obj["id"]
@@ -2225,28 +2369,8 @@ def _process_callback_query(cb_obj: dict):
     message_id = cb_obj["message"]["message_id"]
     data = cb_obj["data"]
 
-    # Ticket cy1: läuft ein wizard_states-Assistent (Zeitplan/Nebel bzw. Kamera), gehen dessen
-    # Buttons (außer dem Abbrechen des jeweiligen Flows) durch seine Zustandsmaschine.
-    _wiz = _state_get(wizard_states, chat_id)
-    if _wiz and "assistent" in _wiz:
-        _norm, _drive, _cancel = _wizard_driver(_wiz["assistent"])
-        if _norm and data != _cancel:
-            _val = _norm(data)
-            if _val is not None:
-                telegram_client.answer_callback_query(cb_id)
-                _drive(chat_id, _val, message_id=message_id)
-                return
-
-    # Ticket cy1: läuft ein manueller Assistent (Guss / Sofort-Nebel), gehen dessen Buttons
-    # (außer Abbrechen) durch seine Zustandsmaschine. nebel_stop bleibt globaler Not-Aus.
-    _man = _state_get(manual_states, chat_id)
-    if _man and "assistent" in _man and data not in ("man_cancel", "nebel_cancel"):
-        _norm, _drive = _manual_driver(_man["assistent"])
-        _val = _norm(data) if _norm else None
-        if _val is not None:
-            telegram_client.answer_callback_query(cb_id)
-            _drive(chat_id, _val, message_id=message_id)
-            return
+    if _dispatch_wizard_callback(chat_id, cb_id, data, message_id):
+        return
 
     if data == "cancel":
         _end_inline_flow(chat_id, message_id, cb_id, "❌ Vorgang abgebrochen.")
@@ -2281,10 +2405,9 @@ def _process_callback_query(cb_obj: dict):
 
     elif data == "wiz_mode_watering":
         # Ticket cy1: der Zeitplan-Wizard läuft jetzt über den ScheduleAssistent.
-        a = ScheduleAssistent(mode="watering", valves=database.get_all_valves())
-        _state_set(wizard_states, chat_id, {"assistent": a})
         telegram_client.answer_callback_query(cb_id)
-        _render_schedule_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start(), message_id=message_id)
+        _start_wizard(chat_id, ScheduleAssistent(mode="watering", valves=database.get_all_valves()),
+                      message_id=message_id)
 
     elif data == "wiz_mode_nebel":
         # Ticket cy1: der Nebel-Wizard läuft jetzt über denselben ScheduleAssistent (mode="nebel").
@@ -2299,9 +2422,7 @@ def _process_callback_query(cb_obj: dict):
                 "⚙️ Einstellungen ▸ 🔧 Ventil koppeln."
             )
         else:
-            a = ScheduleAssistent(mode="nebel", valves=valves)
-            _state_set(wizard_states, chat_id, {"assistent": a})
-            _render_schedule_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start(), message_id=message_id)
+            _start_wizard(chat_id, ScheduleAssistent(mode="nebel", valves=valves), message_id=message_id)
 
     elif data.startswith("wiz_hour_"):
         hour = int(data.split("_")[2])
@@ -2748,10 +2869,8 @@ def _process_callback_query(cb_obj: dict):
                 "❌ Es ist noch kein Ventil gekoppelt. Koppel zuerst ein Ventil über Einstellungen."
             )
         elif len(valves) == 1:
-            # Ticket cy1: der Sofort-Guss läuft jetzt über den GussAssistent.
-            a = GussAssistent(mqtt_name=valves[0]["mqtt_name"])
-            _state_set(manual_states, chat_id, {"assistent": a})
-            _render_guss_prompt(chat_id, _state_get(manual_states, chat_id), a, a.start(), message_id=message_id)
+            # Ticket cy1: der Sofort-Guss läuft über den GussAssistent (einheitliche Engine).
+            _start_wizard(chat_id, GussAssistent(mqtt_name=valves[0]["mqtt_name"]), message_id=message_id)
         else:
             rows = [[{"text": f"🚰 {v['wish_name']}", "callback_data": f"water_valve_{v['id']}"}] for v in valves]
             rows.append([{"text": "❌ Abbrechen", "callback_data": "man_cancel"}])
@@ -2768,9 +2887,7 @@ def _process_callback_query(cb_obj: dict):
         if valve is None:
             telegram_client.edit_message_text(chat_id, message_id, "❌ Ventil nicht gefunden.")
         else:
-            a = GussAssistent(mqtt_name=valve["mqtt_name"])
-            _state_set(manual_states, chat_id, {"assistent": a})
-            _render_guss_prompt(chat_id, _state_get(manual_states, chat_id), a, a.start(), message_id=message_id)
+            _start_wizard(chat_id, GussAssistent(mqtt_name=valve["mqtt_name"]), message_id=message_id)
 
     # --- Sofort-Nebel: Ventil → Stoß-Dauer → Pause → Laufzeit (Feature 0031) ---
     elif data == "nebel_now":
@@ -2782,10 +2899,8 @@ def _process_callback_query(cb_obj: dict):
                 "❌ Es ist noch kein Ventil gekoppelt. Koppel zuerst ein Ventil über Einstellungen."
             )
         elif len(valves) == 1:
-            # Ticket cy1: Sofort-Nebel läuft jetzt über den SofortNebelAssistent.
-            a = SofortNebelAssistent(valves[0])
-            _state_set(manual_states, chat_id, {"assistent": a})
-            _render_sofort_nebel_prompt(chat_id, _state_get(manual_states, chat_id), a, a.start())
+            # Ticket cy1: Sofort-Nebel läuft über den SofortNebelAssistent (einheitliche Engine).
+            _start_wizard(chat_id, SofortNebelAssistent(valves[0]))
         else:
             rows = [[{"text": f"🚰 {v['wish_name']}", "callback_data": f"nebel_now_valve_{v['id']}"}] for v in valves]
             rows.append([{"text": "❌ Abbrechen", "callback_data": "nebel_cancel"}])
@@ -2802,9 +2917,7 @@ def _process_callback_query(cb_obj: dict):
         if valve is None:
             telegram_client.edit_message_text(chat_id, message_id, "❌ Ventil nicht gefunden.")
         else:
-            a = SofortNebelAssistent(valve)
-            _state_set(manual_states, chat_id, {"assistent": a})
-            _render_sofort_nebel_prompt(chat_id, _state_get(manual_states, chat_id), a, a.start(), message_id=message_id)
+            _start_wizard(chat_id, SofortNebelAssistent(valve), message_id=message_id)
 
     elif data.startswith("nebel_now_on_"):
         on_seconds = int(data[len("nebel_now_on_"):])
@@ -2910,9 +3023,7 @@ def _process_callback_query(cb_obj: dict):
 
     elif data == "setup_confirm":
         telegram_client.answer_callback_query(cb_id, "Bitte Namen eingeben...")
-        a = PairingNameAssistent()
-        _state_set(wizard_states, chat_id, {"assistent": a})
-        _render_pairing_name_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start())
+        _start_wizard(chat_id, PairingNameAssistent())
 
     elif data == "setup_cancel":
         _end_inline_flow(chat_id, message_id, cb_id, "❌ Ventil-Kopplung abgebrochen.")
@@ -2983,9 +3094,7 @@ def _process_callback_query(cb_obj: dict):
             return
         if len(cameras) == 1:
             cam = cameras[0]
-            a = CameraSettingsAssistent(mac=cam["mac_address"], wish_name=cam["wish_name"])
-            _state_set(wizard_states, chat_id, {"assistent": a})
-            _render_camera_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start())
+            _start_wizard(chat_id, CameraSettingsAssistent(mac=cam["mac_address"], wish_name=cam["wish_name"]))
         else:
             rows = [[{"text": c["wish_name"], "callback_data": f"camsetup_settings_sel_{c['mac_address']}"}]
                     for c in cameras]
@@ -3002,9 +3111,8 @@ def _process_callback_query(cb_obj: dict):
             telegram_client.answer_callback_query(cb_id, "Kamera nicht gefunden", show_alert=True)
             return
         telegram_client.answer_callback_query(cb_id)
-        a = CameraSettingsAssistent(mac=mac, wish_name=camera["wish_name"])
-        _state_set(wizard_states, chat_id, {"assistent": a})
-        _render_camera_prompt(chat_id, _state_get(wizard_states, chat_id), a, a.start(), message_id=message_id)
+        _start_wizard(chat_id, CameraSettingsAssistent(mac=mac, wish_name=camera["wish_name"]),
+                      message_id=message_id)
 
     elif data.startswith("camsetup_res_"):
         val = data[len("camsetup_res_"):]
