@@ -36,7 +36,9 @@ from ..core.camera_events import (CameraInactivityAlertTriggered, CameraInactivi
                                   TimedPhotoCaptured, TimedPhotoDeliveryFailed,
                                   CameraDelayAlertTriggered, CameraDelayAlertResolved)
 from ..core.sensor_events import RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved, RainEventStarted, RainEventEnded
-from ..core.system_events import SoftwareUpdateActivated, SoftwareUpdateRolledBack
+from ..core.system_events import (
+    SoftwareUpdateActivated, SoftwareUpdateRolledBack, SoftwareUpdateFailed,
+)
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
 from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
 from .assistent import (
@@ -2772,6 +2774,13 @@ def _on_software_update_rolled_back(event: SoftwareUpdateRolledBack):
         f"läuft weiter auf `{event.current_version}`"
     )
 
+def _on_software_update_failed(event: SoftwareUpdateFailed):
+    # Ticket eor: Abbruch VOR dem Rollback — Zustand ungewiss, daher Warnung + Prüf-Bitte.
+    telegram_client.broadcast_notification(
+        f"⚠️ *Update unterbrochen* — `{event.target_version}` wurde nicht sauber installiert "
+        f"(Abbruch vor dem Rollback). Läuft auf `{event.current_version}`. Bitte `/status` prüfen."
+    )
+
 def _on_rain_event_started(event: RainEventStarted):
     # Ohne Menge: die Zahl wäre stets die 0,5 mm des ersten Kipps (ADR 0043).
     telegram_client.broadcast_notification("🌧 *Regen erkannt*")
@@ -2849,6 +2858,7 @@ def subscribe_event_handlers():
     _global_bus.subscribe(RainEventEnded, _on_rain_event_ended)
     _global_bus.subscribe(SoftwareUpdateActivated, _on_software_update_activated)
     _global_bus.subscribe(SoftwareUpdateRolledBack, _on_software_update_rolled_back)
+    _global_bus.subscribe(SoftwareUpdateFailed, _on_software_update_failed)
     _global_bus.subscribe(WateringCycleInterrupted, _on_watering_interrupted)
     _global_bus.subscribe(RainSensorInactivityAlertTriggered, _on_rain_sensor_inactivity_alert)
     _global_bus.subscribe(RainSensorInactivityAlertResolved, _on_rain_sensor_inactivity_resolved)

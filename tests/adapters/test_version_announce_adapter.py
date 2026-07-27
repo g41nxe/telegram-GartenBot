@@ -7,7 +7,9 @@ from unittest.mock import MagicMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from daemon.adapters import version_announce_adapter as vaa
-from daemon.core.system_events import SoftwareUpdateActivated, SoftwareUpdateRolledBack
+from daemon.core.system_events import (
+    SoftwareUpdateActivated, SoftwareUpdateRolledBack, SoftwareUpdateFailed,
+)
 
 _ANNOUNCED = "announced_version"
 
@@ -30,6 +32,11 @@ class TestVersionAnnounceAdapter(unittest.TestCase):
         rp.start(); self.addCleanup(rp.stop)
         cp = patch.object(vaa, "_clear_rollback_marker")
         self.clear_marker = cp.start(); self.addCleanup(cp.stop)
+        self._attempt = None
+        ap = patch.object(vaa, "_read_attempt_marker", side_effect=lambda: self._attempt)
+        ap.start(); self.addCleanup(ap.stop)
+        cap = patch.object(vaa, "_clear_attempt_marker")
+        self.clear_attempt = cap.start(); self.addCleanup(cap.stop)
 
     def _published(self, bus, cls):
         return [c.args[0] for c in bus.publish.call_args_list if isinstance(c.args[0], cls)]
@@ -63,6 +70,36 @@ class TestVersionAnnounceAdapter(unittest.TestCase):
         self.assertEqual(len(failed), 1)
         self.assertEqual(failed[0].target_version, "v1.17.0")
         self.clear_marker.assert_called_once()
+
+    def test_attempt_marker_stale_publishes_failure_and_clears_it(self):
+        # update.sh starb still: Versuchs-Marker (Ziel) liegt vor, es läuft weiter die alte.
+        self.store[_ANNOUNCED] = "v1.17.0"
+        self.config.read_version.return_value = "v1.17.0"
+        self._attempt = "v1.18.0"
+        bus = MagicMock()
+
+        vaa.announce_on_start(bus)
+
+        failed = self._published(bus, SoftwareUpdateFailed)
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(failed[0].target_version, "v1.18.0")
+        self.assertEqual(failed[0].current_version, "v1.17.0")
+        self.clear_attempt.assert_called_once()
+        self.assertEqual(self.store[_ANNOUNCED], "v1.17.0")   # NICHT fortgeschrieben
+
+    def test_attempt_marker_target_running_is_activation(self):
+        # Health-Check-Race: Marker noch da, aber die Zielversion läuft bereits -> Erfolg.
+        self.store[_ANNOUNCED] = "v1.17.0"
+        self.config.read_version.return_value = "v1.18.0"
+        self._attempt = "v1.18.0"
+        bus = MagicMock()
+
+        vaa.announce_on_start(bus)
+
+        self.assertEqual(len(self._published(bus, SoftwareUpdateActivated)), 1)
+        self.assertEqual(len(self._published(bus, SoftwareUpdateFailed)), 0)
+        self.assertEqual(self.store[_ANNOUNCED], "v1.18.0")   # fortgeschrieben
+        self.clear_attempt.assert_called_once()               # Marker verbraucht
 
     def test_state_written_before_publish(self):
         """Höchstens einmal: announced_version steht schon fest, wenn publiziert wird."""

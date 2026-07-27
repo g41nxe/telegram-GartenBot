@@ -501,10 +501,11 @@ Erneut versuchen über ⚙️ Einstellungen ▸ 📷 Kamera koppeln.</div>
   </div>
 
   <div class="phone">
-    <div class="src">Update-Benachrichtigung beim Daemon-Start (ADR 0044) · <code>_on_software_update_activated</code> / <code>_on_software_update_rolled_back</code> — automatisch, kein manueller Auslöser</div>
+    <div class="src">Update-Benachrichtigung beim Daemon-Start (ADR 0044) · <code>_on_software_update_activated</code> / <code>_on_software_update_rolled_back</code> / <code>_on_software_update_failed</code> — automatisch, kein manueller Auslöser</div>
     <div class="bubble">🚀 <b>Update aktiv</b> — jetzt auf <code>v1.17.0</code></div>
     <div class="bubble">❌ <b>Update fehlgeschlagen</b> — <code>v1.17.0</code> ließ sich nicht installieren, läuft weiter auf <code>v1.16.1</code></div>
-    <div class="note">Ausgelöst beim Neustart des Daemons per Versions-Diff gegen die zuletzt gemeldete Version (<code>announced_version</code> in <code>system_metadata</code>). Erfolg = neue Version läuft; Fehlschlag = Rollback-Marker <code>/tmp/garden-ota-rollback</code>, den <code>update.sh</code> hinterlegt. Ein reiner Neustart ohne Versionswechsel bleibt still (höchstens-einmal).</div>
+    <div class="bubble">⚠️ <b>Update unterbrochen</b> — <code>v1.18.0</code> wurde nicht sauber installiert (Abbruch vor dem Rollback). Läuft auf <code>v1.17.0</code>. Bitte <code>/status</code> prüfen.</div>
+    <div class="note">Ausgelöst beim Neustart des Daemons per Versions-Diff gegen die zuletzt gemeldete Version (<code>announced_version</code> in <code>system_metadata</code>). Erfolg = neue Version läuft; <b>Fehlschlag</b> = Rollback-Marker <code>/tmp/garden-ota-rollback</code> (sauber zurückgerollt); <b>unterbrochen</b> = Versuchs-Marker <code>/tmp/garden-ota-attempt</code> überlebt, weil <code>update.sh</code> vor dem Rollback still starb (Ticket eor). Ein reiner Neustart ohne Versionswechsel bleibt still (höchstens-einmal).</div>
   </div>
 
 

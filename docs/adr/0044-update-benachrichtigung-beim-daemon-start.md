@@ -60,7 +60,12 @@ Version läuft" **und** „der Bot ist bereit": den Daemon-Start.
 - Die laufende Version wird sichtbar (löst die Beobachtbarkeits-Lücke aus der 22.07.-Diagnose).
 - Neuer `system_metadata`-Schlüssel (`announced_version`) und eine Marker-Datei; `update.sh`
   verliert seinen Telegram-Code.
-- **Offen gehalten (eigenes Ticket):** Ein **automatisches** Update, das *scheitert*, bleibt
-  weiterhin stumm — der Rollback-Marker wird zwar geschrieben und gemeldet, aber ein
-  Auto-Update kann auch *vor* dem Rollback abbrechen; die vollständige Absicherung des
-  Auto-Fehlerpfads ist größer und hier nicht im Umfang.
+- **Nachtrag (Ticket eor, geschlossen):** Der Auto-Fehlerpfad *vor* dem Rollback ist jetzt
+  abgedeckt. `update.sh` setzt vor der ersten Änderung am Live-Verzeichnis einen **Versuchs-Marker**
+  `/tmp/garden-ota-attempt` (mit Ziel-Version) und löscht ihn nur bei bestätigtem Erfolg bzw.
+  sauberem Rollback. Stirbt das Skript still (`set -e`) dazwischen, überlebt der Marker; der
+  Daemon-Start meldet den Abbruch (`SoftwareUpdateFailed` → „⚠️ Update unterbrochen"), sofern die
+  Zielversion nicht doch läuft (Health-Check-Race = Erfolg). Derselbe Mechanismus wie der
+  Rollback-Marker: `core/version_announce.decide()` bekommt `attempt_target`, der Start-Adapter
+  liest/löscht den Marker, die UI formuliert den Text. Rollback (sauber) hat Vorrang vor
+  Abbruch (ungewiss) — zwei unterschiedliche Meldungen.

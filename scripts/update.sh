@@ -11,6 +11,10 @@ Z2M_UPDATED=false
 # Marker, den der Daemon beim Neustart liest, um einen fehlgeschlagenen Update-Versuch
 # (Rollback) zu melden (ADR 0044). Erfolgsmeldungen macht der Daemon per Versions-Diff.
 ROLLBACK_MARKER="/tmp/garden-ota-rollback"
+# Versuchs-Marker (Ticket eor): wird VOR der ersten Änderung am Live-Verzeichnis gesetzt und nur
+# bei bestätigtem Erfolg bzw. sauberem Rollback wieder gelöscht. Stirbt das Skript still (set -e)
+# irgendwo dazwischen, überlebt der Marker — der Daemon meldet den Abbruch beim nächsten Start.
+ATTEMPT_MARKER="/tmp/garden-ota-attempt"
 
 log() { echo "[update] $*"; }
 die() { log "FEHLER: $*"; exit 1; }
@@ -90,6 +94,10 @@ rm -rf "$TMP_EXTRACT"
 mkdir -p "$TMP_EXTRACT"
 tar -xzf "$TMP_ARCHIVE" -C "$TMP_EXTRACT"
 
+# Ab hier wird das Live-Verzeichnis verändert — Versuchs-Marker setzen (Ticket eor).
+# Stirbt das Skript vor Erfolg oder sauberem Rollback, meldet der Daemon-Start den Abbruch.
+echo "$RELEASE_TAG" > "$ATTEMPT_MARKER"
+
 # Dateien übertragen — .env und garden.db nie anfassen
 for DIR in src scripts tools config; do
     if [ -d "$TMP_EXTRACT/$DIR" ]; then
@@ -130,6 +138,8 @@ sleep 15
 
 if systemctl is-active --quiet garden-irrigation; then
     # Erfolg meldet der Daemon selbst per Versions-Diff (ADR 0044) — hier keine Nachricht.
+    # Versuchs-Marker auflösen: der Versuch ist sauber abgeschlossen (Ticket eor).
+    rm -f "$ATTEMPT_MARKER"
     log "Update auf $RELEASE_TAG erfolgreich."
     rm -rf "$TMP_ARCHIVE" "$TMP_EXTRACT"
     exit 0
@@ -154,7 +164,9 @@ fi
 
 # Rollback-Marker für den Daemon hinterlegen (ADR 0044): enthält das gescheiterte Ziel.
 # Der Daemon liest ihn beim Neustart, meldet den Fehlschlag und löscht ihn danach.
+# Der sauber durchgeführte Rollback hat Vorrang vor dem Abbruch-Marker (Ticket eor).
 echo "$RELEASE_TAG" > "$ROLLBACK_MARKER"
+rm -f "$ATTEMPT_MARKER"
 
 sudo systemctl restart garden-irrigation
 rm -rf "$TMP_ARCHIVE" "$TMP_EXTRACT"
