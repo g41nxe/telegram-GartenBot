@@ -1,3 +1,19 @@
+## v1.19.0 — 2026-07-27
+
+### Neu
+- Zeitplan bearbeiten: Änderungen sammeln und mit „✅ Fertig" gebündelt speichern
+- „Abbrechen" beim Bearbeiten lässt den Zeitplan jetzt unverändert (transaktional)
+- Zeitplan löschen fragt direkt an der Nachricht nach (Inline statt Tastatur unten)
+
+### Behoben
+- Notaus- und Menü-Buttons brechen einen laufenden Dialog zuverlässig ab
+- Eigene Eingaben (Dauer, Menge, Namen) lassen keine zweite, tote Tastatur mehr stehen
+
+### Wartung
+- Alle Bot-Dialoge laufen über eine einheitliche Assistent-Engine (interner Umbau)
+
+---
+
 ## v1.18.2 — 2026-07-26
 
 ### Wartung
