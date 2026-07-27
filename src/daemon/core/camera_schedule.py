@@ -5,6 +5,14 @@ skalare Werte oder Tupel aus (Aufnahme-Zeitpunkt, Beschriftung, Label).
 
 Die Ziel-Erzeugung deckt Vortag, heute und morgen ab: Ein Aufnahme-Zeitpunkt bleibt offen,
 bis der naechste ihn abloest (ADR 0040) — ueber Mitternacht hinweg also auch der von gestern.
+
+Zeitzonen (Ticket fok): Aufnahme-Zeitpunkte sind bewusst **lokale Wanduhrzeit** — „08:00" meint
+08:00 Ortszeit, jeden Tag, unabhängig von Sommer-/Winterzeit. Anzeige, Ordnung und Verzug rechnen
+in dieser Wanduhrzeit. Nur die *physische Schlafdauer* (compute_next_sleep_seconds) braucht die
+tatsächlich verstrichene Zeit; sie wird über ``tz`` (ZoneInfo) DST-korrekt gerechnet, sonst würde
+die Kamera an den beiden Umstellungstagen bis zu 60 min daneben aufwachen. Die im Frühjahr nicht
+existierende Stunde (02:00–03:00) löst ZoneInfo auf den realen Moment danach auf; die im Herbst
+doppelte Stunde wird als erstes Vorkommen gewertet (``fold=0``).
 """
 import re
 from datetime import datetime, timedelta
@@ -70,17 +78,35 @@ def _absolute_targets(now: datetime, photo_times: list):
     return targets
 
 
+def _real_seconds(now: datetime, target: datetime, tz) -> float:
+    """Tatsächlich verstrichene Sekunden von ``now`` bis ``target``.
+
+    Beide sind naive lokale Wanduhrzeiten. Mit ``tz`` (ZoneInfo) werden sie in der Zeitzone
+    verortet, sodass die Differenz die echte Dauer ist — an den Umstellungstagen ±1 h gegenüber
+    der naiven Differenz (Ticket fok). Ohne ``tz`` die naive Differenz (auf Normaltagen gleich).
+
+    Über ``.timestamp()`` (POSIX/UTC): das direkte Subtrahieren zweier aware-datetimes mit
+    *demselben* tzinfo ignoriert in Python den Offset (naive Wanduhr-Differenz) — genau das,
+    was hier vermieden werden muss.
+    """
+    if tz is None:
+        return (target - now).total_seconds()
+    return target.replace(tzinfo=tz).timestamp() - now.replace(tzinfo=tz).timestamp()
+
+
 def compute_next_sleep_seconds(
     now: datetime,
     schedules: list,
     photo_times: list,
     interval_seconds: int,
     after_offset_minutes: int,
+    tz=None,
 ) -> int:
     """Berechnet die optimale Schlafdauer für die Kamera.
 
     Gibt Min(interval_seconds, Sekunden_bis_nächsten_Aufnahme_Zeitpunkt) zurück.
-    Minimum 60 Sekunden (Kamera-Constraint).
+    Minimum 60 Sekunden (Kamera-Constraint). ``tz`` (ZoneInfo) macht die Schlafdauer an den
+    Sommerzeit-Umstellungen DST-korrekt (Ticket fok).
     """
     deadline = now + timedelta(seconds=interval_seconds)
     best_seconds = interval_seconds
@@ -92,8 +118,8 @@ def compute_next_sleep_seconds(
 
     for target_dt, _, _label in all_targets:
         if now <= target_dt <= deadline:
-            secs = int((target_dt - now).total_seconds())
-            if secs < best_seconds:
+            secs = int(_real_seconds(now, target_dt, tz))
+            if 0 <= secs < best_seconds:
                 best_seconds = secs
 
     return max(60, best_seconds)

@@ -216,6 +216,11 @@ try:
 except ValueError:
     AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN = 5
 
+# Zeitzone der Anlage (Ticket fok) — für die DST-korrekte Schlafdauer der getimten Kamera.
+# Aufnahme-Zeitpunkte bleiben lokale Wanduhrzeit; nur die physische Schlafdauer rechnet damit
+# die tatsächlich verstrichene Zeit über die Umstellungstage.
+TIMEZONE = os.getenv("TIMEZONE", "Europe/Berlin")
+
 # Ab welchem Aufnahme-Verzug die Kamera-Überwachung eine Störung meldet (ADR 0041).
 # Gesund liegt der Verzug unter einer Minute (±60 s Wecker-Quantisierung plus Bootzeit).
 try:

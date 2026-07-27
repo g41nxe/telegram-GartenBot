@@ -1,5 +1,6 @@
 """Tests für src/daemon/core/camera_schedule.py — reine Core-Funktionen, keine I/O."""
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import pytest
 from src.daemon.core import camera_schedule
 
@@ -105,6 +106,49 @@ class TestComputeNextSleepSeconds:
             _now(10, 10), [], [_photo_time("10:10")], INTERVAL, OFFSET
         )
         assert result == 60
+
+
+# ===========================================================================
+# Sommerzeit-Umstellung (Ticket fok): die Schlafdauer ist die ECHTE verstrichene Zeit
+# ===========================================================================
+
+class TestDstSleepSeconds:
+    """An den beiden Umstellungstagen ist die naive Wanduhr-Differenz falsch — die Kamera muss
+    die tatsächlich verstrichene Zeit schlafen, sonst wacht sie eine Stunde daneben auf."""
+
+    BERLIN = ZoneInfo("Europe/Berlin")
+
+    def test_spring_forward_uses_real_elapsed_seconds(self):
+        # 2026-03-29: 02:00 CET -> 03:00 CEST (die Stunde fällt weg).
+        # now 01:30, Fotozeit 03:30: Wanduhr-Delta 2 h, ECHT verstrichen nur 1 h.
+        now = datetime(2026, 3, 29, 1, 30)
+        result = camera_schedule.compute_next_sleep_seconds(
+            now, [], [_photo_time("03:30")], 8 * 3600, OFFSET, tz=self.BERLIN
+        )
+        assert result == 3600
+
+    def test_fall_back_uses_real_elapsed_seconds(self):
+        # 2026-10-25: 03:00 CEST -> 02:00 CET (die Stunde kommt doppelt).
+        # now 01:30, Fotozeit 03:30: Wanduhr-Delta 2 h, ECHT verstrichen 3 h.
+        now = datetime(2026, 10, 25, 1, 30)
+        result = camera_schedule.compute_next_sleep_seconds(
+            now, [], [_photo_time("03:30")], 8 * 3600, OFFSET, tz=self.BERLIN
+        )
+        assert result == 3 * 3600
+
+    def test_without_tz_stays_naive(self):
+        # Ohne tz bleibt es die naive Differenz (Rückwärtskompatibilität, auf Normaltagen gleich).
+        now = datetime(2026, 3, 29, 1, 30)
+        result = camera_schedule.compute_next_sleep_seconds(
+            now, [], [_photo_time("03:30")], 8 * 3600, OFFSET
+        )
+        assert result == 2 * 3600
+
+    def test_normal_day_identical_with_and_without_tz(self):
+        # Kein Umstellungstag: tz-bewusst und naiv liefern dasselbe.
+        args = (_now(10, 0), [], [_photo_time("10:10")], INTERVAL, OFFSET)
+        assert (camera_schedule.compute_next_sleep_seconds(*args, tz=self.BERLIN)
+                == camera_schedule.compute_next_sleep_seconds(*args) == 600)
 
 
 # ===========================================================================

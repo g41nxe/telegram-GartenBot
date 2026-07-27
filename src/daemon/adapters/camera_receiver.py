@@ -4,6 +4,7 @@ import shutil
 import logging
 import threading
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 from pathlib import Path
@@ -17,6 +18,16 @@ from src.daemon.core import camera_schedule
 logger = logging.getLogger("garden_camera_receiver")
 
 _global_bus = None
+
+
+def _local_tz():
+    """Konfigurierte Zeitzone für die DST-korrekte Schlafdauer (Ticket fok). Unbekannter Name →
+    None, damit die naive Rechnung greift statt eines Absturzes."""
+    try:
+        return ZoneInfo(config.TIMEZONE)
+    except (ZoneInfoNotFoundError, ValueError) as e:
+        logger.warning(f"Unbekannte TIMEZONE '{config.TIMEZONE}': {e} — rechne naiv.")
+        return None
 
 
 def _ist_neuer_zeitpunkt(target_dt: datetime, zuletzt_zugestellt: str | None) -> bool:
@@ -144,7 +155,7 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
         photo_times = database.get_photo_times()
         sleep_secs = camera_schedule.compute_next_sleep_seconds(
             datetime.now(), schedules, photo_times, interval,
-            config.CAMERA_AFTER_GUSS_OFFSET_MINUTES
+            config.CAMERA_AFTER_GUSS_OFFSET_MINUTES, tz=_local_tz()
         )
         settings = {
             "sleep_duration_seconds": sleep_secs,
