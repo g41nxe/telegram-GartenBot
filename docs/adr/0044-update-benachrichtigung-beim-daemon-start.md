@@ -61,11 +61,22 @@ Version läuft" **und** „der Bot ist bereit": den Daemon-Start.
 - Neuer `system_metadata`-Schlüssel (`announced_version`) und eine Marker-Datei; `update.sh`
   verliert seinen Telegram-Code.
 - **Nachtrag (Ticket eor, geschlossen):** Der Auto-Fehlerpfad *vor* dem Rollback ist jetzt
-  abgedeckt. `update.sh` setzt vor der ersten Änderung am Live-Verzeichnis einen **Versuchs-Marker**
-  `/tmp/garden-ota-attempt` (mit Ziel-Version) und löscht ihn nur bei bestätigtem Erfolg bzw.
-  sauberem Rollback. Stirbt das Skript still (`set -e`) dazwischen, überlebt der Marker; der
-  Daemon-Start meldet den Abbruch (`SoftwareUpdateFailed` → „⚠️ Update unterbrochen"), sofern die
-  Zielversion nicht doch läuft (Health-Check-Race = Erfolg). Derselbe Mechanismus wie der
-  Rollback-Marker: `core/version_announce.decide()` bekommt `attempt_target`, der Start-Adapter
-  liest/löscht den Marker, die UI formuliert den Text. Rollback (sauber) hat Vorrang vor
-  Abbruch (ungewiss) — zwei unterschiedliche Meldungen.
+  abgedeckt — vorrangig durch **Recovery statt bloßer Meldung**:
+  - **Automatischer Rollback bei jedem Fehler.** `update.sh` setzt ab der ersten Änderung am
+    Live-Verzeichnis `UPDATE_STARTED=true` und hängt einen `trap … ERR`. Schlägt danach *irgendeine*
+    Anweisung fehl (Kopierfehler, `tar`, `npm ci` für Zigbee2MQTT, misslungener `restart`), wird
+    automatisch aus dem Backup zurückgerollt — derselbe `do_rollback`, der bisher nur den
+    fehlgeschlagenen Health-Check bediente. Der Rollback startet sofort neu, der Daemon meldet den
+    Fehlschlag über den (unmittelbar gelesenen) Rollback-Marker → `SoftwareUpdateRolledBack`
+    („❌ Update fehlgeschlagen, läuft weiter auf …"). Das deckt die zuvor stillen Abbrüche ab,
+    inklusive „VERSION schon geflippt, aber `npm ci` scheitert" und „Live-Verzeichnis halb kopiert".
+  - **Versuchs-Marker als Best-effort-Rückfall.** Für den *nicht* abfangbaren Fall (Stromausfall,
+    `SIGKILL` — kein Trap feuert) legt `update.sh` zusätzlich `/tmp/garden-ota-attempt` an. Bootet
+    der Daemon danach noch und läuft die Zielversion nicht, meldet der Start
+    `SoftwareUpdateFailed` → „⚠️ Update unterbrochen". `core/version_announce.decide()` bekommt dazu
+    `attempt_target`; der Race „Daemon startet, während der Health-Check noch läuft" (Zielversion
+    läuft bereits) wird als Erfolg gewertet.
+  - **Bewusst nicht abgedeckt:** Bricht ein Update so hart ab, dass der Daemon gar nicht mehr
+    startet *und* der Rollback nicht griff (z. B. Stromausfall mitten im Kopieren), kann keine
+    Meldung aus dem Daemon kommen und `/tmp` ist nach einem Reboot leer. Das wäre nur extern
+    (systemd `OnFailure`/Watchdog) zu schließen — eigenes, kleineres Thema.

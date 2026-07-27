@@ -8,6 +8,10 @@ TMP_EXTRACT="/tmp/garden-update-extract"
 ENV_FILE="$GARDEN_DIR/.env"
 Z2M_DIR="/opt/zigbee2mqtt"
 Z2M_UPDATED=false
+# true, sobald das Live-Verzeichnis verändert wird — ab dann löst JEDER Fehler einen
+# automatischen Rollback aus (Ticket eor), statt das System still in einem halben Zustand
+# zu hinterlassen.
+UPDATE_STARTED=false
 # Marker, den der Daemon beim Neustart liest, um einen fehlgeschlagenen Update-Versuch
 # (Rollback) zu melden (ADR 0044). Erfolgsmeldungen macht der Daemon per Versions-Diff.
 ROLLBACK_MARKER="/tmp/garden-ota-rollback"
@@ -18,6 +22,49 @@ ATTEMPT_MARKER="/tmp/garden-ota-attempt"
 
 log() { echo "[update] $*"; }
 die() { log "FEHLER: $*"; exit 1; }
+
+# Stellt den letzten funktionierenden Stand aus dem Backup wieder her und meldet den Fehlschlag
+# über den Rollback-Marker (ADR 0044). Best-effort: eigene Fehler dürfen den Rollback nicht
+# abbrechen. Wird sowohl bei fehlgeschlagenem Health-Check als auch aus dem ERR-Trap aufgerufen.
+do_rollback() {
+    trap - ERR
+    set +e
+    log "Rollback auf ${LOCAL_VERSION:-vorherige Version}..."
+    for DIR in src scripts tools config; do
+        if [ -d "$BACKUP_DIR/$DIR" ]; then
+            rm -rf "$GARDEN_DIR/$DIR"
+            cp -r "$BACKUP_DIR/$DIR" "$GARDEN_DIR/"
+        fi
+    done
+    [ -f "$BACKUP_DIR/VERSION" ]     && cp "$BACKUP_DIR/VERSION"     "$GARDEN_DIR/VERSION"
+    [ -f "$BACKUP_DIR/Z2M_VERSION" ] && cp "$BACKUP_DIR/Z2M_VERSION" "$GARDEN_DIR/Z2M_VERSION"
+    if [ "$Z2M_UPDATED" = "true" ] && [ -d "$BACKUP_DIR/zigbee2mqtt_backup" ]; then
+        rm -rf "$Z2M_DIR"
+        cp -r "$BACKUP_DIR/zigbee2mqtt_backup" "$Z2M_DIR"
+        (cd "$Z2M_DIR" && npm ci --production)
+    fi
+    # Sauberer Rollback hat Vorrang vor dem Abbruch-Marker (Ticket eor).
+    echo "$RELEASE_TAG" > "$ROLLBACK_MARKER"
+    rm -f "$ATTEMPT_MARKER"
+    sudo systemctl restart garden-irrigation
+    rm -rf "$TMP_ARCHIVE" "$TMP_EXTRACT"
+    log "Rollback abgeschlossen. Läuft wieder auf ${LOCAL_VERSION}."
+    exit 1
+}
+
+# ERR-Trap: schlägt eine Anweisung fehl, nachdem der Umbau begann, wird automatisch
+# zurückgerollt (statt still einen halben Zustand zu hinterlassen — Ticket eor / Review-Befunde).
+on_error() {
+    local ec=$?
+    trap - ERR
+    if [ "$UPDATE_STARTED" = "true" ]; then
+        log "FEHLER (Code $ec) nach Update-Beginn — automatischer Rollback."
+        do_rollback
+    fi
+    log "FEHLER (Code $ec) vor Update-Beginn — nichts verändert, kein Rollback nötig."
+    exit "$ec"
+}
+trap on_error ERR
 
 # --- .env parsen ---
 get_env() {
@@ -94,8 +141,10 @@ rm -rf "$TMP_EXTRACT"
 mkdir -p "$TMP_EXTRACT"
 tar -xzf "$TMP_ARCHIVE" -C "$TMP_EXTRACT"
 
-# Ab hier wird das Live-Verzeichnis verändert — Versuchs-Marker setzen (Ticket eor).
-# Stirbt das Skript vor Erfolg oder sauberem Rollback, meldet der Daemon-Start den Abbruch.
+# Ab hier wird das Live-Verzeichnis verändert. Der ERR-Trap rollt ab jetzt bei JEDEM Fehler
+# automatisch zurück (Ticket eor). Der Versuchs-Marker ist der Best-effort-Rückfall für den
+# nicht abfangbaren Fall (Stromausfall/SIGKILL) — überlebt er, meldet der Daemon-Start den Abbruch.
+UPDATE_STARTED=true
 echo "$RELEASE_TAG" > "$ATTEMPT_MARKER"
 
 # Dateien übertragen — .env und garden.db nie anfassen
@@ -145,30 +194,6 @@ if systemctl is-active --quiet garden-irrigation; then
     exit 0
 fi
 
-# --- Rollback ---
-log "Health-Check fehlgeschlagen. Starte Rollback auf $LOCAL_VERSION..."
-for DIR in src scripts tools config; do
-    if [ -d "$BACKUP_DIR/$DIR" ]; then
-        rm -rf "$GARDEN_DIR/$DIR"
-        cp -r "$BACKUP_DIR/$DIR" "$GARDEN_DIR/"
-    fi
-done
-[ -f "$BACKUP_DIR/VERSION" ]     && cp "$BACKUP_DIR/VERSION"     "$GARDEN_DIR/VERSION"
-[ -f "$BACKUP_DIR/Z2M_VERSION" ] && cp "$BACKUP_DIR/Z2M_VERSION" "$GARDEN_DIR/Z2M_VERSION"
-
-if [ "$Z2M_UPDATED" = "true" ] && [ -d "$BACKUP_DIR/zigbee2mqtt_backup" ]; then
-    rm -rf "$Z2M_DIR"
-    cp -r "$BACKUP_DIR/zigbee2mqtt_backup" "$Z2M_DIR"
-    cd "$Z2M_DIR" && npm ci --production
-fi
-
-# Rollback-Marker für den Daemon hinterlegen (ADR 0044): enthält das gescheiterte Ziel.
-# Der Daemon liest ihn beim Neustart, meldet den Fehlschlag und löscht ihn danach.
-# Der sauber durchgeführte Rollback hat Vorrang vor dem Abbruch-Marker (Ticket eor).
-echo "$RELEASE_TAG" > "$ROLLBACK_MARKER"
-rm -f "$ATTEMPT_MARKER"
-
-sudo systemctl restart garden-irrigation
-rm -rf "$TMP_ARCHIVE" "$TMP_EXTRACT"
-log "Rollback abgeschlossen. Läuft wieder auf $LOCAL_VERSION."
-exit 1
+# Daemon kam nicht hoch -> derselbe automatische Rollback wie bei jedem anderen Fehler.
+log "Health-Check fehlgeschlagen."
+do_rollback
