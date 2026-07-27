@@ -1,0 +1,261 @@
+<title>Testplan v1.19.0 — Wizard-Engine</title>
+<style>
+  :root{
+    --ground:#f4f6f1; --surface:#ffffff; --surface-2:#eef1ea;
+    --ink:#1b2018; --muted:#5c6557; --faint:#7d8674;
+    --line:#e0e4da; --line-strong:#cdd3c4;
+    --accent:#2f8f6b; --accent-ink:#1f6e50; --accent-wash:#e6f1ec;
+    --pass:#3f9d5a; --warn:#b26a10; --warn-wash:#faf0dd; --warn-ink:#8a4f0c; --crit:#b3402f;
+    --mono-bg:#eef1ea; --mono-ink:#2c3a2f;
+    --shadow:0 1px 2px rgba(28,40,24,.04), 0 8px 24px -12px rgba(28,40,24,.12);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ground:#0f1310; --surface:#161b15; --surface-2:#1b211a;
+      --ink:#e9ede3; --muted:#98a189; --faint:#79836c;
+      --line:#242c22; --line-strong:#313a2d;
+      --accent:#57c69a; --accent-ink:#8fe0be; --accent-wash:#152420;
+      --pass:#5cc178; --warn:#e0a54e; --warn-wash:#241d10; --warn-ink:#e6b968; --crit:#e07a68;
+      --mono-bg:#1c231b; --mono-ink:#bcc8b6;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="light"]{
+    --ground:#f4f6f1; --surface:#ffffff; --surface-2:#eef1ea;
+    --ink:#1b2018; --muted:#5c6557; --faint:#7d8674;
+    --line:#e0e4da; --line-strong:#cdd3c4;
+    --accent:#2f8f6b; --accent-ink:#1f6e50; --accent-wash:#e6f1ec;
+    --pass:#3f9d5a; --warn:#b26a10; --warn-wash:#faf0dd; --warn-ink:#8a4f0c; --crit:#b3402f;
+    --mono-bg:#eef1ea; --mono-ink:#2c3a2f;
+    --shadow:0 1px 2px rgba(28,40,24,.04), 0 8px 24px -12px rgba(28,40,24,.12);
+  }
+  :root[data-theme="dark"]{
+    --ground:#0f1310; --surface:#161b15; --surface-2:#1b211a;
+    --ink:#e9ede3; --muted:#98a189; --faint:#79836c;
+    --line:#242c22; --line-strong:#313a2d;
+    --accent:#57c69a; --accent-ink:#8fe0be; --accent-wash:#152420;
+    --pass:#5cc178; --warn:#e0a54e; --warn-wash:#241d10; --warn-ink:#e6b968; --crit:#e07a68;
+    --mono-bg:#1c231b; --mono-ink:#bcc8b6;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0; background:var(--ground); color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; line-height:1.55; -webkit-font-smoothing:antialiased;}
+  code,.mono{font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace; font-size:.86em;
+    background:var(--mono-bg); color:var(--mono-ink); padding:.08em .38em; border-radius:5px; white-space:nowrap;}
+  .wrap{max-width:800px; margin:0 auto; padding:0 20px 96px}
+
+  header{position:sticky; top:0; z-index:10; background:color-mix(in srgb, var(--ground) 88%, transparent);
+    backdrop-filter:blur(10px); border-bottom:1px solid var(--line); margin-bottom:24px;}
+  .head-inner{max-width:800px; margin:0 auto; padding:16px 20px 14px}
+  .eyebrow{font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--faint); font-weight:600; display:flex; align-items:center; gap:8px;}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
+  h1{font-size:22px; margin:6px 0 2px; letter-spacing:-.01em; text-wrap:balance; font-weight:700}
+  .sub{color:var(--muted); font-size:13.5px; margin:0}
+  .progline{display:flex; align-items:center; gap:12px; margin-top:13px}
+  .bar{flex:1; height:7px; background:var(--surface-2); border-radius:99px; overflow:hidden; border:1px solid var(--line)}
+  .bar > i{display:block; height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--pass)); border-radius:99px; transition:width .35s cubic-bezier(.4,0,.2,1)}
+  .pct{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; min-width:104px; text-align:right}
+  .pct b{color:var(--ink); font-weight:650}
+
+  .intro{display:flex; gap:13px; align-items:flex-start; background:var(--accent-wash);
+    border:1px solid color-mix(in srgb,var(--accent) 28%,transparent); border-radius:14px; padding:14px 17px; margin:0 0 6px; box-shadow:var(--shadow)}
+  .intro .ic{flex:none; font-size:20px; line-height:1.2}
+  .intro .tx{font-size:13.5px; color:var(--ink); line-height:1.5}
+  .intro .tx b{color:var(--accent-ink)}
+
+  .card{background:linear-gradient(180deg,var(--surface),color-mix(in srgb,var(--surface) 94%, var(--ground))); border:1px solid var(--line); border-radius:14px; padding:20px 20px 8px; margin:16px 0; box-shadow:var(--shadow);}
+  .card.warn{border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
+  .card-head{display:flex; gap:14px; align-items:flex-start; margin-bottom:2px}
+  .num{flex:none; width:30px; height:30px; border-radius:9px; display:grid; place-items:center;
+    background:var(--accent-wash); color:var(--accent-ink); font-weight:700; font-size:14px;
+    border:1px solid color-mix(in srgb, var(--accent) 22%, transparent);}
+  .card.warn .num{background:var(--warn-wash); color:var(--warn-ink); border-color:color-mix(in srgb,var(--warn) 30%,transparent)}
+  .card-title{margin:0; font-size:16.5px; font-weight:650; letter-spacing:-.01em}
+  .tick-tag{font-size:11px; color:var(--faint); font-weight:600}
+  .card.warn .tick-tag{color:var(--warn-ink)}
+  .card-badge{margin-left:auto; flex:none}
+  .sect-count{font-size:11.5px; color:var(--faint); font-variant-numeric:tabular-nums; padding-top:6px; white-space:nowrap}
+
+  ul.list{list-style:none; margin:12px 0 6px; padding:0; display:flex; flex-direction:column; gap:2px}
+  li.item{border-radius:9px; transition:background .15s}
+  li.item:hover{background:var(--surface-2)}
+  label.chk{display:flex; gap:11px; align-items:flex-start; padding:9px 8px; cursor:pointer}
+  label.chk input{position:absolute; opacity:0; width:0; height:0}
+  .box{flex:none; width:19px; height:19px; margin-top:1px; border-radius:6px; border:1.5px solid var(--line-strong); background:var(--surface); display:grid; place-items:center; transition:all .16s;}
+  .box svg{width:12px; height:12px; opacity:0; transform:scale(.6); transition:all .16s; color:#fff}
+  input:checked + .box{background:var(--accent); border-color:var(--accent)}
+  input:checked + .box svg{opacity:1; transform:scale(1)}
+  input:focus-visible + .box{outline:2px solid var(--accent); outline-offset:2px}
+  .txt{font-size:14px; flex:1}
+  input:checked ~ .txt{color:var(--faint); text-decoration:line-through; text-decoration-color:color-mix(in srgb,var(--faint) 55%, transparent)}
+  .txt .em{color:var(--ink); font-weight:600}
+  input:checked ~ .txt .em{color:var(--faint); font-weight:500}
+
+  .callout{border:1px solid var(--line); border-left:3px solid var(--crit); background:var(--warn-wash); border-radius:12px; padding:16px 18px; margin:18px 0}
+  .callout .kicker{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--crit); font-weight:650}
+  .callout p{margin:9px 0 0; font-size:13.5px}
+  .callout strong{color:var(--ink)}
+
+  footer{margin-top:22px; padding-top:18px; border-top:1px solid var(--line); display:flex; align-items:center; gap:14px; flex-wrap:wrap}
+  .verdict{font-size:13.5px; color:var(--muted)}
+  .verdict b{color:var(--ink)}
+  .reset{margin-left:auto; font:inherit; font-size:12.5px; color:var(--muted); background:none; border:1px solid var(--line-strong); padding:6px 12px; border-radius:8px; cursor:pointer; transition:.15s}
+  .reset:hover{color:var(--ink); border-color:var(--faint)}
+
+  @media (max-width:560px){ .pct{min-width:88px} .card{padding:16px 15px 6px} .intro{flex-direction:column; gap:8px} }
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important} }
+</style>
+
+<header>
+  <div class="head-inner">
+    <div class="eyebrow"><span class="dot"></span>Release-Abnahme · v1.19.0 · noch nicht ausgeführt</div>
+    <h1>Testplan v1.19.0 — einheitliche Wizard-Engine</h1>
+    <p class="sub">Alle acht Bot-Dialoge laufen jetzt über <b>eine</b> Assistent-Engine. Am deployten Pi prüfen, dass jeder Dialog funktioniert und der alte Router-Umbau nichts gebrochen hat.</p>
+    <div class="progline">
+      <div class="bar"><i id="barFill"></i></div>
+      <div class="pct"><b id="pctDone">0</b>/<span id="pctTotal">0</span> · <b id="pctNum">0%</b></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="intro">
+    <span class="ic">🧭</span>
+    <div class="tx"><b>Feld-Abnahme nach dem OTA-Update auf v1.19.0.</b> Automatisiert bereits grün: 811 Tests inkl. 42 reiner <code>advance()</code>-Unit-Tests + 8 Ende-zu-Ende-Paritätstests. Am TestBot lokal geprüft: Bearbeiten, Löschen, Guss (inkl. ADR-0039-Fix). Diese Runde bestätigt es am <b>echten Pi</b> — Rendering, DB-Schreibung und dass alle bestehenden Abläufe unverändert weiterlaufen.</div>
+  </div>
+
+  <main id="app"></main>
+
+  <div class="callout">
+    <div class="kicker">Abbruch-Kriterien</div>
+    <p><strong>Release zurückrollen</strong> bei: zwei gleichzeitig aktiven Inline-Keyboards · Crash bei getippter Eingabe · Zeitplan mit falschen Werten in der DB · <strong>editiertes Nebel-Intervall wird zu „watering"</strong> · Notaus-Button mitten im Dialog ohne Wirkung · gebrochenem bestehendem Zeitplan.</p>
+  </div>
+
+  <footer>
+    <div class="verdict">Alles grün → v1.19.0 als feldgetestet vermerken und <b>cy1</b> schließen.</div>
+    <button class="reset" id="resetBtn">Zurücksetzen</button>
+  </footer>
+</div>
+
+<script>
+const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>';
+
+const DATA = [
+  { L:'A', title:'Zeitplan anlegen (Wässern)', tag:'anlegen bis DB-Zeile', items:[
+    {t:'„📅 Zeitpläne" → „➕ Neuer Zeitplan" → Modus-Frage (Bewässerung / Nebel).'},
+    {t:'Bewässerung → Name tippen (<code>Rasen</code>) → Stunde → Minute → Dauer → Menge.'},
+    {t:'Tage: <code>Mo</code> → „✅ Weiter" → <span class="em">Bestätigung</span> mit korrekter Zusammenfassung.'},
+    {t:'„✅ Speichern" → „erfolgreich angelegt"; Zeitplan mit <span class="em">exakt</span> diesen Werten in „📅 Zeitpläne".'},
+    {t:'<span class="em">Ein</span> Ventil gekoppelt → Ventil-Schritt übersprungen, Zeitplan bekommt es trotzdem. <span class="em">Mehrere</span> → Auswahl erscheint.'},
+  ]},
+  { L:'B', title:'Nebel-Zeitplan anlegen', tag:'Fensterende · Stoß · Pause', items:[
+    {t:'Modus „🌫️ Nebel" → Name → Stunde → Minute → <span class="em">Fensterende</span> (Stunde/Minute).'},
+    {t:'Fensterende <span class="em">vor</span> dem Start → wird abgelehnt, zurück zur Endstunde.'},
+    {t:'Nebelstoß (s) → Pause (min) → Tage → Bestätigung → Speichern → „Nebel-Intervall erfolgreich angelegt".'},
+  ]},
+  { L:'C', title:'Bearbeiten — Nabe & Batch-Speichern', tag:'Verhaltensänderung', items:[
+    {t:'✏️ an einem Zeitplan → <span class="em">Feld-Menü</span> (Zeit/Tage/Dauer/Menge/Name/Ventil) inline an der Nachricht.'},
+    {t:'Zwei Felder nacheinander ändern → nach jedem zurück ins Menü; Werte sind <span class="em">vorgemerkt</span>, noch nicht gespeichert.'},
+    {t:'„✅ Fertig" → beide Änderungen auf einmal übernommen; Liste zeigt die neuen Werte.'},
+    {t:'Erneut editieren → „❌ Abbrechen" → Zeitplan bleibt <span class="em">unverändert</span> (transaktional).'},
+  ]},
+  { L:'D', title:'Löschen — Inline-Dialog', tag:'Verhaltensänderung', items:[
+    {t:'🗑️ an einem Zeitplan → Bestätigung als <span class="em">Inline</span>-Dialog an der Nachricht (kein Reply-Keyboard unten).'},
+    {t:'„❌ Nein, abbrechen" → Zeitplan bleibt; „✅ Ja, löschen" → gelöscht, Liste aktualisiert.'},
+  ]},
+  { L:'E', title:'Sofort-Guss & Sofort-Nebel', tag:'manuelle Aktion', items:[
+    {t:'„🚿 Bewässern" → „Guss" → Dauer → Menge → startet (bzw. Kontext-Rückfrage bei Regen, Feature 0020).'},
+    {t:'Bei Kontext-Rückfrage: „Trotzdem gießen" startet, „Abbrechen" nicht.'},
+    {t:'„🚿 Bewässern" → „Sofort-Nebel" → Stoß-Dauer → Pause → Laufzeit → startet (auf Max-Laufzeit gedeckelt).'},
+  ]},
+  { L:'F', title:'Kopplung', tag:'Ventil · Kamera', items:[
+    {t:'⚙️ Einstellungen → „🔧 Ventil koppeln" → Name tippen → Kopplung startet.'},
+    {t:'⚙️ Einstellungen → „📷 Kamera koppeln" → Name → Intervall → Auflösung → Qualität → Kopplung startet.'},
+    {t:'⚙️ Einstellungen → „⏱ Kamera-Einstellungen" → Intervall ändern → gespeichert.'},
+  ]},
+  { L:'G', title:'Lebende Prompt-Nachricht & Abbruch (ADR 0039)', tag:'nie zwei Keyboards', items:[
+    {t:'„✏️ Eigene Dauer/Menge" → Zahl tippen → danach nur <span class="em">ein</span> aktives Keyboard; das Custom-Prompt-Keyboard ist abgeräumt.'},
+    {t:'Unsinn tippen (<code>abc</code>) im Custom-Schritt → „Ungültige Eingabe", <span class="em">kein Crash</span>.'},
+    {t:'Mitten im Dialog „🛑 Stopp" / einen Menü-Button / <code>/</code>-Befehl → Dialog bricht ab, der Button wird <span class="em">normal</span> ausgeführt (Notaus wirkt!).'},
+  ]},
+  { L:'H', title:'Regression — was NICHT brechen darf', tag:'kritisch', warn:true, items:[
+    {t:'Ein editiertes <span class="em">Nebel-Intervall</span> bleibt Nebel (mode/Fenster/Stoß/Pause erhalten) — wird nicht zu „watering".'},
+    {t:'Bestehende Zeitpläne laufen; ein geplanter Guss/Nebel feuert wie gehabt.'},
+    {t:'<code>/status</code>, Gießcheck, Tagesbericht, Foto/Kamera-Menü unbeeinflusst.'},
+    {t:'<code>journalctl -u garden-irrigation</code> beim Durchklicken ohne <code>Traceback</code>/<code>Error</code>.'},
+    {t:'Beim Start meldet der Daemon die neue Version (Update-Benachrichtigung, ADR 0044).'},
+  ]},
+];
+
+const KEY='gartentest-v1.19.0-wizard-engine';
+let state = {};
+try{ state = JSON.parse(localStorage.getItem(KEY)) || {}; }catch(e){ state = {}; }
+
+const app = document.getElementById('app');
+let total = 0;
+
+DATA.forEach((sec, si)=>{
+  const card = document.createElement('section');
+  card.className = 'card' + (sec.warn ? ' warn' : '');
+  const scId = 'sc'+si;
+  card.innerHTML = `<div class="card-head">
+      <div class="num">${sec.L}</div>
+      <div>
+        <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+          <h2 class="card-title">${sec.title}</h2><span class="tick-tag">${sec.tag}</span>
+        </div>
+      </div>
+      <div class="card-badge sect-count" id="${scId}"></div>
+    </div>`;
+  const ul = document.createElement('ul'); ul.className='list';
+  sec.items.forEach((it, ii)=>{
+    const id = si+'-'+ii; total++;
+    const li = document.createElement('li'); li.className='item';
+    li.innerHTML = `<label class="chk">
+        <input type="checkbox" data-id="${id}" ${state[id]?'checked':''}>
+        <span class="box">${CHECK}</span>
+        <span class="txt">${it.t}</span>
+      </label>`;
+    ul.appendChild(li);
+  });
+  card.appendChild(ul);
+  app.appendChild(card);
+});
+
+document.getElementById('pctTotal').textContent = total;
+
+function refresh(){
+  let done = 0;
+  DATA.forEach((sec, si)=>{
+    let sd=0;
+    sec.items.forEach((it,ii)=>{ if(state[si+'-'+ii]) sd++; });
+    done += sd;
+    const el = document.getElementById('sc'+si);
+    if(el){
+      const all = sd===sec.items.length;
+      el.textContent = `${sd}/${sec.items.length}`;
+      el.style.color = all ? 'var(--pass)' : 'var(--faint)';
+      el.style.fontWeight = all ? '700':'600';
+    }
+  });
+  const pct = total ? Math.round(done/total*100) : 0;
+  document.getElementById('barFill').style.width = pct+'%';
+  document.getElementById('pctDone').textContent = done;
+  document.getElementById('pctNum').textContent = pct+'%';
+}
+
+app.addEventListener('change', e=>{
+  const cb = e.target.closest('input[type=checkbox]'); if(!cb) return;
+  state[cb.dataset.id] = cb.checked;
+  try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
+  refresh();
+});
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  state = {}; try{ localStorage.removeItem(KEY); }catch(e){}
+  document.querySelectorAll('#app input[type=checkbox]').forEach(c=>c.checked=false);
+  refresh();
+});
+refresh();
+</script>
