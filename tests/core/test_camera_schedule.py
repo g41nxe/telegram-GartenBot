@@ -144,6 +144,16 @@ class TestDstSleepSeconds:
         )
         assert result == 2 * 3600
 
+    def test_spring_forward_gate_admits_real_reachable_target(self):
+        # Review-Befund: der Ziel-Filter muss die ECHTE Distanz nutzen, nicht die naive.
+        # now 01:50 (CET), Ziel 03:00 (CEST): naiv 70 min entfernt, ECHT nur 10 min (600 s) —
+        # bei Intervall 900 s reichbar, darf also NICHT verworfen werden (Kamera weckt pünktlich).
+        now = datetime(2026, 3, 29, 1, 50)
+        result = camera_schedule.compute_next_sleep_seconds(
+            now, [], [_photo_time("03:00")], 900, OFFSET, tz=self.BERLIN
+        )
+        assert result == 600
+
     def test_normal_day_identical_with_and_without_tz(self):
         # Kein Umstellungstag: tz-bewusst und naiv liefern dasselbe.
         args = (_now(10, 0), [], [_photo_time("10:10")], INTERVAL, OFFSET)

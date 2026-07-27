@@ -107,8 +107,10 @@ def compute_next_sleep_seconds(
     Gibt Min(interval_seconds, Sekunden_bis_nächsten_Aufnahme_Zeitpunkt) zurück.
     Minimum 60 Sekunden (Kamera-Constraint). ``tz`` (ZoneInfo) macht die Schlafdauer an den
     Sommerzeit-Umstellungen DST-korrekt (Ticket fok).
+
+    Reichweite und Dauer werden BEIDE in echter verstrichener Zeit gemessen — sonst würde am
+    Frühjahrs-Übergang ein real erreichbares Ziel vom naiven Filter verworfen (Review-Befund).
     """
-    deadline = now + timedelta(seconds=interval_seconds)
     best_seconds = interval_seconds
 
     all_targets = (
@@ -117,10 +119,9 @@ def compute_next_sleep_seconds(
     )
 
     for target_dt, _, _label in all_targets:
-        if now <= target_dt <= deadline:
-            secs = int(_real_seconds(now, target_dt, tz))
-            if 0 <= secs < best_seconds:
-                best_seconds = secs
+        secs = _real_seconds(now, target_dt, tz)
+        if 0 <= secs <= interval_seconds and secs < best_seconds:
+            best_seconds = int(secs)
 
     return max(60, best_seconds)
 
