@@ -130,6 +130,14 @@ def _bewerte_stoerung(mac: str, wish_name: str, gestoert: bool, grund: str,
 
     # Entprellung: Gemeldet wird erst beim zweiten Vorfall in Folge — die „zweiter Vorfall"-
     # Bedingung fließt als Störungs-Zustand in die Flanke ein (streak >= 2).
+    #
+    # Ein entprellter Alarm ist drei-, nicht zweiwertig: melden / entwarnen / *noch abwarten*.
+    # Die reine Flanke kennt nur melden/entwarnen — den Abwarte-Zustand (gestört, aber Streak
+    # noch < 2) hält der Treiber hier heraus: eine Störung darf NIE entwarnen, egal wie der
+    # Streak-Zähler steht (Absicherung gegen Flag/Streak-Desync nach OTA-Migration oder Race).
+    if gestoert and streak < 2:
+        return
+
     event = _check_edge(
         flag_key,
         faulted=(gestoert and streak >= 2),

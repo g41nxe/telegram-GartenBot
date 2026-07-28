@@ -367,3 +367,23 @@ class TestVerpasstEntwarntNie(unittest.TestCase):
         assert entwarnungen == [], "Ein verpasster Zeitpunkt darf niemals entwarnen"
         assert db.get_metadata(f"watchdog_delay_alert_active_camera_{self.MAC}") == "1", \
             "Der Alarm muss bestehen bleiben"
+
+    def test_verpasst_bei_flag_ohne_streak_entwarnt_nicht(self):
+        """Desync-Absicherung: Flag aktiv, aber Streak-Zaehler fehlt (z.B. nach OTA-Migration
+        oder einem Thread-Race). Ein gestoerter (verpasster) Aufnahme-Zeitpunkt zaehlt die
+        Streak neu ab 1 hoch — er darf den bestehenden Alarm dabei NICHT loeschen. Ein
+        gestoerter Zustand ist niemals eine Entwarnung, egal wie die Streak steht.
+        """
+        from daemon.core.camera_events import CameraDelayAlertResolved
+
+        db.set_metadata(f"watchdog_delay_alert_active_camera_{self.MAC}", "1")
+        # kein Streak gesetzt -> get_metadata liefert None -> Streak wird auf 1 gezaehlt (< 2)
+
+        watchdog._bewerte_stoerung(
+            self.MAC, "Garten01", gestoert=True, grund="verpasst", zeitpunkte=["08:00"],
+        )
+
+        entwarnungen = [e for e in self.events if isinstance(e, CameraDelayAlertResolved)]
+        assert entwarnungen == [], "Ein gestoerter Zeitpunkt darf nie entwarnen"
+        assert db.get_metadata(f"watchdog_delay_alert_active_camera_{self.MAC}") == "1", \
+            "Der Alarm muss bestehen bleiben"
