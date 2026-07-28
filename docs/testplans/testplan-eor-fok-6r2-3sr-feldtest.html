@@ -1,0 +1,324 @@
+<title>Testplan Feldtest (eor · fok · 6r2 · 3sr) — Bewässerungs-Daemon</title>
+<style>
+  :root{
+    --ground:#f4f6f1; --surface:#ffffff; --surface-2:#eef1ea;
+    --ink:#1b2018; --muted:#5c6557; --faint:#7d8674;
+    --line:#e0e4da; --line-strong:#cdd3c4;
+    --accent:#2f8f6b; --accent-ink:#1f6e50; --accent-wash:#e6f1ec;
+    --pass:#3f9d5a; --warn:#b26a10; --warn-wash:#faf0dd; --crit:#b3402f;
+    --mono-bg:#eef1ea; --mono-ink:#2c3a2f;
+    --shadow:0 1px 2px rgba(28,40,24,.04), 0 8px 24px -12px rgba(28,40,24,.12);
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ground:#0f1310; --surface:#161b15; --surface-2:#1b211a;
+      --ink:#e9ede3; --muted:#98a189; --faint:#79836c;
+      --line:#242c22; --line-strong:#313a2d;
+      --accent:#57c69a; --accent-ink:#8fe0be; --accent-wash:#152420;
+      --pass:#5cc178; --warn:#e0a54e; --warn-wash:#241d10; --crit:#e07a68;
+      --mono-bg:#1c231b; --mono-ink:#bcc8b6;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="light"]{
+    --ground:#f4f6f1; --surface:#ffffff; --surface-2:#eef1ea;
+    --ink:#1b2018; --muted:#5c6557; --faint:#7d8674;
+    --line:#e0e4da; --line-strong:#cdd3c4;
+    --accent:#2f8f6b; --accent-ink:#1f6e50; --accent-wash:#e6f1ec;
+    --pass:#3f9d5a; --warn:#b26a10; --warn-wash:#faf0dd; --crit:#b3402f;
+    --mono-bg:#eef1ea; --mono-ink:#2c3a2f;
+    --shadow:0 1px 2px rgba(28,40,24,.04), 0 8px 24px -12px rgba(28,40,24,.12);
+  }
+  :root[data-theme="dark"]{
+    --ground:#0f1310; --surface:#161b15; --surface-2:#1b211a;
+    --ink:#e9ede3; --muted:#98a189; --faint:#79836c;
+    --line:#242c22; --line-strong:#313a2d;
+    --accent:#57c69a; --accent-ink:#8fe0be; --accent-wash:#152420;
+    --pass:#5cc178; --warn:#e0a54e; --warn-wash:#241d10; --crit:#e07a68;
+    --mono-bg:#1c231b; --mono-ink:#bcc8b6;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--ground); color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+  }
+  code,.mono{
+    font-family:ui-monospace,"Cascadia Code","SF Mono",Consolas,monospace;
+    font-size:.86em; background:var(--mono-bg); color:var(--mono-ink);
+    padding:.08em .38em; border-radius:5px; white-space:nowrap;
+  }
+  .wrap{max-width:800px; margin:0 auto; padding:0 20px 96px}
+
+  header{
+    position:sticky; top:0; z-index:10; background:color-mix(in srgb, var(--ground) 88%, transparent);
+    backdrop-filter:blur(10px); border-bottom:1px solid var(--line);
+    margin-bottom:28px;
+  }
+  .head-inner{max-width:800px; margin:0 auto; padding:16px 20px 14px}
+  .eyebrow{
+    font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+    color:var(--faint); font-weight:600; display:flex; align-items:center; gap:8px;
+  }
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 3px var(--accent-wash)}
+  h1{font-size:22px; margin:6px 0 2px; letter-spacing:-.01em; text-wrap:balance; font-weight:700}
+  h1 .rel{color:var(--accent-ink)}
+  .sub{color:var(--muted); font-size:13.5px; margin:0}
+  .progline{display:flex; align-items:center; gap:12px; margin-top:13px}
+  .bar{flex:1; height:7px; background:var(--surface-2); border-radius:99px; overflow:hidden; border:1px solid var(--line)}
+  .bar > i{display:block; height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--pass)); border-radius:99px; transition:width .35s cubic-bezier(.4,0,.2,1)}
+  .pct{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; min-width:104px; text-align:right}
+  .pct b{color:var(--ink); font-weight:650}
+
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    padding:20px 20px 8px; margin:16px 0; box-shadow:var(--shadow);
+  }
+  .card-head{display:flex; gap:14px; align-items:flex-start; margin-bottom:6px}
+  .num{
+    flex:none; width:30px; height:30px; border-radius:9px; display:grid; place-items:center;
+    background:var(--accent-wash); color:var(--accent-ink); font-weight:700; font-size:14px;
+    font-variant-numeric:tabular-nums; border:1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .card-title{margin:0; font-size:16.5px; font-weight:650; letter-spacing:-.01em}
+  .tick-tag{font-family:ui-monospace,monospace; font-size:11px; color:var(--faint); font-weight:600}
+  .card-desc{color:var(--muted); font-size:13px; margin:2px 0 0}
+  .card-badge{margin-left:auto; flex:none}
+  .sect-count{font-size:11.5px; color:var(--faint); font-variant-numeric:tabular-nums; padding-top:6px; white-space:nowrap}
+
+  .plain .card-head{align-items:center}
+  .kicker{font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); font-weight:650}
+
+  ul.list{list-style:none; margin:12px 0 6px; padding:0; display:flex; flex-direction:column; gap:2px}
+  li.item{border-radius:9px; transition:background .15s}
+  li.item:hover{background:var(--surface-2)}
+  label.chk{display:flex; gap:11px; align-items:flex-start; padding:9px 8px; cursor:pointer}
+  label.chk input{position:absolute; opacity:0; width:0; height:0}
+  .box{
+    flex:none; width:19px; height:19px; margin-top:1px; border-radius:6px;
+    border:1.5px solid var(--line-strong); background:var(--surface);
+    display:grid; place-items:center; transition:all .16s;
+  }
+  .box svg{width:12px; height:12px; opacity:0; transform:scale(.6); transition:all .16s; color:#fff}
+  input:checked + .box{background:var(--accent); border-color:var(--accent)}
+  input:checked + .box svg{opacity:1; transform:scale(1)}
+  input:focus-visible + .box{outline:2px solid var(--accent); outline-offset:2px}
+  .txt{font-size:14px; flex:1}
+  input:checked ~ .txt{color:var(--faint); text-decoration:line-through; text-decoration-color:color-mix(in srgb,var(--faint) 55%, transparent)}
+  .txt .em{color:var(--ink); font-weight:600}
+  input:checked ~ .txt .em{color:var(--faint); font-weight:500}
+
+  li.star{background:var(--accent-wash)}
+  li.star:hover{background:color-mix(in srgb,var(--accent-wash) 80%, var(--accent) 6%)}
+  .flag{display:inline-block; font-size:10px; letter-spacing:.06em; font-weight:700; text-transform:uppercase; color:var(--accent-ink); background:color-mix(in srgb,var(--accent) 14%, transparent); padding:1px 6px; border-radius:5px; margin-left:6px; vertical-align:1px}
+
+  .callout{border:1px solid var(--line); border-left:3px solid var(--warn); background:var(--warn-wash); border-radius:12px; padding:16px 18px; margin:16px 0}
+  .callout .kicker{color:var(--warn)}
+  .callout ul{margin:10px 0 0; padding-left:18px; display:flex; flex-direction:column; gap:8px}
+  .callout li{font-size:13.5px}
+  .callout strong{color:var(--ink)}
+
+  footer{margin-top:22px; padding-top:18px; border-top:1px solid var(--line); display:flex; align-items:center; gap:14px; flex-wrap:wrap}
+  .verdict{font-size:13.5px; color:var(--muted)}
+  .verdict b{color:var(--ink)}
+  .reset{margin-left:auto; font:inherit; font-size:12.5px; color:var(--muted); background:none; border:1px solid var(--line-strong); padding:6px 12px; border-radius:8px; cursor:pointer; transition:.15s}
+  .reset:hover{color:var(--ink); border-color:var(--faint)}
+  .open-tags{display:flex; gap:6px; flex-wrap:wrap; margin-top:10px}
+  .tag{font-size:11px; font-family:ui-monospace,monospace; color:var(--faint); border:1px solid var(--line); padding:2px 8px; border-radius:6px}
+
+  .status-banner{display:flex; gap:14px; align-items:center; background:var(--surface-2);
+    border:1px solid var(--line-strong); border-radius:14px;
+    padding:15px 18px; margin:0 0 6px; box-shadow:var(--shadow)}
+  .sb-badge{flex:none; font-weight:800; font-size:12.5px; letter-spacing:.09em; color:#fff;
+    background:var(--warn); padding:7px 13px; border-radius:9px}
+  .sb-txt{font-size:13.5px; color:var(--ink); line-height:1.5}
+  .sb-txt b{color:var(--accent-ink)}
+  .sb-txt .meta{color:var(--muted); font-size:12.5px}
+
+  @media (max-width:560px){ .pct{min-width:88px} .card{padding:16px 15px 6px} .status-banner{flex-direction:column; align-items:flex-start; gap:10px} }
+  @media (prefers-reduced-motion: reduce){ *{transition:none !important} }
+</style>
+
+<header>
+  <div class="head-inner">
+    <div class="eyebrow"><span class="dot"></span>Feld-Test · unveröffentlichte master-Vorlage</div>
+    <h1>Testplan Feldtest — <span class="rel">eor · fok · 6r2 · 3sr</span></h1>
+    <p class="sub">Zwei verhaltenserhaltende Refactors (Watchdog-Flanken, Benachrichtigungs-Registry) + zwei Fixes (DST-Kamera-Schlaf, OTA-Auto-Rollback). 828 Unit-Tests grün, jeder Cluster code-reviewed. Bündelt beim nächsten Release zur Abnahme.</p>
+    <div class="progline">
+      <div class="bar"><i id="barFill"></i></div>
+      <div class="pct"><b id="pctDone">0</b>/<span id="pctTotal">0</span> Schritte · <b id="pctNum">0%</b></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="status-banner">
+    <span class="sb-badge">STEHT AUS</span>
+    <div class="sb-txt"><b>Noch nicht durchgeführt.</b> Diese Session prüft am echten Pi, was die Tests nicht erreichen: reale Telegram-Zustellung (3sr), Alarm-Timing auf Hardware (6r2), Zeitzone am Kalendertag (fok), OTA-Rollback (eor).
+      <span class="meta"> · Häkchen beim Durchlauf setzen; Fortschritt bleibt im Browser gespeichert.</span>
+    </div>
+  </div>
+  <main id="app"></main>
+
+  <div class="callout">
+    <div class="kicker">Abbruch- / Rollback-Kriterien</div>
+    <ul>
+      <li><strong>Traceback</strong> beim Start oder bei <code>/tagesbericht</code> / <code>/gießcheck</code> → <strong>Rollback</strong> (der Health-Check von <code>update.sh</code> sollte das automatisch tun — zugleich ein eor/0044-Feldtest).</li>
+      <li><strong>Ausgebliebene oder doppelte Push-Meldung</strong> → 3sr-Regression (Registry-Verdrahtung), nicht releasen.</li>
+      <li><strong>Watchdog feuert wiederholt</strong> statt einmal je Episode, oder entwarnt fälschlich → 6r2-Regression.</li>
+      <li><strong>Kamera trifft Zeitpunkte um ~1 h daneben</strong> (an einem DST-Umstellungstag) → fok-Regression.</li>
+      <li><strong>Update-Fehler ohne Auto-Rollback</strong> (Dienst bleibt tot/kaputt) → eor-Regression.</li>
+    </ul>
+  </div>
+
+  <footer>
+    <div class="verdict">Ergebnis: <b>offen — beim Durchlauf notieren.</b> Danach offen:
+      <div class="open-tags">
+        <span class="tag">cs9 · typisierte Metadaten</span>
+        <span class="tag">mtb · Aktions-Buttons (3sr = Enabler)</span>
+        <span class="tag">top · wartet auf Telemetrie</span>
+        <span class="tag">55t · Kopplungs-Folgeaktionen</span>
+      </div>
+    </div>
+    <button class="reset" id="resetBtn">Zurücksetzen</button>
+  </footer>
+</div>
+
+<script>
+const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg>';
+
+const DATA = [
+  { kind:'plain', kicker:'Vorbereitung', tag:'', items:[
+    {t:'Neueste master-Version ist auf der Steuerzentrale (Auto-Update oder <code>/update</code>).'},
+    {t:'<span class="em">0044-Selbsttest:</span> Beim Start meldet der Bot <span class="em">„🚀 Update aktiv — jetzt auf <code>vX.Y.Z</code>"</span>.', star:true, flag:'0044'},
+    {t:'<code>systemctl status garden-irrigation</code> → active, keine Traceback-Zeilen.'},
+    {t:'<code>journalctl -u garden-irrigation -n 50</code> → sauberer Start, „Laufende Version: …".'},
+  ]},
+  { kind:'num', n:1, title:'Benachrichtigungs-Registry — jede Meldung kommt real an', tag:'3sr',
+    desc:'Alle Push-Meldungen laufen jetzt über die NOTIFICATIONS-Registry; Text byte-identisch.', items:[
+    {t:'Manuellen Guss starten → <span class="em">„🚿 Wasser marsch!"</span>. Stoppen → <span class="em">„🛑 Guss gestoppt"</span>.'},
+    {t:'Guss regulär auslaufen lassen → <span class="em">„🏁 …"</span> (Volumen- bzw. Zeitlimit-Variante).'},
+    {t:'<span class="em">Button-Slot:</span> Zeitplan, den der Regen anpasst → ~5 Min vorher <span class="em">„🌧 Regen voraus …" mit Inline-Button „🚿 Regen ignorieren"</span>. Button drücken → Übersteuerung greift (<code>rain_override</code> gesetzt), Guss läuft trotzdem, Meldung quittiert.', star:true, flag:'Button'},
+    {t:'Nebel-Intervall starten → <span class="em">„🌫️ Nebel-Intervall gestartet"</span>; endet → <span class="em">„🌫️ … beendet"</span>.'},
+    {t:'Regen-Skip → <span class="em">„🌧 Heute übernimmt der Regen …"</span>; reduzierter Guss → <span class="em">„💧 Guss reduziert (X %)"</span>.'},
+    {t:'<code>/tagesbericht</code> → <span class="em">Chart + Berichtstext</span> kommen (bespoke-Handler, unverändert).'},
+    {t:'Getimte Foto-Aufnahme → <span class="em">Bild wird zugestellt</span> (bespoke-Handler, unverändert).'},
+    {t:'(falls Regen) <span class="em">„🌧 Regen erkannt"</span> / <span class="em">„🌤 Regen vorbei — … mm"</span>.'},
+    {t:'Über die Session: <span class="em">keine doppelte</span>, <span class="em">keine ausgebliebene</span> Meldung.'},
+  ]},
+  { kind:'num', n:2, title:'Watchdog-Flanken — einmal je Episode', tag:'6r2',
+    desc:'11-fach duplizierte Flanken-/Flag-Logik jetzt via edge_alarm.evaluate + _check_edge.', items:[
+    {t:'<span class="em">Ventil-Inaktivität</span> (falls provozierbar): nach Timeout <span class="em">„⚠️ Verbindung verloren"</span> — <span class="em">genau eine</span> Meldung; wieder aktiv → <span class="em">„🟢 wiederhergestellt"</span>.'},
+    {t:'<span class="em">Kamera-Inaktivität</span> analog (länger als das dynamische Limit stumm).'},
+    {t:'<span class="em">Regensensor-Inaktivität</span> analog (falls provozierbar).'},
+    {t:'<span class="em">Kamera-Verzug (Entprellung):</span> ein <span class="em">einzelner</span> verspäteter Zeitpunkt meldet <span class="em">nicht</span>; erst der <span class="em">zweite in Folge</span> → „⚠️ Kamera kommt zu spät" / „… kein Bild"; wieder pünktlich → „🟢 wieder pünktlich".'},
+    {t:'<code>journalctl</code> zeigt Alerts/Entwarnungen sauber, ohne Traceback.'},
+  ]},
+  { kind:'num', n:3, title:'DST-korrekte Kamera-Schlafdauer', tag:'fok',
+    desc:'Schlafdauer über echte verstrichene Sekunden (.timestamp()) statt naiver Wanduhr.', items:[
+    {t:'Kamera trifft ihre <span class="em">Foto-Zeitpunkte</span> (lokale <code>HH:MM</code>) — Aufnahmen zu den konfigurierten Uhrzeiten, <code>sleep_duration_seconds</code> plausibel.'},
+    {t:'<code>journalctl</code> / Telemetrie: berechnete Schlafdauer passt zur Zielzeit, <span class="em">kein 1-h-Versatz</span>.'},
+    {t:'<span class="em">Voll prüfbar nur an einem DST-Umstellungstag</span> — sonst „steht aus" lassen und am nächsten Umstellungssonntag nachziehen.'},
+  ]},
+  { kind:'num', n:4, title:'OTA-Auto-Rollback bei Update-Fehler', tag:'eor',
+    desc:'update.sh rollt bei jedem Fehler nach Update-Beginn automatisch zurück (ERR-Trap).', items:[
+    {t:'Normales Update läuft durch → <span class="em">„🚀 Update aktiv — jetzt auf <code>vX.Y.Z</code>"</span>, Dienst active.'},
+    {t:'(kontrolliert provozierbar) fehlerhaftes Update → <span class="em">Auto-Rollback</span>: Dienst läuft auf der <span class="em">Vorgängerversion</span> weiter; Bot meldet <span class="em">„❌ Update fehlgeschlagen"</span> bzw. bei Abbruch vor dem Rollback <span class="em">„⚠️ Update unterbrochen … Bitte <code>/status</code> prüfen"</span>.'},
+    {t:'Nach Rollback: <code>/status</code> zeigt die laufende (alte) Version; <code>systemctl status</code> active, keine Traceback-Zeilen.'},
+    {t:'Attempt-/Rollback-Marker in <code>/tmp</code> werden gesetzt und wieder geräumt (kein Dauer-Rückstand).'},
+  ]},
+];
+
+const KEY='gartentest-eor-fok-6r2-3sr';
+let state = {};
+try{ state = JSON.parse(localStorage.getItem(KEY)) || {}; }catch(e){ state = {}; }
+
+const app = document.getElementById('app');
+let total = 0;
+
+DATA.forEach((sec, si)=>{
+  const card = document.createElement('section');
+  card.className = 'card' + (sec.kind==='plain' ? ' plain' : '');
+  const secCountId = 'sc'+si;
+
+  let headHtml;
+  if(sec.kind==='plain'){
+    headHtml = `<div class="card-head">
+        <div><div class="kicker">${sec.kicker}</div></div>
+        <div class="card-badge sect-count" id="${secCountId}"></div>
+      </div>`;
+  } else {
+    headHtml = `<div class="card-head">
+        <div class="num">${sec.n}</div>
+        <div>
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+            <h2 class="card-title">${sec.title}</h2><span class="tick-tag">${sec.tag}</span>
+          </div>
+          <p class="card-desc">${sec.desc}</p>
+        </div>
+        <div class="card-badge sect-count" id="${secCountId}"></div>
+      </div>`;
+  }
+
+  const ul = document.createElement('ul');
+  ul.className='list';
+  sec.items.forEach((it, ii)=>{
+    const id = si+'-'+ii; total++;
+    if(!(id in state)) state[id] = false;
+    const li = document.createElement('li');
+    li.className = 'item' + (it.star ? ' star':'');
+    const checked = state[id] ? 'checked':'';
+    li.innerHTML = `<label class="chk">
+        <input type="checkbox" data-id="${id}" ${checked}>
+        <span class="box">${CHECK}</span>
+        <span class="txt">${it.t}${it.flag?`<span class="flag">${it.flag}</span>`:''}</span>
+      </label>`;
+    ul.appendChild(li);
+  });
+
+  card.innerHTML = headHtml;
+  card.appendChild(ul);
+  app.appendChild(card);
+});
+
+document.getElementById('pctTotal').textContent = total;
+
+function refresh(){
+  let done = 0;
+  DATA.forEach((sec, si)=>{
+    let sd=0;
+    sec.items.forEach((it,ii)=>{ if(state[si+'-'+ii]) sd++; });
+    done += sd;
+    const el = document.getElementById('sc'+si);
+    if(el){
+      const all = sd===sec.items.length;
+      el.textContent = `${sd}/${sec.items.length}`;
+      el.style.color = all ? 'var(--pass)' : 'var(--faint)';
+      el.style.fontWeight = all ? '700':'600';
+    }
+  });
+  const pct = total ? Math.round(done/total*100) : 0;
+  document.getElementById('barFill').style.width = pct+'%';
+  document.getElementById('pctDone').textContent = done;
+  document.getElementById('pctNum').textContent = pct+'%';
+}
+
+app.addEventListener('change', e=>{
+  const cb = e.target.closest('input[type=checkbox]');
+  if(!cb) return;
+  state[cb.dataset.id] = cb.checked;
+  try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
+  refresh();
+});
+
+document.getElementById('resetBtn').addEventListener('click', ()=>{
+  state = {};
+  try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
+  document.querySelectorAll('#app input[type=checkbox]').forEach(c=>{ c.checked = false; });
+  refresh();
+});
+
+refresh();
+</script>
