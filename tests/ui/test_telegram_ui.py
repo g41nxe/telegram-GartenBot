@@ -464,22 +464,20 @@ class TestNebelUI(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_on_nebel_started_broadcasts(self, mock_client, mock_db):
-        from daemon.ui.telegram_ui import _on_nebel_interval_started
+        from daemon.ui.telegram_ui import _render_nebel_interval_started
         from daemon.core.nebel_events import NebelIntervalStarted
         mock_db.get_all_valves.return_value = [{"wish_name": "Terrasse", "mqtt_name": "terrace_mist"}]
-        _on_nebel_interval_started(NebelIntervalStarted("terrace_mist", "nebel", "2026-06-27T18:00:00"))
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_nebel_interval_started(NebelIntervalStarted("terrace_mist", "nebel", "2026-06-27T18:00:00"))
         self.assertIn("Nebel-Intervall", msg)
         self.assertIn("Terrasse", msg)
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_on_nebel_ended_broadcasts(self, mock_client, mock_db):
-        from daemon.ui.telegram_ui import _on_nebel_interval_ended
+        from daemon.ui.telegram_ui import _render_nebel_interval_ended
         from daemon.core.nebel_events import NebelIntervalEnded
         mock_db.get_all_valves.return_value = [{"wish_name": "Terrasse", "mqtt_name": "terrace_mist"}]
-        _on_nebel_interval_ended(NebelIntervalEnded("terrace_mist", "nebel", 45, 9, "fertig"))
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_nebel_interval_ended(NebelIntervalEnded("terrace_mist", "nebel", 45, 9, "fertig"))
         self.assertIn("9", msg)
         self.assertIn("Terrasse", msg)
 
@@ -936,29 +934,26 @@ class TestWatchdogUiHandlers(unittest.TestCase):
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_alert_message_contains_device_name(self, mock_client):
-        from daemon.ui.telegram_ui import _on_inactivity_alert
+        from daemon.ui.telegram_ui import _render_inactivity_alert
         from daemon.core.watchdog_events import InactivityAlertTriggered
         event = InactivityAlertTriggered(device_name="Rasen", valve_id=1, hours_silent=26.5, timeout_hours=24)
-        _on_inactivity_alert(event)
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_inactivity_alert(event)
         self.assertIn("Rasen", msg)
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_alert_message_contains_hours(self, mock_client):
-        from daemon.ui.telegram_ui import _on_inactivity_alert
+        from daemon.ui.telegram_ui import _render_inactivity_alert
         from daemon.core.watchdog_events import InactivityAlertTriggered
         event = InactivityAlertTriggered(device_name="Terrasse", valve_id=2, hours_silent=30.0, timeout_hours=24)
-        _on_inactivity_alert(event)
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_inactivity_alert(event)
         self.assertIn("30.0", msg)
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_resolved_message_contains_device_name(self, mock_client):
-        from daemon.ui.telegram_ui import _on_inactivity_resolved
+        from daemon.ui.telegram_ui import _render_inactivity_resolved
         from daemon.core.watchdog_events import InactivityAlertResolved
         event = InactivityAlertResolved(device_name="Hochbeet", valve_id=3)
-        _on_inactivity_resolved(event)
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_inactivity_resolved(event)
         self.assertIn("Hochbeet", msg)
 
 class TestUnexpectedValveUiHandlers(unittest.TestCase):
@@ -968,11 +963,10 @@ class TestUnexpectedValveUiHandlers(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_opened_notifies_with_wish_name_and_safety_minutes(self, mock_client, mock_db, mock_get):
-        from daemon.ui.telegram_ui import _on_unexpected_valve_opened
+        from daemon.ui.telegram_ui import _render_unexpected_valve_opened
         from daemon.core.valve_events import UnexpectedValveOpened
         mock_db.get_valve_by_mqtt_name.return_value = {"wish_name": "Rasen"}
-        _on_unexpected_valve_opened(UnexpectedValveOpened("garden_valve"))
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_unexpected_valve_opened(UnexpectedValveOpened("garden_valve"))
         self.assertIn("Rasen", msg)
         self.assertIn("von außen geöffnet", msg)
         self.assertIn("30", msg)
@@ -981,21 +975,19 @@ class TestUnexpectedValveUiHandlers(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_opened_falls_back_to_mqtt_name(self, mock_client, mock_db, mock_get):
-        from daemon.ui.telegram_ui import _on_unexpected_valve_opened
+        from daemon.ui.telegram_ui import _render_unexpected_valve_opened
         from daemon.core.valve_events import UnexpectedValveOpened
         mock_db.get_valve_by_mqtt_name.return_value = None
-        _on_unexpected_valve_opened(UnexpectedValveOpened("valve_xyz"))
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_unexpected_valve_opened(UnexpectedValveOpened("valve_xyz"))
         self.assertIn(r"valve\_xyz", msg)  # Fallback auf mqtt_name, Markdown-escaped
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_resolved_notifies_with_wish_name(self, mock_client, mock_db):
-        from daemon.ui.telegram_ui import _on_unexpected_valve_resolved
+        from daemon.ui.telegram_ui import _render_unexpected_valve_resolved
         from daemon.core.valve_events import UnexpectedValveResolved
         mock_db.get_valve_by_mqtt_name.return_value = {"wish_name": "Hochbeet"}
-        _on_unexpected_valve_resolved(UnexpectedValveResolved("garden_valve"))
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_unexpected_valve_resolved(UnexpectedValveResolved("garden_valve"))
         self.assertIn("Hochbeet", msg)
         self.assertIn("wieder", msg)
 
@@ -1181,23 +1173,21 @@ class TestEreignisBenachrichtigungen(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_watering_started_zeigt_guss_emoji(self, mock_client):
         """Guss-gestartet-Benachrichtigung enthält 🚿, nicht 🟢."""
-        from daemon.ui.telegram_ui import _on_watering_started
+        from daemon.ui.telegram_ui import _render_watering_started
         from daemon.core.watering_controller import WateringCycleStarted
         event = WateringCycleStarted(duration=15, target_volume=30, source="manual")
-        _on_watering_started(event)
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_watering_started(event)
         self.assertIn("🚿", msg)
         self.assertNotIn("🟢", msg)
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_watering_completed_volumen_zeigt_menge(self, mock_client):
         """Volumenlimit-Abschluss enthält 🏁 und die geflossene Menge in Liter."""
-        from daemon.ui.telegram_ui import _on_watering_completed
+        from daemon.ui.telegram_ui import _render_watering_completed
         from daemon.core.watering_controller import WateringCycleCompleted
         event = WateringCycleCompleted(duration_run=12, volume_run=28.5,
                                        source="manual", details="Volumenlimit 30 l erreicht")
-        _on_watering_completed(event)
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_watering_completed(event)
         self.assertIn("🏁", msg)
         self.assertIn("l", msg)
         self.assertIn("28", msg)
@@ -1206,13 +1196,12 @@ class TestEreignisBenachrichtigungen(unittest.TestCase):
     def test_watering_completed_zeitlimit_mit_fehlmenge(self, mock_client):
         """Zeitlimit erreicht, Zielmenge nicht ganz geschafft → 🏁-Abschluss mit Hinweis,
         KEINE Notfall-/Sicherheits-Wortwahl."""
-        from daemon.ui.telegram_ui import _on_watering_completed
+        from daemon.ui.telegram_ui import _render_watering_completed
         from daemon.core.watering_controller import WateringCycleCompleted
         event = WateringCycleCompleted(
             duration_run=10, volume_run=15.0, source="manual",
             details="Zeitlimit von 10 Min erreicht — Zielmenge 20l nicht ganz geschafft (15.0l geflossen).")
-        _on_watering_completed(event)
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_watering_completed(event)
         self.assertIn("🏁", msg)
         self.assertIn("Zielmenge nicht ganz geschafft", msg)
         self.assertNotIn("Notfall", msg)
@@ -1221,52 +1210,47 @@ class TestEreignisBenachrichtigungen(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_watering_stopped_zeigt_stopp_emoji(self, mock_client):
         """Guss-gestoppt-Benachrichtigung enthält 🛑, nicht 🔴."""
-        from daemon.ui.telegram_ui import _on_watering_stopped
+        from daemon.ui.telegram_ui import _render_watering_stopped
         from daemon.core.watering_controller import WateringCycleStopped
         event = WateringCycleStopped(duration_run=5, volume_run=10.0,
                                      source="manual", details="")
-        _on_watering_stopped(event)
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_watering_stopped(event)
         self.assertIn("🛑", msg)
         self.assertNotIn("🔴", msg)
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_watering_skipped_zeigt_regen_emoji(self, mock_client):
         """Regen-Skip enthält 🌧, nicht 🌤️."""
-        from daemon.ui.telegram_ui import _on_watering_skipped
+        from daemon.ui.telegram_ui import _render_watering_skipped
         from daemon.core.scheduler_events import WateringSkipped
         event = WateringSkipped(schedule_name="Rasen", details="4 mm Regen")
-        _on_watering_skipped(event)
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_watering_skipped(event)
         self.assertIn("🌧", msg)
         self.assertNotIn("🌤️", msg)
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_broadcast_schedule_name_with_underscore_is_escaped(self, mock_client):
         """Zeitplan-Name mit '_' in Skip-/Fehler-Broadcast wird escaped (sonst HTTP 400)."""
-        from daemon.ui.telegram_ui import _on_watering_skipped, _on_schedule_failed
+        from daemon.ui.telegram_ui import _render_watering_skipped, _render_schedule_failed
         from daemon.core.scheduler_events import WateringSkipped, ScheduleFailed
 
-        _on_watering_skipped(WateringSkipped(schedule_name="valve_report_test", details="4 mm Regen"))
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_watering_skipped(WateringSkipped(schedule_name="valve_report_test", details="4 mm Regen"))
         self.assertIn(r"valve\_report\_test", msg)
         self.assertNotIn("valve_report_test", msg)
 
-        _on_schedule_failed(ScheduleFailed(schedule_name="valve_report_test", details="MQTT-Fehler"))
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_schedule_failed(ScheduleFailed(schedule_name="valve_report_test", details="MQTT-Fehler"))
         self.assertIn(r"valve\_report\_test", msg)
         self.assertNotIn("valve_report_test", msg)
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_watering_failed_keine_ausrufezeichen_kette(self, mock_client):
         """Echte Guss-Fehler-Meldung ist sachlich, kein '!!' oder '!*'."""
-        from daemon.ui.telegram_ui import _on_watering_failed
+        from daemon.ui.telegram_ui import _render_watering_failed
         from daemon.core.watering_controller import WateringCycleFailed
         event = WateringCycleFailed(duration_run=10, volume_run=3.0,
                                     source="schedule",
                                     details="Zielwassermenge von 5l nicht erreicht")
-        _on_watering_failed(event)
-        msg = mock_client.broadcast_notification.call_args[0][0]
+        msg = _render_watering_failed(event)
         self.assertIn("⚠️", msg)
         self.assertNotIn("!!", msg)
 
@@ -1679,7 +1663,7 @@ class TestWateringScaledNotification(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_on_watering_scaled_sends_broadcast(self, mock_client):
         from daemon.core.scheduler_events import WateringScaled
-        from daemon.ui.telegram_ui import _on_watering_scaled
+        from daemon.ui.telegram_ui import _render_watering_scaled
         event = WateringScaled(
             schedule_name="Morgen",
             factor=0.6,
@@ -1689,9 +1673,7 @@ class TestWateringScaledNotification(unittest.TestCase):
             volume_scaled=12,
             reasons=["1.8 mm Regen erwartet."],
         )
-        _on_watering_scaled(event)
-        mock_client.broadcast_notification.assert_called_once()
-        text = mock_client.broadcast_notification.call_args[0][0]
+        text = _render_watering_scaled(event)
         self.assertIn("60 %", text)
         self.assertIn("Morgen", text)
         self.assertIn("6 min", text)
@@ -1699,7 +1681,7 @@ class TestWateringScaledNotification(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_on_watering_scaled_without_volume(self, mock_client):
         from daemon.core.scheduler_events import WateringScaled
-        from daemon.ui.telegram_ui import _on_watering_scaled
+        from daemon.ui.telegram_ui import _render_watering_scaled
         event = WateringScaled(
             schedule_name="Abend",
             factor=0.7,
@@ -1709,8 +1691,7 @@ class TestWateringScaledNotification(unittest.TestCase):
             volume_scaled=0,
             reasons=["Leichter Regen."],
         )
-        _on_watering_scaled(event)
-        text = mock_client.broadcast_notification.call_args[0][0]
+        text = _render_watering_scaled(event)
         self.assertIn("70 %", text)
         self.assertNotIn(" L", text)
 
@@ -1732,8 +1713,11 @@ class TestRainOverride(unittest.TestCase):
 
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_rain_warning_sends_override_button(self, mock_client):
-        from daemon.ui.telegram_ui import _on_watering_rain_warning
-        _on_watering_rain_warning(self._warning())
+        # Registry-Refactor 3sr: den vollen Emit-Pfad (render + button + broadcast) treiben,
+        # um den Button-Slot Ende-zu-Ende zu belegen.
+        from daemon.ui.telegram_ui import NOTIFICATIONS
+        from daemon.core.scheduler_events import WateringRainWarning
+        NOTIFICATIONS[WateringRainWarning].emit(self._warning())
         mock_client.broadcast_notification.assert_called_once()
         text = mock_client.broadcast_notification.call_args[0][0]
         markup = mock_client.broadcast_notification.call_args.kwargs.get("reply_markup")
@@ -1748,9 +1732,8 @@ class TestRainOverride(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_rain_warning_shows_reduced_target(self, mock_client):
         """Die Vorwarnung nennt die reduzierten Zielwerte (Zeit/Menge/Prozent)."""
-        from daemon.ui.telegram_ui import _on_watering_rain_warning
-        _on_watering_rain_warning(self._warning(duration_scaled=5, volume_scaled=10, factor=0.5))
-        text = mock_client.broadcast_notification.call_args[0][0]
+        from daemon.ui.telegram_ui import _render_watering_rain_warning
+        text = _render_watering_rain_warning(self._warning(duration_scaled=5, volume_scaled=10, factor=0.5))
         self.assertIn("5 Min", text)      # reduzierte Dauer
         self.assertIn("10 L", text)       # reduziertes Volumen
         self.assertIn("50 %", text)       # Faktor
@@ -1759,9 +1742,8 @@ class TestRainOverride(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_rain_warning_skip_shows_uebersprungen(self, mock_client):
         """Bei Faktor 0 meldet die Vorwarnung 'übersprungen' statt reduzierter Werte."""
-        from daemon.ui.telegram_ui import _on_watering_rain_warning
-        _on_watering_rain_warning(self._warning(factor=0.0))
-        text = mock_client.broadcast_notification.call_args[0][0]
+        from daemon.ui.telegram_ui import _render_watering_rain_warning
+        text = _render_watering_rain_warning(self._warning(factor=0.0))
         self.assertIn("übersprungen", text.lower())
 
     @patch("daemon.ui.telegram_ui.database")

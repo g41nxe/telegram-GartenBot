@@ -2578,54 +2578,50 @@ def on_telegram_update(msg_obj: dict, cb_obj: dict):
 
 # --- Domain Event Listeners ---
 
-def _on_watering_started(event: WateringCycleStarted):
+def _render_watering_started(event: WateringCycleStarted) -> str:
     vol_str = f"{event.target_volume} l" if event.target_volume > 0 else "kein Limit"
     source_str = "Zeitplan" if event.source == "schedule" else "Manuell"
-    msg = (
+    return (
         f"🚿 *Wasser marsch!*\n"
         f"⏱️ Zeitlimit: {event.duration} Min · 💧 Volumen: {vol_str}\n"
         f"Quelle: {source_str}"
     )
-    telegram_client.broadcast_notification(msg)
 
-def _on_watering_completed(event: WateringCycleCompleted):
+def _render_watering_completed(event: WateringCycleCompleted) -> str:
     if "Volumenlimit" in event.details:
-        msg = (
+        return (
             f"🏁 *Fertig — {event.volume_run:.1f} l sind durch!*\n"
             f"⏱️ Laufzeit: ca. {event.duration_run} Min"
         )
     elif "Zielmenge" in event.details:
         # Zeitlimit erreicht, bevor das Volumenziel ganz geschafft war — regulärer
         # Abschluss mit Hinweis (kein Notfall).
-        msg = (
+        return (
             f"🏁 *Zeitlimit erreicht*\n"
             f"⏱️ {event.duration_run} Min · 💧 {event.volume_run:.1f} l\n"
             f"ℹ️ Zielmenge nicht ganz geschafft."
         )
     else:
-        msg = (
+        return (
             f"🏁 *Zeitlimit erreicht*\n"
             f"⏱️ {event.duration_run} Min · 💧 {event.volume_run:.1f} l"
         )
-    telegram_client.broadcast_notification(msg)
 
-def _on_watering_failed(event: WateringCycleFailed):
+def _render_watering_failed(event: WateringCycleFailed) -> str:
     # Reserviert für echte Guss-Fehler (Hardware-/MQTT-Störung). Das normale Erreichen
     # des Zeitlimits ist KEIN Fehler mehr — das meldet WateringCycleCompleted.
-    msg = (
+    return (
         f"⚠️ *Guss fehlgeschlagen*\n"
         f"Abbruch nach {event.duration_run} Min · 💧 {event.volume_run:.1f} l geflossen."
     )
-    telegram_client.broadcast_notification(msg)
 
-def _on_watering_stopped(event: WateringCycleStopped):
-    msg = (
+def _render_watering_stopped(event: WateringCycleStopped) -> str:
+    return (
         f"🛑 *Guss gestoppt*\n"
         f"⏱️ Laufzeit: ca. {event.duration_run} Min · 💧 {event.volume_run:.1f} l"
     )
-    telegram_client.broadcast_notification(msg)
 
-def _on_nebel_interval_started(event: NebelIntervalStarted):
+def _render_nebel_interval_started(event: NebelIntervalStarted) -> str:
     wish = _md_escape(_resolve_valve_wish_name(event.mqtt_name))
     end_str = ""
     try:
@@ -2634,15 +2630,15 @@ def _on_nebel_interval_started(event: NebelIntervalStarted):
         pass
     quelle = "Sofort" if event.source == "nebel_manual" else "Zeitplan"
     bis = f" bis {end_str} Uhr" if end_str else ""
-    telegram_client.broadcast_notification(
+    return (
         f"🌫️ *Nebel-Intervall gestartet*\n"
         f"„{wish}“ kühlt{bis}.\n"
         f"Quelle: {quelle}"
     )
 
-def _on_nebel_interval_ended(event: NebelIntervalEnded):
+def _render_nebel_interval_ended(event: NebelIntervalEnded) -> str:
     wish = _md_escape(_resolve_valve_wish_name(event.mqtt_name))
-    telegram_client.broadcast_notification(
+    return (
         f"🌫️ *Nebel-Intervall beendet*\n"
         f"„{wish}“: {event.burst_count} Nebelstöße in ca. {event.duration_run} Min."
     )
@@ -2661,16 +2657,16 @@ def _on_daily_report(event: DailyReportTriggered):
         telegram_client.broadcast_photo(image_bytes, caption=caption)
     telegram_client.broadcast_notification(event.report_text)
 
-def _on_watering_skipped(event: WateringSkipped):
-    telegram_client.broadcast_notification(
+def _render_watering_skipped(event: WateringSkipped) -> str:
+    return (
         f"🌧 *Heute übernimmt der Regen*\n"
         f"Zeitplan '{_md_escape(event.schedule_name)}' übersprungen -- {event.details}"
     )
 
-def _on_schedule_failed(event: ScheduleFailed):
-    telegram_client.broadcast_notification(f"⚠️ *Fehler bei Zeitplan '{_md_escape(event.schedule_name)}'!*\n{event.details}")
+def _render_schedule_failed(event: ScheduleFailed) -> str:
+    return f"⚠️ *Fehler bei Zeitplan '{_md_escape(event.schedule_name)}'!*\n{event.details}"
 
-def _on_watering_scaled(event: WateringScaled):
+def _render_watering_scaled(event: WateringScaled) -> str:
     pct = int(round(event.factor * 100))
     has_volume = event.volume_original > 0
     scaled = f"{event.duration_scaled} min" + (f" / {event.volume_scaled} L" if has_volume else "")
@@ -2678,9 +2674,9 @@ def _on_watering_scaled(event: WateringScaled):
     msg = f"💧 *Guss reduziert ({pct} %)*\nZeitplan '{_md_escape(event.schedule_name)}': {scaled} (statt {original})."
     if event.reasons:
         msg += f"\n{event.reasons[0]}"
-    telegram_client.broadcast_notification(msg)
+    return msg
 
-def _on_watering_rain_warning(event: WateringRainWarning):
+def _render_watering_rain_warning(event: WateringRainWarning) -> str:
     """Guss-Vorwarnung (Feature 0034): ~5 Min vor einem geplanten Guss, den der Regen
     überspringen oder reduzieren würde — mit Möglichkeit zur Regen-Übersteuerung."""
     name = _md_escape(event.schedule_name)
@@ -2694,42 +2690,41 @@ def _on_watering_rain_warning(event: WateringRainWarning):
         menge_scaled = f" / {event.volume_scaled} L" if has_volume else ""
         anpassung = f"→ *Reduziert auf {event.duration_scaled} Min{menge_scaled}* ({pct} %)"
     begruendung = f"\n{event.reasons[0]}" if event.reasons else ""
-    msg = (
+    return (
         f"🌧 *Regen voraus — Guss in {config.RAIN_WARNING_LEAD_MINUTES} Min betroffen*\n"
         f"Zeitplan „{name}“ um {event.time} ({valves}) würde regenbedingt angepasst.\n"
         f"Geplant: {event.duration_original} Min{menge_orig}\n"
         f"{anpassung}{begruendung}\n\n"
         f"Soll trotzdem voll gegossen werden?"
     )
-    markup = {"inline_keyboard": [[
+
+def _button_watering_rain_warning(event: WateringRainWarning) -> dict:
+    """Aktions-Button der Regen-Vorwarnung: die Regen-Übersteuerung dieses konkreten Laufs.
+    Bislang der einzige Bestands-Button — belegt den Button-Slot der Registry (Enabler mtb)."""
+    return {"inline_keyboard": [[
         {"text": "🚿 Regen ignorieren",
          "callback_data": f"rainoverride_{event.schedule_id}_{event.run_date}"}
     ]]}
-    telegram_client.broadcast_notification(msg, reply_markup=markup)
 
-def _on_inactivity_alert(event: InactivityAlertTriggered):
-    msg = (
+def _render_inactivity_alert(event: InactivityAlertTriggered) -> str:
+    return (
         f"⚠️ *Verbindung verloren:* Ventil \"{_md_escape(event.device_name)}\" "
         f"hat seit {event.hours_silent:.1f} Stunden kein Signal gesendet."
     )
-    telegram_client.broadcast_notification(msg)
 
-def _on_inactivity_resolved(event: InactivityAlertResolved):
-    msg = f"🟢 *Verbindung wiederhergestellt:* Ventil \"{_md_escape(event.device_name)}\" sendet wieder Signale."
-    telegram_client.broadcast_notification(msg)
+def _render_inactivity_resolved(event: InactivityAlertResolved) -> str:
+    return f"🟢 *Verbindung wiederhergestellt:* Ventil \"{_md_escape(event.device_name)}\" sendet wieder Signale."
 
-def _on_camera_inactivity_alert(event: CameraInactivityAlertTriggered):
-    msg = (
+def _render_camera_inactivity_alert(event: CameraInactivityAlertTriggered) -> str:
+    return (
         f"⚠️ *Kamera-Verbindung verloren:* Kamera \"{_md_escape(event.wish_name)}\" "
         f"hat seit {event.seconds_silent / 3600:.1f} Stunden kein Bild gesendet."
     )
-    telegram_client.broadcast_notification(msg)
 
-def _on_camera_inactivity_resolved(event: CameraInactivityAlertResolved):
-    msg = f"🟢 *Kamera-Verbindung wiederhergestellt:* Kamera \"{_md_escape(event.wish_name)}\" sendet wieder Bilder."
-    telegram_client.broadcast_notification(msg)
+def _render_camera_inactivity_resolved(event: CameraInactivityAlertResolved) -> str:
+    return f"🟢 *Kamera-Verbindung wiederhergestellt:* Kamera \"{_md_escape(event.wish_name)}\" sendet wieder Bilder."
 
-def _on_camera_delay_alert(event: CameraDelayAlertTriggered):
+def _render_camera_delay_alert(event: CameraDelayAlertTriggered) -> str:
     """Zwei Gründe, zwei Diagnosen — der Text folgt der Tatsache (ADR 0041).
 
     Bei „verpasst" gibt es kein Bild und damit keinen Verzug: Von „zu spät" zu sprechen wäre
@@ -2750,14 +2745,13 @@ def _on_camera_delay_alert(event: CameraDelayAlertTriggered):
             f"Die Fotos kommen an, aber die Kamera erreicht ihre Zeitpunkte nicht mehr — "
             f"das deutet auf schwaches WLAN oder einen schwachen Akku hin."
         )
-    telegram_client.broadcast_notification(msg)
+    return msg
 
-def _on_camera_delay_resolved(event: CameraDelayAlertResolved):
-    msg = (
+def _render_camera_delay_resolved(event: CameraDelayAlertResolved) -> str:
+    return (
         f"🟢 *Kamera wieder pünktlich:* Kamera \"{_md_escape(event.wish_name)}\" "
         f"trifft ihre Aufnahme-Zeitpunkte wieder."
     )
-    telegram_client.broadcast_notification(msg)
 
 def _format_rain_duration(minutes: int) -> str:
     if minutes >= 60:
@@ -2765,31 +2759,31 @@ def _format_rain_duration(minutes: int) -> str:
         return f"{hours} h {rest} Min" if rest else f"{hours} h"
     return f"{minutes} Min"
 
-def _on_software_update_activated(event: SoftwareUpdateActivated):
-    telegram_client.broadcast_notification(f"🚀 *Update aktiv* — jetzt auf `{event.version}`")
+def _render_software_update_activated(event: SoftwareUpdateActivated) -> str:
+    return f"🚀 *Update aktiv* — jetzt auf `{event.version}`"
 
-def _on_software_update_rolled_back(event: SoftwareUpdateRolledBack):
-    telegram_client.broadcast_notification(
+def _render_software_update_rolled_back(event: SoftwareUpdateRolledBack) -> str:
+    return (
         f"❌ *Update fehlgeschlagen* — `{event.target_version}` ließ sich nicht installieren, "
         f"läuft weiter auf `{event.current_version}`"
     )
 
-def _on_software_update_failed(event: SoftwareUpdateFailed):
+def _render_software_update_failed(event: SoftwareUpdateFailed) -> str:
     # Ticket eor: Abbruch VOR dem Rollback — Zustand ungewiss, daher Warnung + Prüf-Bitte.
-    telegram_client.broadcast_notification(
+    return (
         f"⚠️ *Update unterbrochen* — `{event.target_version}` wurde nicht sauber installiert "
         f"(Abbruch vor dem Rollback). Läuft auf `{event.current_version}`. Bitte `/status` prüfen."
     )
 
-def _on_rain_event_started(event: RainEventStarted):
+def _render_rain_event_started(event: RainEventStarted) -> str:
     # Ohne Menge: die Zahl wäre stets die 0,5 mm des ersten Kipps (ADR 0043).
-    telegram_client.broadcast_notification("🌧 *Regen erkannt*")
+    return "🌧 *Regen erkannt*"
 
-def _on_rain_event_ended(event: RainEventEnded):
+def _render_rain_event_ended(event: RainEventEnded) -> str:
     msg = f"🌤 *Regen vorbei* — insgesamt {event.total_mm} mm"
     if event.duration_minutes > 0:   # bei nur einem Kipp entfällt die Dauer
         msg += f" in {_format_rain_duration(event.duration_minutes)}"
-    telegram_client.broadcast_notification(msg)
+    return msg
 
 def _resolve_wish_name(mqtt_name, fallback=None):
     """Löst den Wunschnamen eines Ventils aus der DB auf; Fallback bei unbekanntem Ventil."""
@@ -2798,74 +2792,113 @@ def _resolve_wish_name(mqtt_name, fallback=None):
         return valve["wish_name"]
     return fallback if fallback is not None else mqtt_name
 
-def _on_watering_interrupted(event: WateringCycleInterrupted):
+def _render_watering_interrupted(event: WateringCycleInterrupted) -> str:
     valve_name = _resolve_wish_name(event.mqtt_name, "Ventil")
     rain_mm = event.rain_mm
     rain_str = f" · {rain_mm} mm erkannt" if rain_mm > 0 else ""
-    msg = (
+    return (
         f"🌧 *Regen übernimmt — Guss gestoppt*\n"
         f"{valve_name} · {event.duration_run} Min · {event.volume_run:.1f} l geflossen{rain_str}"
     )
-    telegram_client.broadcast_notification(msg)
 
-def _on_rain_sensor_inactivity_alert(event: RainSensorInactivityAlertTriggered):
-    msg = (
+def _render_rain_sensor_inactivity_alert(event: RainSensorInactivityAlertTriggered) -> str:
+    return (
         f"⚠️ *Regensensor nicht erreichbar* — seit {event.hours_silent:.1f} h "
         f"keine Messung (Limit: {event.timeout_hours:.0f} h)."
     )
-    telegram_client.broadcast_notification(msg)
 
-def _on_rain_sensor_inactivity_resolved(event: RainSensorInactivityAlertResolved):
-    telegram_client.broadcast_notification("🟢 *Regensensor wieder aktiv* — Messung empfangen.")
+def _render_rain_sensor_inactivity_resolved(event: RainSensorInactivityAlertResolved) -> str:
+    return "🟢 *Regensensor wieder aktiv* — Messung empfangen."
 
-def _on_unexpected_valve_opened(event: UnexpectedValveOpened):
+def _render_unexpected_valve_opened(event: UnexpectedValveOpened) -> str:
     wish_name = _md_escape(_resolve_wish_name(event.mqtt_name))
     safety_min = config.get_setting("SAFETY_TIMEOUT_MINUTES", 30)
-    telegram_client.broadcast_notification(
+    return (
         f"⚠️ *Ventil von außen geöffnet*\n"
         f"„{wish_name}“ wurde ohne aktiven Guss geöffnet.\n"
         f"Warst das nicht du, prüf die Leitung — das Hardware-Sicherheits-Timeout "
         f"schließt spätestens nach {safety_min} Min."
     )
 
-def _on_unexpected_valve_resolved(event: UnexpectedValveResolved):
+def _render_unexpected_valve_resolved(event: UnexpectedValveResolved) -> str:
     wish_name = _md_escape(_resolve_wish_name(event.mqtt_name))
-    telegram_client.broadcast_notification(
+    return (
         f"✅ *Ventil wieder geschlossen*\n„{wish_name}“ ist wieder zu."
     )
 
+class NotificationSpec:
+    """Ereignis → Benachrichtigung[+Inline-Button], deklarativ.
+
+    Spiegelt die WizardSpec-Registry (ADR 0046): die Abbildung Ereignis→Meldung ist Daten,
+    kein handverdrahteter Abonnent je Ereignis. ``render`` baut den Nachrichtentext (rein,
+    ohne I/O — dadurch direkt testbar), der optionale ``button`` baut ein Inline-Keyboard.
+    Der Button-Slot ist der Enabler für aktionsfähige Benachrichtigungen (Feature 0018/mtb):
+    ein Aktions-Button wird dann ein Ein-Zeilen-Spec-Eintrag statt handverdrahtetem
+    ``reply_markup=`` im jeweiligen Handler.
+    """
+    def __init__(self, render, button=None):
+        self.render = render        # (event) -> str
+        self.button = button        # (event) -> reply_markup | None
+
+    def emit(self, event):
+        markup = self.button(event) if self.button else None
+        telegram_client.broadcast_notification(self.render(event), reply_markup=markup)
+
+
+# EIN Ort für die Ereignis→Meldung-Abbildung. Neue Push-Meldung = ein Eintrag hier + eine
+# _render_*-Funktion; kein zweiter Handverdrahtungs-Block, der im Gleichschritt bleiben muss.
+NOTIFICATIONS = {
+    WateringCycleStarted: NotificationSpec(_render_watering_started),
+    WateringCycleCompleted: NotificationSpec(_render_watering_completed),
+    WateringCycleFailed: NotificationSpec(_render_watering_failed),
+    WateringCycleStopped: NotificationSpec(_render_watering_stopped),
+    WateringSkipped: NotificationSpec(_render_watering_skipped),
+    WateringScaled: NotificationSpec(_render_watering_scaled),
+    WateringRainWarning: NotificationSpec(_render_watering_rain_warning,
+                                          button=_button_watering_rain_warning),
+    ScheduleFailed: NotificationSpec(_render_schedule_failed),
+    InactivityAlertTriggered: NotificationSpec(_render_inactivity_alert),
+    InactivityAlertResolved: NotificationSpec(_render_inactivity_resolved),
+    CameraInactivityAlertTriggered: NotificationSpec(_render_camera_inactivity_alert),
+    CameraInactivityAlertResolved: NotificationSpec(_render_camera_inactivity_resolved),
+    CameraDelayAlertTriggered: NotificationSpec(_render_camera_delay_alert),
+    CameraDelayAlertResolved: NotificationSpec(_render_camera_delay_resolved),
+    RainEventStarted: NotificationSpec(_render_rain_event_started),
+    RainEventEnded: NotificationSpec(_render_rain_event_ended),
+    SoftwareUpdateActivated: NotificationSpec(_render_software_update_activated),
+    SoftwareUpdateRolledBack: NotificationSpec(_render_software_update_rolled_back),
+    SoftwareUpdateFailed: NotificationSpec(_render_software_update_failed),
+    WateringCycleInterrupted: NotificationSpec(_render_watering_interrupted),
+    RainSensorInactivityAlertTriggered: NotificationSpec(_render_rain_sensor_inactivity_alert),
+    RainSensorInactivityAlertResolved: NotificationSpec(_render_rain_sensor_inactivity_resolved),
+    UnexpectedValveOpened: NotificationSpec(_render_unexpected_valve_opened),
+    UnexpectedValveResolved: NotificationSpec(_render_unexpected_valve_resolved),
+    NebelIntervalStarted: NotificationSpec(_render_nebel_interval_started),
+    NebelIntervalEnded: NotificationSpec(_render_nebel_interval_ended),
+}
+
+
+def _make_notifier(spec: NotificationSpec):
+    """Bindet EINEN Spec an einen Abonnenten (eigene Closure je Eintrag, kein Loop-Leak)."""
+    def notify(event):
+        spec.emit(event)
+    return notify
+
+
 def subscribe_event_handlers():
-    """Verdrahtet alle telegram_ui-Benachrichtigungs-Handler mit dem globalen Ereignis-Kanal.
+    """Verdrahtet alle telegram_ui-Benachrichtigungen mit dem globalen Ereignis-Kanal.
 
     Muss explizit von main.py aufgerufen werden — nicht automatisch beim Import.
     Dadurch können Tests das Modul importieren, ohne echte Telegram-Nachrichten auszulösen.
     Entspricht dem gleichen Muster wie watchdog.initialize().
+
+    Die reinen Ereignis→Meldung-Handler kommen aus der NOTIFICATIONS-Registry; nur die zwei
+    Handler mit echten Nebenwirkungen (Tagesbericht mit Chart, Foto-Zustellung) bleiben
+    eigenständig verdrahtet.
     """
-    _global_bus.subscribe(WateringCycleStarted, _on_watering_started)
-    _global_bus.subscribe(WateringCycleCompleted, _on_watering_completed)
-    _global_bus.subscribe(WateringCycleFailed, _on_watering_failed)
-    _global_bus.subscribe(WateringCycleStopped, _on_watering_stopped)
+    for event_type, spec in NOTIFICATIONS.items():
+        _global_bus.subscribe(event_type, _make_notifier(spec))
+
+    # Bespoke: eigene Nebenwirkungen jenseits einer reinen Text-Meldung.
     _global_bus.subscribe(DailyReportTriggered, _on_daily_report)
-    _global_bus.subscribe(WateringSkipped, _on_watering_skipped)
-    _global_bus.subscribe(WateringScaled, _on_watering_scaled)
-    _global_bus.subscribe(WateringRainWarning, _on_watering_rain_warning)
-    _global_bus.subscribe(ScheduleFailed, _on_schedule_failed)
-    _global_bus.subscribe(InactivityAlertTriggered, _on_inactivity_alert)
-    _global_bus.subscribe(InactivityAlertResolved, _on_inactivity_resolved)
-    _global_bus.subscribe(CameraInactivityAlertTriggered, _on_camera_inactivity_alert)
-    _global_bus.subscribe(CameraInactivityAlertResolved, _on_camera_inactivity_resolved)
-    _global_bus.subscribe(RainEventStarted, _on_rain_event_started)
-    _global_bus.subscribe(RainEventEnded, _on_rain_event_ended)
-    _global_bus.subscribe(SoftwareUpdateActivated, _on_software_update_activated)
-    _global_bus.subscribe(SoftwareUpdateRolledBack, _on_software_update_rolled_back)
-    _global_bus.subscribe(SoftwareUpdateFailed, _on_software_update_failed)
-    _global_bus.subscribe(WateringCycleInterrupted, _on_watering_interrupted)
-    _global_bus.subscribe(RainSensorInactivityAlertTriggered, _on_rain_sensor_inactivity_alert)
-    _global_bus.subscribe(RainSensorInactivityAlertResolved, _on_rain_sensor_inactivity_resolved)
-    _global_bus.subscribe(UnexpectedValveOpened, _on_unexpected_valve_opened)
-    _global_bus.subscribe(UnexpectedValveResolved, _on_unexpected_valve_resolved)
     _global_bus.subscribe(TimedPhotoCaptured, _on_timed_photo_captured)
-    _global_bus.subscribe(CameraDelayAlertTriggered, _on_camera_delay_alert)
-    _global_bus.subscribe(CameraDelayAlertResolved, _on_camera_delay_resolved)
-    _global_bus.subscribe(NebelIntervalStarted, _on_nebel_interval_started)
-    _global_bus.subscribe(NebelIntervalEnded, _on_nebel_interval_ended)

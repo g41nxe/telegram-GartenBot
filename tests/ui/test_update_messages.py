@@ -14,20 +14,19 @@ from daemon.core.system_events import (
 
 class TestUpdateMessages(unittest.TestCase):
 
-    def _sent(self, fn, event):
-        with patch.object(ui, "telegram_client") as tc:
-            fn(event)
-            return tc.broadcast_notification.call_args[0][0]
+    def _sent(self, render, event):
+        # Reiner Render (Registry-Refactor 3sr): kein Telegram-Mock mehr nötig.
+        return render(event)
 
     def test_activated_message(self):
-        msg = self._sent(ui._on_software_update_activated, SoftwareUpdateActivated("v1.17.0"))
+        msg = self._sent(ui._render_software_update_activated, SoftwareUpdateActivated("v1.17.0"))
 
         self.assertIn("Update aktiv", msg)
         self.assertIn("v1.17.0", msg)
 
     def test_rolled_back_message(self):
         msg = self._sent(
-            ui._on_software_update_rolled_back, SoftwareUpdateRolledBack("v1.17.0", "v1.16.1")
+            ui._render_software_update_rolled_back, SoftwareUpdateRolledBack("v1.17.0", "v1.16.1")
         )
 
         self.assertIn("fehlgeschlagen", msg)
@@ -37,7 +36,7 @@ class TestUpdateMessages(unittest.TestCase):
     def test_failed_message(self):
         # Ticket eor: Abbruch vor dem Rollback — Warnung mit Ziel + laufender Version + Prüf-Bitte.
         msg = self._sent(
-            ui._on_software_update_failed, SoftwareUpdateFailed("v1.18.0", "v1.17.0")
+            ui._render_software_update_failed, SoftwareUpdateFailed("v1.18.0", "v1.17.0")
         )
 
         self.assertIn("unterbrochen", msg)

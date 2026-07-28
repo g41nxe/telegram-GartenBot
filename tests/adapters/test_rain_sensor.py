@@ -492,16 +492,14 @@ class TestTelegramRainNotifications(unittest.TestCase):
     tests/ui/test_rain_event_messages.py."""
 
     def test_watering_interrupted_notification(self):
-        from daemon.ui.telegram_ui import _on_watering_interrupted
-        with patch("daemon.ui.telegram_ui.database") as mock_db, \
-             patch("daemon.ui.telegram_ui.telegram_client") as mock_tc:
+        from daemon.ui.telegram_ui import _render_watering_interrupted
+        with patch("daemon.ui.telegram_ui.database") as mock_db:
             mock_db.get_valve_by_mqtt_name.return_value = {"wish_name": "Terrasse"}
-            _on_watering_interrupted(WateringCycleInterrupted(
+            msg = _render_watering_interrupted(WateringCycleInterrupted(
                 duration_run=4, volume_run=2.1, source="manual",
                 details="Regen erkannt · 0.6 mm erkannt",
                 mqtt_name="terrasse", rain_mm=0.6,
             ))
-            msg = mock_tc.broadcast_notification.call_args[0][0]
             self.assertIn("Regen übernimmt", msg)
             self.assertIn("Terrasse", msg)
             self.assertIn("4 Min", msg)

@@ -222,11 +222,10 @@ class TestAufnahmeVerzugMeldungen(unittest.TestCase):
         from daemon.ui import telegram_ui
         from daemon.core.camera_events import CameraDelayAlertTriggered
 
-        telegram_ui._on_camera_delay_alert(
+        msg = telegram_ui._render_camera_delay_alert(
             CameraDelayAlertTriggered("AA:BB", "Garten01", "verzug", 15, verzug_minuten=28.0)
         )
 
-        msg = mock_tc.broadcast_notification.call_args.args[0]
         assert "Garten01" in msg
         assert "28" in msg, "Die Warnung muss den Verzug nennen"
 
@@ -236,11 +235,10 @@ class TestAufnahmeVerzugMeldungen(unittest.TestCase):
         from daemon.ui import telegram_ui
         from daemon.core.camera_events import CameraDelayAlertTriggered
 
-        telegram_ui._on_camera_delay_alert(
+        msg = telegram_ui._render_camera_delay_alert(
             CameraDelayAlertTriggered("AA:BB", "Garten01", "verpasst", 15, zeitpunkte=["08:00"])
         )
 
-        msg = mock_tc.broadcast_notification.call_args.args[0]
         assert "Garten01" in msg
         assert "kein Bild" in msg, f"Die Warnung muss die Stille benennen: {msg}"
         assert "zu spät" not in msg, f"Von Verspaetung zu reden waere hier falsch: {msg}"
@@ -250,7 +248,6 @@ class TestAufnahmeVerzugMeldungen(unittest.TestCase):
         from daemon.ui import telegram_ui
         from daemon.core.camera_events import CameraDelayAlertResolved
 
-        telegram_ui._on_camera_delay_resolved(CameraDelayAlertResolved("AA:BB", "Garten01"))
+        msg = telegram_ui._render_camera_delay_resolved(CameraDelayAlertResolved("AA:BB", "Garten01"))
 
-        msg = mock_tc.broadcast_notification.call_args.args[0]
         assert "Garten01" in msg
