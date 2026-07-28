@@ -11,6 +11,7 @@ from ..core.camera_events import (CameraImageReceived, CameraInactivityAlertTrig
                                   CameraDelayAlertTriggered, CameraDelayAlertResolved)
 from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
 from ..core import camera_schedule
+from ..core import edge_alarm
 
 logger = logging.getLogger("garden_watchdog")
 
@@ -25,25 +26,48 @@ def _als_zeitpunkt(iso: str | None) -> datetime | None:
         return None
 
 
+def _check_edge(flag_key: str, faulted: bool, on_raise, on_clear):
+    """Owns the I/O around one edge-triggered alarm: read the flag, ask the pure
+    ``edge_alarm.evaluate`` for the transition, persist a changed flag, publish the event.
+
+    Returns the emitted event (or ``None`` when the state was stable) so the caller can log
+    its device-specific line. This is the single place the flag-read/compare/write/publish
+    dance lives — every alarm class and both the event- and check-path go through here
+    (Ticket 6r2).
+    """
+    flag = database.get_flag(flag_key)
+    new_flag, event = edge_alarm.evaluate(faulted, flag, on_raise, on_clear)
+    if new_flag != flag:
+        database.set_flag(flag_key, new_flag)
+    if event is not None:
+        _global_bus.publish(event)
+    return event
+
+
 def _on_valve_status(event: ValveStatusReported):
     """Sofortige Entwarnung sobald ein Ventil wieder ein Signal sendet."""
     valve = database.get_valve_by_mqtt_name(event.mqtt_name)
     if not valve:
         return
     valve_id = valve["id"]
-    flag_key = database.watchdog_valve_alert_key(valve_id)
-    if database.get_flag(flag_key):
-        database.set_flag(flag_key, False)
-        _global_bus.publish(InactivityAlertResolved(valve["wish_name"], valve_id))
+    # Ein Signal heißt „nicht mehr gestört" (faulted=False) — der Ereignis-Pfad kann nur entwarnen.
+    _check_edge(
+        database.watchdog_valve_alert_key(valve_id),
+        faulted=False,
+        on_raise=lambda: None,
+        on_clear=lambda: InactivityAlertResolved(valve["wish_name"], valve_id),
+    )
 
 
 def _on_camera_image(event: CameraImageReceived):
     """Sofortige Entwarnung sobald ein Kamerabild erfolgreich empfangen wurde."""
     mac = event.mac_address
-    flag_key = database.watchdog_camera_alert_key(mac)
-    if database.get_flag(flag_key):
-        database.set_flag(flag_key, False)
-        _global_bus.publish(CameraInactivityAlertResolved(mac, event.wish_name))
+    _check_edge(
+        database.watchdog_camera_alert_key(mac),
+        faulted=False,
+        on_raise=lambda: None,
+        on_clear=lambda: CameraInactivityAlertResolved(mac, event.wish_name),
+    )
 
 
 def _on_timed_photo_captured(event: TimedPhotoCaptured):
@@ -95,31 +119,34 @@ def _bewerte_stoerung(mac: str, wish_name: str, gestoert: bool, grund: str,
 
     if not gestoert:
         database.set_metadata(streak_key, "0")
-        if database.get_flag(flag_key):
-            database.set_flag(flag_key, False)
-            _global_bus.publish(CameraDelayAlertResolved(mac, wish_name))
-            logger.info(
-                f"Watchdog-Entwarnung: Kamera '{wish_name}' trifft ihre Aufnahme-Zeitpunkte wieder."
-            )
-        return
-
-    try:
-        streak = int(database.get_metadata(streak_key) or 0)
-    except ValueError:
         streak = 0
-    streak += 1
-    database.set_metadata(streak_key, str(streak))
+    else:
+        try:
+            streak = int(database.get_metadata(streak_key) or 0)
+        except ValueError:
+            streak = 0
+        streak += 1
+        database.set_metadata(streak_key, str(streak))
 
-    if streak >= 2 and not database.get_flag(flag_key):
-        database.set_flag(flag_key, True)
-        _global_bus.publish(
-            CameraDelayAlertTriggered(
-                mac, wish_name, grund,
-                config.AUFNAHME_VERZUG_SCHWELLE_MINUTEN,
-                verzug_minuten=verzug_minuten,
-                zeitpunkte=zeitpunkte,
-            )
+    # Entprellung: Gemeldet wird erst beim zweiten Vorfall in Folge — die „zweiter Vorfall"-
+    # Bedingung fließt als Störungs-Zustand in die Flanke ein (streak >= 2).
+    event = _check_edge(
+        flag_key,
+        faulted=(gestoert and streak >= 2),
+        on_raise=lambda: CameraDelayAlertTriggered(
+            mac, wish_name, grund,
+            config.AUFNAHME_VERZUG_SCHWELLE_MINUTEN,
+            verzug_minuten=verzug_minuten,
+            zeitpunkte=zeitpunkte,
+        ),
+        on_clear=lambda: CameraDelayAlertResolved(mac, wish_name),
+    )
+
+    if isinstance(event, CameraDelayAlertResolved):
+        logger.info(
+            f"Watchdog-Entwarnung: Kamera '{wish_name}' trifft ihre Aufnahme-Zeitpunkte wieder."
         )
+    elif isinstance(event, CameraDelayAlertTriggered):
         if grund == "verpasst":
             logger.warning(
                 f"Watchdog-Alert: Kamera '{wish_name}' lieferte zu zwei Aufnahme-Zeitpunkten "
@@ -134,10 +161,13 @@ def _bewerte_stoerung(mac: str, wish_name: str, gestoert: bool, grund: str,
 
 def _on_rain_sensor_measurement(event: RainSensorMeasured):
     """Sofortige Entwarnung sobald der Regensensor wieder eine Messung sendet."""
-    flag_key = database.KEY_WATCHDOG_RAIN_SENSOR_ALERT
-    if database.get_flag(flag_key):
-        database.set_flag(flag_key, False)
-        _global_bus.publish(RainSensorInactivityAlertResolved())
+    resolved = _check_edge(
+        database.KEY_WATCHDOG_RAIN_SENSOR_ALERT,
+        faulted=False,
+        on_raise=lambda: None,
+        on_clear=lambda: RainSensorInactivityAlertResolved(),
+    )
+    if resolved is not None:
         logger.info("Watchdog-Entwarnung: Regensensor wieder aktiv.")
 
 
@@ -176,21 +206,18 @@ def run_watchdog_check():
             continue
 
         hours_silent = (now - last_up).total_seconds() / 3600
-        flag = database.get_flag(flag_key)
 
-        if hours_silent > timeout_hours:
-            if not flag:
-                database.set_flag(flag_key, True)
-                _global_bus.publish(
-                    InactivityAlertTriggered(wish_name, valve_id, hours_silent, int(timeout_hours))
-                )
-                logger.warning(f"Watchdog-Alert: Ventil '{wish_name}' seit {hours_silent:.1f}h still.")
-        else:
-            if flag:
-                # Ventil wurde zwischen zwei Checks reaktiviert (z.B. nach Daemon-Neustart)
-                database.set_flag(flag_key, False)
-                _global_bus.publish(InactivityAlertResolved(wish_name, valve_id))
-                logger.info(f"Watchdog-Entwarnung (Check): Ventil '{wish_name}' wieder aktiv.")
+        event = _check_edge(
+            flag_key,
+            faulted=(hours_silent > timeout_hours),
+            on_raise=lambda: InactivityAlertTriggered(wish_name, valve_id, hours_silent, int(timeout_hours)),
+            on_clear=lambda: InactivityAlertResolved(wish_name, valve_id),
+        )
+        if isinstance(event, InactivityAlertTriggered):
+            logger.warning(f"Watchdog-Alert: Ventil '{wish_name}' seit {hours_silent:.1f}h still.")
+        elif isinstance(event, InactivityAlertResolved):
+            # Ventil wurde zwischen zwei Checks reaktiviert (z.B. nach Daemon-Neustart)
+            logger.info(f"Watchdog-Entwarnung (Check): Ventil '{wish_name}' wieder aktiv.")
 
     # --- Kameras ---
     for camera in database.get_all_cameras():
@@ -212,20 +239,17 @@ def run_watchdog_check():
             continue
             
         seconds_silent = (now - last_seen).total_seconds()
-        flag = database.get_flag(flag_key)
-        
-        if seconds_silent > timeout_seconds:
-            if not flag:
-                database.set_flag(flag_key, True)
-                _global_bus.publish(
-                    CameraInactivityAlertTriggered(mac, wish_name, int(seconds_silent), timeout_seconds)
-                )
-                logger.warning(f"Watchdog-Alert: Kamera '{wish_name}' seit {seconds_silent:.0f}s still.")
-        else:
-            if flag:
-                database.set_flag(flag_key, False)
-                _global_bus.publish(CameraInactivityAlertResolved(mac, wish_name))
-                logger.info(f"Watchdog-Entwarnung (Check): Kamera '{wish_name}' wieder aktiv.")
+
+        event = _check_edge(
+            flag_key,
+            faulted=(seconds_silent > timeout_seconds),
+            on_raise=lambda: CameraInactivityAlertTriggered(mac, wish_name, int(seconds_silent), timeout_seconds),
+            on_clear=lambda: CameraInactivityAlertResolved(mac, wish_name),
+        )
+        if isinstance(event, CameraInactivityAlertTriggered):
+            logger.warning(f"Watchdog-Alert: Kamera '{wish_name}' seit {seconds_silent:.0f}s still.")
+        elif isinstance(event, CameraInactivityAlertResolved):
+            logger.info(f"Watchdog-Entwarnung (Check): Kamera '{wish_name}' wieder aktiv.")
 
     # --- Aufnahme-Verzug der Kameras (ADR 0041) ---
     # Ein Aufnahme-Zeitpunkt, der abgelöst wurde, ohne je ein Bild erhalten zu haben, gilt als
@@ -278,16 +302,15 @@ def run_watchdog_check():
         try:
             last_rain_time = datetime.fromisoformat(last_rain["timestamp"])
             hours_silent = (now - last_rain_time).total_seconds() / 3600
-            flag = database.get_flag(flag_key)
-            if hours_silent > timeout_hours:
-                if not flag:
-                    database.set_flag(flag_key, True)
-                    _global_bus.publish(RainSensorInactivityAlertTriggered(hours_silent, timeout_hours))
-                    logger.warning(f"Watchdog-Alert: Regensensor seit {hours_silent:.1f}h still.")
-            else:
-                if flag:
-                    database.set_flag(flag_key, False)
-                    _global_bus.publish(RainSensorInactivityAlertResolved())
-                    logger.info("Watchdog-Entwarnung (Check): Regensensor wieder aktiv.")
+            event = _check_edge(
+                flag_key,
+                faulted=(hours_silent > timeout_hours),
+                on_raise=lambda: RainSensorInactivityAlertTriggered(hours_silent, timeout_hours),
+                on_clear=lambda: RainSensorInactivityAlertResolved(),
+            )
+            if isinstance(event, RainSensorInactivityAlertTriggered):
+                logger.warning(f"Watchdog-Alert: Regensensor seit {hours_silent:.1f}h still.")
+            elif isinstance(event, RainSensorInactivityAlertResolved):
+                logger.info("Watchdog-Entwarnung (Check): Regensensor wieder aktiv.")
         except Exception:
             pass
