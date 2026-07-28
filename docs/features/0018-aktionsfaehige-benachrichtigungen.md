@@ -14,15 +14,14 @@ Push-Benachrichtigungen erhalten kontextbezogene Inline-Buttons, die die jeweils
 2. Als Benutzer möchte ich bei „Ventil von außen geöffnet" mit einem Tipp **schließen** können — ein Sicherheitsereignis, bei dem ich sofort reagieren will.
 3. Als Benutzer möchte ich bei einem Watchdog-Alarm direkt „Status prüfen" auslösen können, um schnell mehr zu erfahren.
 4. Als Benutzer möchte ich bei einem regenbedingten Skip die Option „Zeitplan jetzt gießen" haben (mit den Werten genau dieses Zeitplans), falls ich die Bewässerung bewusst erzwingen will.
-5. Als Benutzer möchte ich nach einer erfolgreichen **Kopplung** direkt die naheliegende Folgeaktion haben (Ventil: „Kurz testen"/„Zeitplan anlegen"; Kamera: „Foto jetzt").
-6. Als Benutzer möchte ich, dass ein bereits gedrückter Aktions-Button erkennbar quittiert wird (kein doppeltes Auslösen, keine veraltete Aktion).
-7. Als Benutzer möchte ich, dass Aktions-Buttons nur dort erscheinen, wo eine sinnvolle Folgeaktion existiert — sonst bleibt die Nachricht schlicht.
+5. Als Benutzer möchte ich, dass ein bereits gedrückter Aktions-Button erkennbar quittiert wird (kein doppeltes Auslösen, keine veraltete Aktion).
+6. Als Benutzer möchte ich, dass Aktions-Buttons nur dort erscheinen, wo eine sinnvolle Folgeaktion existiert — sonst bleibt die Nachricht schlicht.
 
-> **Nicht (mehr) enthalten (Recherche 2026-07-28):** „wiederkehrende Warnung stummschalten" — die Watchdog-Alarme feuern bereits nur *einmal* pro Episode (flanken-getriggert), es gibt keine Wiederholung zu unterdrücken. Und eine „niedrige Batterie"-Push-Meldung existiert gar nicht (nur Anzeige in Status/Bericht). Details unter *Implementierungs-Entscheidungen → Aus dem Umfang genommen*.
+> **Nicht (mehr) enthalten (Recherche 2026-07-28):** „wiederkehrende Warnung stummschalten" — die Watchdog-Alarme feuern bereits nur *einmal* pro Episode (flanken-getriggert), es gibt keine Wiederholung zu unterdrücken. Eine „niedrige Batterie"-Push-Meldung existiert gar nicht (nur Anzeige in Status/Bericht). **Folgeaktionen nach Kopplung** (Ventil/Kamera) sind in ein eigenes Folgeticket (55t) ausgegliedert. Details unter *Implementierungs-Entscheidungen*.
 
 ## Implementierungs-Entscheidungen (Implementation Decisions)
 
-- **Aufbau auf Bestand:** Inline-Keyboards (`reply_markup`) an `broadcast_notification` bzw. an die Kopplungs-`notify_fn` durchreichen; neue `callback_data`-Präfixe im bestehenden `_process_callback_query`-Pfad. Kein neuer Transportweg. Die Zuordnung *Ereignis → Button(s)* wird als kleine **Registry** gehalten (analog zur cy1-`WizardSpec`), nicht als handverdrahtetes `reply_markup=` in ~10 Handlern.
+- **Aufbau auf Bestand:** Inline-Keyboards (`reply_markup`) an `broadcast_notification` durchreichen; neue `callback_data`-Präfixe im bestehenden `_process_callback_query`-Pfad. Kein neuer Transportweg. Die Zuordnung *Ereignis → Button(s)* wird als kleine **Registry** gehalten (analog zur cy1-`WizardSpec`), nicht als handverdrahtetes `reply_markup=` in ~10 Handlern.
 
 - **Button-Zuordnung — priorisierter Katalog (Recherche 2026-07-28):** Von ~26 Push-Meldungen trägt bislang genau eine einen Button (Regen-Übersteuerung). Die übrigen Aktionen existieren größtenteils schon als Callbacks; „andocken" statt neu bauen.
 
@@ -34,15 +33,14 @@ Push-Benachrichtigungen erhalten kontextbezogene Inline-Buttons, die die jeweils
   - 🌫️ *Nebel-Intervall gestartet* (`_on_nebel_interval_started`) → `🛑 Nebel stoppen` (`nebel_stop`/`stop_nebel_<name>`).
   - ⚠️ *Ventil-Verbindung verloren* (`_on_inactivity_alert`) → `🔄 Status` (`handle_status`).
   - 🌧 *Guss übersprungen* (`_on_watering_skipped`) → `🚿 Zeitplan jetzt gießen` — führt den **übersprungenen** Zeitplan mit dessen Dauer/Menge/Ventil aus (nicht generische Defaults).
-  - ✅ *Ventil-Kopplung erfolgreich* (`valve_pairing`) → `🚿 Kurz testen` · `📅 Zeitplan anlegen` (`wiz_start`).
-  - ✅ *Kamera-Kopplung erfolgreich* (`camera_pairing`) → `📷 Foto jetzt` · `⏱ Einstellungen`.
 
   **Optional / später:**
   - ⚠️ *Kamera-Inaktivität / -Verzug*, *Regensensor nicht erreichbar* → `🔄 Status`.
   - 💧 *Guss reduziert* (`_on_watering_scaled`) → `🚿 Voll gießen` (nachträgliches Override; schwächer, der Guss lief bereits reduziert).
   - ⚠️ *Update unterbrochen / fehlgeschlagen* → `🔄 Status` bzw. `🔁 Erneut`.
-  - ❌ *Ventil-/Kamera-Kopplung fehlgeschlagen* → `🔁 Erneut koppeln`.
   - ⚠️ *Guss fehlgeschlagen*, *Fehler bei Zeitplan* → `🔄 Status`.
+
+  **Eigenes Folgeticket (55t) — nicht in mtb:** Folgeaktionen nach erfolgreicher/fehlgeschlagener **Kopplung** (Ventil „Kurz testen"/„Zeitplan anlegen", Kamera „Foto jetzt"/„Einstellungen", „Erneut koppeln"). Kommen aus den Pairing-Workern (`notify_fn`), nicht aus `broadcast_notification` — bewusst separat gehalten.
 
   **Bewusst ohne Button:** alle terminalen/Info-Meldungen (…beendet/gestoppt/wiederhergestellt/wieder pünktlich/geschlossen), 🌧 *Regen erkannt* / 🌤 *Regen vorbei*, 🚀 *Update aktiv*, 🏁 *Guss fertig*, Tagesbericht, Foto-Zustellung.
 
