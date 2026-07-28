@@ -139,6 +139,10 @@ Violations of these rules should be refactored before proceeding.
 
 **Zigbee2MQTT vendoring:** `vendor/zigbee2mqtt/` holds a locally modified copy with `debounce` downgraded to `^1.2.1` (CommonJS compat for Node.js v20.11.1 on ARMv6). TypeScript is compiled on the Windows host via `deploy.ps1` (not on the Pi, which lacks RAM for `tsc`).
 
+## Code-Sprache (Namensgebung)
+
+Code-Bezeichner — Klassen, Funktionen, Variablen, Module — werden **englisch** benannt (konsistent zu `WizardSpec`, `compute_next_sleep_seconds`, den englischen Ereignisklassen). **Deutsch** bleibt ausschließlich in den **Nutzertexten** (Telegram-Nachrichten) und in **bestehenden** deutschen Domänen-Bezeichnern, die nicht umbenannt werden. Neue technische Module sind englisch. `CONTEXT.md` bleibt das (deutsche) Garten-Glossar für Domänenbegriffe — nicht für Infrastruktur-Konzepte.
+
 ## Configuration
 
 Configuration is split into two files (ADR 0030):
