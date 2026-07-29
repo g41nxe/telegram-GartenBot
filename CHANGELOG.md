@@ -1,3 +1,17 @@
+## v1.19.1 — 2026-07-29
+
+### Behoben
+- Kamera trifft ihre Aufnahme-Zeitpunkte auch an Zeitumstellungstagen pünktlich
+- Fehlgeschlagenes Update rollt jetzt automatisch zurück statt nur zu melden
+- Entprellter Kamera-Verzugsalarm entwarnt nicht mehr fälschlich bei anhaltender Störung
+
+### Wartung
+- Benachrichtigungen laufen über eine einheitliche Registry (interner Umbau)
+- Watchdog-Alarme (Flanken-Erkennung) in einem gemeinsamen Modul zusammengeführt
+- Typisierte Datenbankzugriffe für Regenereignis- und Kamera-Kopplungs-Zustand (ADR 0045 abgeschlossen)
+
+---
+
 ## v1.19.0 — 2026-07-27
 
 ### Neu
