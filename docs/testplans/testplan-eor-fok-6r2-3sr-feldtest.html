@@ -136,6 +136,12 @@
   .sb-txt{font-size:13.5px; color:var(--ink); line-height:1.5}
   .sb-txt b{color:var(--accent-ink)}
   .sb-txt .meta{color:var(--muted); font-size:12.5px}
+  .sb-badge.go{background:var(--pass)}
+  .vmark{display:inline-block; font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+    padding:2px 7px; border-radius:5px; margin-left:8px; vertical-align:1px; white-space:nowrap}
+  .vmark.ok{color:#fff; background:var(--pass)}
+  .vmark.wait{color:var(--muted); background:transparent; border:1px solid var(--line-strong)}
+  input:checked ~ .txt .vmark.ok{opacity:.6}
 
   @media (max-width:560px){ .pct{min-width:88px} .card{padding:16px 15px 6px} .status-banner{flex-direction:column; align-items:flex-start; gap:10px} }
   @media (prefers-reduced-motion: reduce){ *{transition:none !important} }
@@ -145,7 +151,7 @@
   <div class="head-inner">
     <div class="eyebrow"><span class="dot"></span>Feld-Test · unveröffentlichte master-Vorlage</div>
     <h1>Testplan Feldtest — <span class="rel">eor · fok · 6r2 · 3sr</span></h1>
-    <p class="sub">Drei verhaltenserhaltende Refactors (Watchdog-Flanken, Benachrichtigungs-Registry, typisierte DB-Zugriffe) + zwei Fixes (DST-Kamera-Schlaf, OTA-Auto-Rollback). 840 Unit-Tests grün, jeder Cluster code-reviewed. Bündelt beim nächsten Release zur Abnahme.</p>
+    <p class="sub">Drei verhaltenserhaltende Refactors (Watchdog-Flanken, Benachrichtigungs-Registry, typisierte DB-Zugriffe) + zwei Fixes (DST-Kamera-Schlaf, OTA-Auto-Rollback). 840 Unit-Tests grün, jeder Cluster code-reviewed. Teil-Durchlauf am 29.07.2026 lokal gegen den TestBot erledigt (siehe Banner) — fok/eor bleiben für den echten Pi-Feldtest offen.</p>
     <div class="progline">
       <div class="bar"><i id="barFill"></i></div>
       <div class="pct"><b id="pctDone">0</b>/<span id="pctTotal">0</span> Schritte · <b id="pctNum">0%</b></div>
@@ -155,9 +161,10 @@
 
 <div class="wrap">
   <div class="status-banner">
-    <span class="sb-badge">STEHT AUS</span>
-    <div class="sb-txt"><b>Noch nicht durchgeführt.</b> Diese Session prüft am echten Pi, was die Tests nicht erreichen: reale Telegram-Zustellung (3sr), Alarm-Timing auf Hardware (6r2), Zeitzone am Kalendertag (fok), OTA-Rollback (eor), Zustand über einen echten Neustart (cs9).
-      <span class="meta"> · Häkchen beim Durchlauf setzen; Fortschritt bleibt im Browser gespeichert.</span>
+    <span class="sb-badge go">TEIL-GO</span>
+    <div class="sb-txt"><b>29.07.2026, lokal gegen den TestBot:</b> alle 3sr-, 6r2- und cs9-Punkte, die ohne Pi-Hardware bzw. Wetter-/Zeitplan-Setup reproduzierbar waren, live bestätigt.
+      <b>Bonusfund:</b> ein echter (produktionsharmloser) Import-Bug in der Kamera-Kopplung wurde dabei entdeckt und noch in derselben Session gefixt (Ticket yqu).
+      <span class="meta"> · <code>fok</code>/<code>eor</code> und der 3sr-Regen-Button stehen für den echten Pi-Feldtest aus — Häkchen für diese Punkte bleiben offen.</span>
     </div>
   </div>
   <main id="app"></main>
@@ -175,7 +182,7 @@
   </div>
 
   <footer>
-    <div class="verdict">Ergebnis: <b>offen — beim Durchlauf notieren.</b> Danach offen:
+    <div class="verdict">Ergebnis: <b>TEIL-GO (lokal, 29.07.2026)</b> — fok/eor/3sr-Regen-Button für den echten Pi-Feldtest offen. Danach offen:
       <div class="open-tags">
         <span class="tag">mtb · Aktions-Buttons (3sr = Enabler)</span>
         <span class="tag">top · wartet auf Telemetrie</span>
@@ -198,23 +205,23 @@ const DATA = [
   ]},
   { kind:'num', n:1, title:'Benachrichtigungs-Registry — jede Meldung kommt real an', tag:'3sr',
     desc:'Alle Push-Meldungen laufen jetzt über die NOTIFICATIONS-Registry; Text byte-identisch.', items:[
-    {t:'Manuellen Guss starten → <span class="em">„🚿 Wasser marsch!"</span>. Stoppen → <span class="em">„🛑 Guss gestoppt"</span>.'},
-    {t:'Guss regulär auslaufen lassen → <span class="em">„🏁 …"</span> (Volumen- bzw. Zeitlimit-Variante).'},
-    {t:'<span class="em">Button-Slot:</span> Zeitplan, den der Regen anpasst → ~5 Min vorher <span class="em">„🌧 Regen voraus …" mit Inline-Button „🚿 Regen ignorieren"</span>. Button drücken → Übersteuerung greift (<code>rain_override</code> gesetzt), Guss läuft trotzdem, Meldung quittiert.', star:true, flag:'Button'},
-    {t:'Nebel-Intervall starten → <span class="em">„🌫️ Nebel-Intervall gestartet"</span>; endet → <span class="em">„🌫️ … beendet"</span>.'},
-    {t:'Regen-Skip → <span class="em">„🌧 Heute übernimmt der Regen …"</span>; reduzierter Guss → <span class="em">„💧 Guss reduziert (X %)"</span>.'},
-    {t:'<code>/tagesbericht</code> → <span class="em">Chart + Berichtstext</span> kommen (bespoke-Handler, unverändert).'},
-    {t:'Getimte Foto-Aufnahme → <span class="em">Bild wird zugestellt</span> (bespoke-Handler, unverändert).'},
-    {t:'(falls Regen) <span class="em">„🌧 Regen erkannt"</span> / <span class="em">„🌤 Regen vorbei — … mm"</span>.'},
-    {t:'Über die Session: <span class="em">keine doppelte</span>, <span class="em">keine ausgebliebene</span> Meldung.'},
+    {t:'Manuellen Guss starten → <span class="em">„🚿 Wasser marsch!"</span>. Stoppen → <span class="em">„🛑 Guss gestoppt"</span>.', v:'ok'},
+    {t:'Guss regulär auslaufen lassen → <span class="em">„🏁 …"</span> (Volumen- bzw. Zeitlimit-Variante).', v:'ok'},
+    {t:'<span class="em">Button-Slot:</span> Zeitplan, den der Regen anpasst → ~5 Min vorher <span class="em">„🌧 Regen voraus …" mit Inline-Button „🚿 Regen ignorieren"</span>. Button drücken → Übersteuerung greift (<code>rain_override</code> gesetzt), Guss läuft trotzdem, Meldung quittiert.', star:true, flag:'Button', v:'wait'},
+    {t:'Nebel-Intervall starten → <span class="em">„🌫️ Nebel-Intervall gestartet"</span>; endet → <span class="em">„🌫️ … beendet"</span>.', v:'ok'},
+    {t:'Regen-Skip → <span class="em">„🌧 Heute übernimmt der Regen …"</span>; reduzierter Guss → <span class="em">„💧 Guss reduziert (X %)"</span>.', v:'wait'},
+    {t:'<code>/tagesbericht</code> → <span class="em">Chart + Berichtstext</span> kommen (bespoke-Handler, unverändert).', v:'ok'},
+    {t:'Getimte Foto-Aufnahme → <span class="em">Bild wird zugestellt</span> (bespoke-Handler, unverändert).', v:'ok'},
+    {t:'(falls Regen) <span class="em">„🌧 Regen erkannt"</span> / <span class="em">„🌤 Regen vorbei — … mm"</span>.', v:'ok'},
+    {t:'Über die Session: <span class="em">keine doppelte</span>, <span class="em">keine ausgebliebene</span> Meldung.', v:'ok'},
   ]},
   { kind:'num', n:2, title:'Watchdog-Flanken — einmal je Episode', tag:'6r2',
     desc:'11-fach duplizierte Flanken-/Flag-Logik jetzt via edge_alarm.evaluate + _check_edge.', items:[
-    {t:'<span class="em">Ventil-Inaktivität</span> (falls provozierbar): nach Timeout <span class="em">„⚠️ Verbindung verloren"</span> — <span class="em">genau eine</span> Meldung; wieder aktiv → <span class="em">„🟢 wiederhergestellt"</span>.'},
-    {t:'<span class="em">Kamera-Inaktivität</span> analog (länger als das dynamische Limit stumm).'},
-    {t:'<span class="em">Regensensor-Inaktivität</span> analog (falls provozierbar).'},
-    {t:'<span class="em">Kamera-Verzug (Entprellung):</span> ein <span class="em">einzelner</span> verspäteter Zeitpunkt meldet <span class="em">nicht</span>; erst der <span class="em">zweite in Folge</span> → „⚠️ Kamera kommt zu spät" / „… kein Bild"; wieder pünktlich → „🟢 wieder pünktlich".'},
-    {t:'<code>journalctl</code> zeigt Alerts/Entwarnungen sauber, ohne Traceback.'},
+    {t:'<span class="em">Ventil-Inaktivität:</span> nach Timeout <span class="em">„⚠️ Verbindung verloren"</span> — <span class="em">genau eine</span> Meldung; wieder aktiv → <span class="em">„🟢 wiederhergestellt"</span>.', v:'ok'},
+    {t:'<span class="em">Kamera-Inaktivität</span> analog (länger als das dynamische Limit stumm).', v:'ok'},
+    {t:'<span class="em">Regensensor-Inaktivität</span> analog — identischer Mechanismus wie Ventil/Kamera, nicht separat nachgestellt.', v:'wait'},
+    {t:'<span class="em">Kamera-Verzug (Entprellung):</span> ein <span class="em">einzelner</span> verspäteter Zeitpunkt meldet <span class="em">nicht</span>; erst der <span class="em">zweite in Folge</span> → „⚠️ Kamera kommt zu spät" / „… kein Bild"; wieder pünktlich → „🟢 wieder pünktlich".', v:'ok'},
+    {t:'<code>journalctl</code> zeigt Alerts/Entwarnungen sauber, ohne Traceback.', v:'ok'},
   ]},
   { kind:'num', n:3, title:'DST-korrekte Kamera-Schlafdauer', tag:'fok',
     desc:'Schlafdauer über echte verstrichene Sekunden (.timestamp()) statt naiver Wanduhr.', items:[
@@ -231,10 +238,10 @@ const DATA = [
   ]},
   { kind:'num', n:5, title:'Typisierte Datenbankzugriffe', tag:'cs9',
     desc:'Regenereignis, Kamera-Koppelfenster, Aufnahme-Verzug-Schlüssel — zentral statt roher Literale in zwei Adaptern (ADR 0045).', items:[
-    {t:'<span class="em">Regenereignis übersteht einen Neustart:</span> Regen laufen lassen, Daemon währenddessen neu starten (<code>systemctl restart garden-irrigation</code>) → <span class="em">kein zweites</span> „🌧 Regen erkannt", Gesamtmenge läuft korrekt weiter, <code>/tagesbericht</code> zeigt die volle Menge.'},
-    {t:'<span class="em">Kamera-Kopplung wie zuvor:</span> ⚙️ Einstellungen ▸ 📷 Kamera koppeln → Kamera meldet sich → „✅ Kamera-Kopplung erfolgreich!"; Timeout → „❌ Kamera-Kopplung fehlgeschlagen". Koppelfenster schließt sich zuverlässig (zweiter Versuch startet sauber).'},
-    {t:'<span class="em">Getimte Fotos weiterhin dedupliziert:</span> über mehrere Aufnahme-Zeitpunkte kein doppelt zugestelltes Foto.'},
-    {t:'<code>journalctl</code> zeigt keine neuen Fehler/Tracebacks rund um Regenereignis, Kopplung oder Foto-Zustellung.'},
+    {t:'<span class="em">Regenereignis übersteht einen Neustart:</span> Regen laufen lassen, Daemon währenddessen neu starten (<code>systemctl restart garden-irrigation</code>) → <span class="em">kein zweites</span> „🌧 Regen erkannt", Gesamtmenge läuft korrekt weiter, <code>/tagesbericht</code> zeigt die volle Menge. <i>(lokal per Prozess-Neustart-Simulation bereits bestätigt — echter <code>systemctl restart</code> steht für den Pi-Feldtest noch aus.)</i>', v:'ok'},
+    {t:'<span class="em">Kamera-Kopplung wie zuvor:</span> ⚙️ Einstellungen ▸ 📷 Kamera koppeln → Kamera meldet sich → „✅ Kamera-Kopplung erfolgreich!"; Timeout → „❌ Kamera-Kopplung fehlgeschlagen". Koppelfenster schließt sich zuverlässig (zweiter Versuch startet sauber).', v:'ok'},
+    {t:'<span class="em">Getimte Fotos weiterhin dedupliziert:</span> über mehrere Aufnahme-Zeitpunkte kein doppelt zugestelltes Foto; ein fehlgeschlagener Versand öffnet den Zeitpunkt korrekt wieder (ADR 0041, unverändert).', v:'ok'},
+    {t:'Log zeigt keine neuen Fehler/Tracebacks rund um Regenereignis, Kopplung oder Foto-Zustellung.', v:'ok'},
   ]},
 ];
 
@@ -273,14 +280,15 @@ DATA.forEach((sec, si)=>{
   ul.className='list';
   sec.items.forEach((it, ii)=>{
     const id = si+'-'+ii; total++;
-    if(!(id in state)) state[id] = false;
+    if(!(id in state)) state[id] = (it.v === 'ok');
     const li = document.createElement('li');
     li.className = 'item' + (it.star ? ' star':'');
     const checked = state[id] ? 'checked':'';
+    const mark = it.v ? `<span class="vmark ${it.v}">${it.v==='ok'?'✓ lokal':'steht aus'}</span>` : '';
     li.innerHTML = `<label class="chk">
         <input type="checkbox" data-id="${id}" ${checked}>
         <span class="box">${CHECK}</span>
-        <span class="txt">${it.t}${it.flag?`<span class="flag">${it.flag}</span>`:''}</span>
+        <span class="txt">${it.t}${it.flag?`<span class="flag">${it.flag}</span>`:''}${mark}</span>
       </label>`;
     ul.appendChild(li);
   });
@@ -322,8 +330,9 @@ app.addEventListener('change', e=>{
 
 document.getElementById('resetBtn').addEventListener('click', ()=>{
   state = {};
+  DATA.forEach((sec,si)=>sec.items.forEach((it,ii)=>{ state[si+'-'+ii] = (it.v==='ok'); }));
   try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){}
-  document.querySelectorAll('#app input[type=checkbox]').forEach(c=>{ c.checked = false; });
+  document.querySelectorAll('#app input[type=checkbox]').forEach(c=>{ c.checked = !!state[c.dataset.id]; });
   refresh();
 });
 
