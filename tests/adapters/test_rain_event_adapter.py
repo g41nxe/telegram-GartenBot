@@ -20,15 +20,19 @@ def _measurement(mm):
 class TestRainEventAdapter(unittest.TestCase):
 
     def setUp(self):
+        # Ticket cs9: die (De-)Serialisierung des Zustands lebt jetzt in database.py
+        # (get/set_rain_event_state) statt im Adapter — der Mock sitzt daher an der
+        # tieferen DB-I/O-Naht (get_metadata/set_metadata), damit die echte Zustands-
+        # logik in database.py (inkl. get_flag/set_flag darüber) real durchläuft.
         self.store = {}
-        p = patch("daemon.adapters.rain_event_adapter.database")
-        db = p.start()
-        self.addCleanup(p.stop)
-        db.get_metadata.side_effect = lambda k, d=None: self.store.get(k, d)
-        db.set_metadata.side_effect = lambda k, v: self.store.__setitem__(k, v)
-        # Ticket l97: die Flag-Primitive an denselben Store koppeln (spiegelt database.get/set_flag).
-        db.get_flag.side_effect = lambda k: self.store.get(k) == "1"
-        db.set_flag.side_effect = lambda k, v: self.store.__setitem__(k, "1" if v else "0")
+        p1 = patch("daemon.adapters.database.get_metadata",
+                   side_effect=lambda k, d=None: self.store.get(k, d))
+        p1.start()
+        self.addCleanup(p1.stop)
+        p2 = patch("daemon.adapters.database.set_metadata",
+                   side_effect=lambda k, v: self.store.__setitem__(k, v))
+        p2.start()
+        self.addCleanup(p2.stop)
 
     def _feed(self, adapter, mm, when):
         with patch("daemon.adapters.rain_event_adapter.datetime") as dt:

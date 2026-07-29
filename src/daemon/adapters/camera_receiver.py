@@ -103,26 +103,20 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
             self.wfile.write(b"OK")
             return
             
-        # 2. Prüfe Koppel-Metadaten in der DB
-        is_active = database.get_flag(database.KEY_CAMERA_PAIRING_ACTIVE)
-        if not is_active:
+        # 2. Prüfe Koppel-Metadaten in der DB (zentraler Zugriff, Ticket cs9)
+        pairing = database.get_camera_pairing()
+        if not pairing.active:
             self.send_response(403)
             self.end_headers()
             return
-            
-        expires_at_str = database.get_metadata("camera_pairing_expires_at")
-        try:
-            expires_at = float(expires_at_str)
-        except (TypeError, ValueError):
-            expires_at = 0
-            
-        if time.time() > expires_at:
+
+        if time.time() > pairing.expires_at:
             self.send_response(403)
             self.end_headers()
             return
-            
+
         # Erfolgreich registrieren
-        wish_name = database.get_metadata("camera_pairing_wish_name")
+        wish_name = pairing.wish_name
         if not wish_name:
             wish_name = f"camera_{mac[-4:]}"
             
@@ -258,7 +252,7 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
                 # Zustand: zuletzt zugestellter Aufnahme-Zeitpunkt, je Kamera. Der Zeitstempel
                 # ist eindeutig — anders als der fruehere Schluessel `Datum|Beschriftung`, der
                 # zwei gleichnamige Zeitplaene kollidieren liess.
-                dedup_key = f"last_delivered_target:{mac}"
+                dedup_key = database.last_delivered_target_key(mac)
                 if _ist_neuer_zeitpunkt(target_dt, database.get_metadata(dedup_key)):
                     database.set_metadata(dedup_key, target_dt.isoformat())
                     caption = camera_schedule.beschriftung_mit_verzug(

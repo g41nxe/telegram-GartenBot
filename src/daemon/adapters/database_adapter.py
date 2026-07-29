@@ -52,7 +52,7 @@ class DatabaseLoggerAdapter:
         """
         from datetime import timedelta
         anker = event.target_dt - timedelta(seconds=1)
-        database.set_metadata(f"last_delivered_target:{event.mac_address}", anker.isoformat())
+        database.set_metadata(database.last_delivered_target_key(event.mac_address), anker.isoformat())
         logger.warning(
             f"Aufnahme-Zeitpunkt {event.target_dt} wieder geöffnet — Versand des Fotos gescheitert."
         )

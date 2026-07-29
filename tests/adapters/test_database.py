@@ -620,5 +620,133 @@ class TestMetadataFlags(unittest.TestCase):
         self.assertFalse(db.get_flag("legacy"))
 
 
+class TestIntMetadata(unittest.TestCase):
+    """Ticket cs9: typisierte int-Primitive über system_metadata (str(int)↔int an einem Ort)."""
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._patcher.start()
+        db.init_db()
+
+    def tearDown(self):
+        self._patcher.stop()
+        import gc
+        gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def test_unset_returns_default(self):
+        self.assertEqual(db.get_int_metadata("streak", 0), 0)
+        self.assertEqual(db.get_int_metadata("streak", 7), 7)
+
+    def test_roundtrip(self):
+        db.set_int_metadata("streak", 3)
+        self.assertEqual(db.get_int_metadata("streak"), 3)
+        self.assertEqual(db.get_metadata("streak"), "3")   # roh als int-String
+
+    def test_unparseable_returns_default(self):
+        db.set_metadata("streak", "kaputt")
+        self.assertEqual(db.get_int_metadata("streak", 0), 0)
+
+
+class TestLastDeliveredTargetKey(unittest.TestCase):
+    """Ticket cs9: reiner Key-Builder statt drei Inline-f-strings in verschiedenen Adaptern."""
+
+    def test_key_format(self):
+        self.assertEqual(
+            db.last_delivered_target_key("AA:BB:CC"), "last_delivered_target:AA:BB:CC"
+        )
+
+
+class TestRainEventStateAccessors(unittest.TestCase):
+    """Ticket cs9: der Regenereignis-Zustand (RainEventState) wird zentral (de-)serialisiert —
+    die vier rohen Keys + isoformat/float-Parsing leben nicht mehr im Adapter (ADR 0045)."""
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._patcher.start()
+        db.init_db()
+
+    def tearDown(self):
+        self._patcher.stop()
+        import gc
+        gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def test_unset_returns_inactive_default(self):
+        from daemon.core.rain_event import RainEventState
+        self.assertEqual(db.get_rain_event_state(), RainEventState())
+
+    def test_roundtrip_active_state(self):
+        from daemon.core.rain_event import RainEventState
+        start = datetime(2026, 7, 29, 14, 0, 0)
+        last = datetime(2026, 7, 29, 14, 20, 0)
+        db.set_rain_event_state(RainEventState(True, start, last, 6.5))
+        self.assertEqual(db.get_rain_event_state(), RainEventState(True, start, last, 6.5))
+
+    def test_inactive_state_reads_back_as_default(self):
+        from daemon.core.rain_event import RainEventState
+        db.set_rain_event_state(RainEventState())
+        self.assertEqual(db.get_rain_event_state(), RainEventState())
+
+    def test_unreadable_state_falls_back_to_fresh(self):
+        from daemon.core.rain_event import RainEventState
+        # Flag aktiv, aber Zeitstempel unlesbar (z. B. Teil-Schreibvorgang) → sauberer Neustart.
+        db.set_flag("rain_event_active", True)
+        db.set_metadata("rain_event_start", "kaputt")
+        self.assertEqual(db.get_rain_event_state(), RainEventState())
+
+
+class TestCameraPairingAccessors(unittest.TestCase):
+    """Ticket cs9: das Koppel-Fenster (aktiv/Name/Ablauf) wird zentral gehalten — Writer
+    (camera_pairing) und Reader (camera_receiver) teilen keine rohen Literale mehr (ADR 0045)."""
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._patcher.start()
+        db.init_db()
+
+    def tearDown(self):
+        self._patcher.stop()
+        import gc
+        gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def test_unset_is_inactive(self):
+        pairing = db.get_camera_pairing()
+        self.assertFalse(pairing.active)
+
+    def test_set_then_get(self):
+        db.set_camera_pairing("Garten01", 1234.5)
+        pairing = db.get_camera_pairing()
+        self.assertTrue(pairing.active)
+        self.assertEqual(pairing.wish_name, "Garten01")
+        self.assertEqual(pairing.expires_at, 1234.5)
+
+    def test_clear_resets_all(self):
+        db.set_camera_pairing("Garten01", 1234.5)
+        db.clear_camera_pairing()
+        pairing = db.get_camera_pairing()
+        self.assertFalse(pairing.active)
+        self.assertEqual(pairing.wish_name, "")
+        self.assertEqual(pairing.expires_at, 0.0)
+
+    def test_unparseable_expires_at_coerces_to_zero(self):
+        db.set_flag(db.KEY_CAMERA_PAIRING_ACTIVE, True)
+        db.set_metadata(db.KEY_CAMERA_PAIRING_EXPIRES_AT, "kaputt")
+        self.assertEqual(db.get_camera_pairing().expires_at, 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

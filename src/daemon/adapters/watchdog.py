@@ -118,15 +118,11 @@ def _bewerte_stoerung(mac: str, wish_name: str, gestoert: bool, grund: str,
     flag_key = database.watchdog_camera_delay_alert_key(mac)
 
     if not gestoert:
-        database.set_metadata(streak_key, "0")
+        database.set_int_metadata(streak_key, 0)
         streak = 0
     else:
-        try:
-            streak = int(database.get_metadata(streak_key) or 0)
-        except ValueError:
-            streak = 0
-        streak += 1
-        database.set_metadata(streak_key, str(streak))
+        streak = database.get_int_metadata(streak_key, 0) + 1
+        database.set_int_metadata(streak_key, streak)
 
     # Entprellung: Gemeldet wird erst beim zweiten Vorfall in Folge — die „zweiter Vorfall"-
     # Bedingung fließt als Störungs-Zustand in die Flanke ein (streak >= 2).
@@ -275,7 +271,7 @@ def run_watchdog_check():
         if database.get_flag(database.watchdog_camera_alert_key(mac)):
             continue
 
-        zuletzt = _als_zeitpunkt(database.get_metadata(f"last_delivered_target:{mac}"))
+        zuletzt = _als_zeitpunkt(database.get_metadata(database.last_delivered_target_key(mac)))
         bereits_bewertet = _als_zeitpunkt(
             database.get_metadata(f"watchdog_delay_last_judged_camera_{mac}")
         )

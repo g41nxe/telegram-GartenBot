@@ -1,8 +1,11 @@
 import json
 import sqlite3
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
+
+from ..core.rain_event import RainEventState
 
 logger = logging.getLogger("garden_database")
 
@@ -529,6 +532,106 @@ def watchdog_camera_delay_alert_key(mac) -> str:
 
 def rain_override_key(schedule_id, date_iso: str) -> str:
     return f"rain_override:{schedule_id}:{date_iso}"
+
+
+def last_delivered_target_key(mac) -> str:
+    """Schlüssel des zuletzt zugestellten Aufnahme-Zeitpunkts je Kamera (ADR 0041).
+    Reiner Key-Builder — von database_adapter, camera_receiver UND watchdog gebraucht."""
+    return f"last_delivered_target:{mac}"
+
+
+# --- Typisierte int-Primitive über system_metadata (Ticket cs9) -----------------------------
+# str(int)↔int-Coercion an einem Ort — konzern-agnostisch (nur key rein, int raus), analog
+# zu get_flag/set_flag.
+
+def get_int_metadata(key: str, default: int = 0) -> int:
+    """Liest einen ganzzahligen Metadatenwert; fehlend/unparsbar → default."""
+    try:
+        return int(get_metadata(key))
+    except (TypeError, ValueError):
+        return default
+
+
+def set_int_metadata(key: str, value: int) -> None:
+    """Speichert einen ganzzahligen Metadatenwert als int-String."""
+    set_metadata(key, str(int(value)))
+
+
+# --- Regenereignis-Zustand (Ticket cs9, ADR 0045) -------------------------------------------
+# Der überlebende Zustand aus ADR 0043 wird hier zentral (de-)serialisiert: die vier rohen
+# Keys + isoformat/float-Parsing lebten bisher inline im rain_event_adapter. database.py besitzt
+# die Persistenz, der RainEventState-Typ (core) bleibt die gemeinsame Sprache.
+
+_RAIN_EVENT_ACTIVE = "rain_event_active"
+_RAIN_EVENT_START = "rain_event_start"
+_RAIN_EVENT_LAST_TICK = "rain_event_last_tick"
+_RAIN_EVENT_TOTAL = "rain_event_total_mm"
+
+
+def get_rain_event_state() -> RainEventState:
+    """Liest den überlebenden Regenereignis-Zustand; unlesbare Werte → frischer Neustart."""
+    if not get_flag(_RAIN_EVENT_ACTIVE):
+        return RainEventState()
+    try:
+        return RainEventState(
+            True,
+            datetime.fromisoformat(get_metadata(_RAIN_EVENT_START)),
+            datetime.fromisoformat(get_metadata(_RAIN_EVENT_LAST_TICK)),
+            float(get_metadata(_RAIN_EVENT_TOTAL, "0")),
+        )
+    except (TypeError, ValueError) as e:
+        logger.warning(f"Regenereignis-Zustand unlesbar ({e}) — beginne neu.")
+        return RainEventState()
+
+
+def set_rain_event_state(state: RainEventState) -> None:
+    """Persistiert den Regenereignis-Zustand (nur bei aktivem Ereignis mit vollen Feldern)."""
+    set_flag(_RAIN_EVENT_ACTIVE, state.active)
+    if state.active:
+        set_metadata(_RAIN_EVENT_START, state.start.isoformat())
+        set_metadata(_RAIN_EVENT_LAST_TICK, state.last_tick.isoformat())
+        set_metadata(_RAIN_EVENT_TOTAL, str(state.total_mm))
+
+
+# --- Kamera-Koppelfenster (Ticket cs9, ADR 0045) --------------------------------------------
+# aktiv/Wunschname/Ablaufzeit teilten sich Writer (camera_pairing) und Reader (camera_receiver)
+# als rohe Literale in beiden Dateien. Jetzt zentral: nur KEY_CAMERA_PAIRING_ACTIVE war schon da.
+
+KEY_CAMERA_PAIRING_WISH_NAME = "camera_pairing_wish_name"
+KEY_CAMERA_PAIRING_EXPIRES_AT = "camera_pairing_expires_at"
+
+
+@dataclass
+class CameraPairing:
+    """Momentaufnahme des Koppel-Fensters aus system_metadata."""
+    active: bool = False
+    wish_name: str = ""
+    expires_at: float = 0.0
+
+
+def get_camera_pairing() -> CameraPairing:
+    """Liest das Koppel-Fenster; unparsbare Ablaufzeit → 0.0 (gilt als abgelaufen)."""
+    active = get_flag(KEY_CAMERA_PAIRING_ACTIVE)
+    wish_name = get_metadata(KEY_CAMERA_PAIRING_WISH_NAME) or ""
+    try:
+        expires_at = float(get_metadata(KEY_CAMERA_PAIRING_EXPIRES_AT))
+    except (TypeError, ValueError):
+        expires_at = 0.0
+    return CameraPairing(active, wish_name, expires_at)
+
+
+def set_camera_pairing(wish_name: str, expires_at: float) -> None:
+    """Öffnet das Koppel-Fenster (aktiv, Wunschname, Ablaufzeit)."""
+    set_flag(KEY_CAMERA_PAIRING_ACTIVE, True)
+    set_metadata(KEY_CAMERA_PAIRING_WISH_NAME, wish_name)
+    set_metadata(KEY_CAMERA_PAIRING_EXPIRES_AT, str(expires_at))
+
+
+def clear_camera_pairing() -> None:
+    """Schließt das Koppel-Fenster (inaktiv, Name geleert, Ablaufzeit 0)."""
+    set_flag(KEY_CAMERA_PAIRING_ACTIVE, False)
+    set_metadata(KEY_CAMERA_PAIRING_WISH_NAME, "")
+    set_metadata(KEY_CAMERA_PAIRING_EXPIRES_AT, "0")
 
 _DAILY_FORECAST_SNAPSHOT_KEY = "daily_forecast_snapshot"
 
