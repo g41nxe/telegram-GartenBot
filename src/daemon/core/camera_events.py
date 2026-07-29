@@ -1,4 +1,4 @@
-from src.daemon.core.event_bus import Event
+from .event_bus import Event
 
 class CameraImageReceived(Event):
     """Wird gefeuert, wenn ein neues Bild von einer Kamera erfolgreich empfangen und gespeichert wurde."""

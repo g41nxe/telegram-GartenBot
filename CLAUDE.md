@@ -59,7 +59,10 @@ bash scripts/run_coverage.sh
 
 ### Run the daemon locally (simulation mode)
 ```bash
-python -m daemon.main
+python -m src.daemon.main
+# Matches the Pi's actual systemd invocation (scripts/setup.sh) — running it as
+# `python -m daemon.main` instead lets both `daemon.*` and `src.daemon.*` resolve at once,
+# silently splitting event classes into two distinct objects (see camera_receiver.py history).
 # paho-mqtt absence automatically activates SimulatedMqttAdapter
 ```
 
