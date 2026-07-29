@@ -145,7 +145,7 @@
   <div class="head-inner">
     <div class="eyebrow"><span class="dot"></span>Feld-Test · unveröffentlichte master-Vorlage</div>
     <h1>Testplan Feldtest — <span class="rel">eor · fok · 6r2 · 3sr</span></h1>
-    <p class="sub">Zwei verhaltenserhaltende Refactors (Watchdog-Flanken, Benachrichtigungs-Registry) + zwei Fixes (DST-Kamera-Schlaf, OTA-Auto-Rollback). 828 Unit-Tests grün, jeder Cluster code-reviewed. Bündelt beim nächsten Release zur Abnahme.</p>
+    <p class="sub">Drei verhaltenserhaltende Refactors (Watchdog-Flanken, Benachrichtigungs-Registry, typisierte DB-Zugriffe) + zwei Fixes (DST-Kamera-Schlaf, OTA-Auto-Rollback). 840 Unit-Tests grün, jeder Cluster code-reviewed. Bündelt beim nächsten Release zur Abnahme.</p>
     <div class="progline">
       <div class="bar"><i id="barFill"></i></div>
       <div class="pct"><b id="pctDone">0</b>/<span id="pctTotal">0</span> Schritte · <b id="pctNum">0%</b></div>
@@ -156,7 +156,7 @@
 <div class="wrap">
   <div class="status-banner">
     <span class="sb-badge">STEHT AUS</span>
-    <div class="sb-txt"><b>Noch nicht durchgeführt.</b> Diese Session prüft am echten Pi, was die Tests nicht erreichen: reale Telegram-Zustellung (3sr), Alarm-Timing auf Hardware (6r2), Zeitzone am Kalendertag (fok), OTA-Rollback (eor).
+    <div class="sb-txt"><b>Noch nicht durchgeführt.</b> Diese Session prüft am echten Pi, was die Tests nicht erreichen: reale Telegram-Zustellung (3sr), Alarm-Timing auf Hardware (6r2), Zeitzone am Kalendertag (fok), OTA-Rollback (eor), Zustand über einen echten Neustart (cs9).
       <span class="meta"> · Häkchen beim Durchlauf setzen; Fortschritt bleibt im Browser gespeichert.</span>
     </div>
   </div>
@@ -170,13 +170,13 @@
       <li><strong>Watchdog feuert wiederholt</strong> statt einmal je Episode, oder entwarnt fälschlich → 6r2-Regression.</li>
       <li><strong>Kamera trifft Zeitpunkte um ~1 h daneben</strong> (an einem DST-Umstellungstag) → fok-Regression.</li>
       <li><strong>Update-Fehler ohne Auto-Rollback</strong> (Dienst bleibt tot/kaputt) → eor-Regression.</li>
+      <li><strong>Doppeltes „Regen erkannt" nach Neustart</strong>, hängendes Koppelfenster oder doppelt zugestelltes Foto → cs9-Regression.</li>
     </ul>
   </div>
 
   <footer>
     <div class="verdict">Ergebnis: <b>offen — beim Durchlauf notieren.</b> Danach offen:
       <div class="open-tags">
-        <span class="tag">cs9 · typisierte Metadaten</span>
         <span class="tag">mtb · Aktions-Buttons (3sr = Enabler)</span>
         <span class="tag">top · wartet auf Telemetrie</span>
         <span class="tag">55t · Kopplungs-Folgeaktionen</span>
@@ -228,6 +228,13 @@ const DATA = [
     {t:'(kontrolliert provozierbar) fehlerhaftes Update → <span class="em">Auto-Rollback</span>: Dienst läuft auf der <span class="em">Vorgängerversion</span> weiter; Bot meldet <span class="em">„❌ Update fehlgeschlagen"</span> bzw. bei Abbruch vor dem Rollback <span class="em">„⚠️ Update unterbrochen … Bitte <code>/status</code> prüfen"</span>.'},
     {t:'Nach Rollback: <code>/status</code> zeigt die laufende (alte) Version; <code>systemctl status</code> active, keine Traceback-Zeilen.'},
     {t:'Attempt-/Rollback-Marker in <code>/tmp</code> werden gesetzt und wieder geräumt (kein Dauer-Rückstand).'},
+  ]},
+  { kind:'num', n:5, title:'Typisierte Datenbankzugriffe', tag:'cs9',
+    desc:'Regenereignis, Kamera-Koppelfenster, Aufnahme-Verzug-Schlüssel — zentral statt roher Literale in zwei Adaptern (ADR 0045).', items:[
+    {t:'<span class="em">Regenereignis übersteht einen Neustart:</span> Regen laufen lassen, Daemon währenddessen neu starten (<code>systemctl restart garden-irrigation</code>) → <span class="em">kein zweites</span> „🌧 Regen erkannt", Gesamtmenge läuft korrekt weiter, <code>/tagesbericht</code> zeigt die volle Menge.'},
+    {t:'<span class="em">Kamera-Kopplung wie zuvor:</span> ⚙️ Einstellungen ▸ 📷 Kamera koppeln → Kamera meldet sich → „✅ Kamera-Kopplung erfolgreich!"; Timeout → „❌ Kamera-Kopplung fehlgeschlagen". Koppelfenster schließt sich zuverlässig (zweiter Versuch startet sauber).'},
+    {t:'<span class="em">Getimte Fotos weiterhin dedupliziert:</span> über mehrere Aufnahme-Zeitpunkte kein doppelt zugestelltes Foto.'},
+    {t:'<code>journalctl</code> zeigt keine neuen Fehler/Tracebacks rund um Regenereignis, Kopplung oder Foto-Zustellung.'},
   ]},
 ];
 

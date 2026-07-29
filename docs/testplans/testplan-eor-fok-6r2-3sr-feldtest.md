@@ -1,11 +1,12 @@
 # Testplan — Feldtest der unveröffentlichten master-Änderungen
 
-**Umfang:** zwei verhaltenserhaltende Refactors (**6r2** Watchdog-Flanken, **3sr**
-Benachrichtigungs-Registry) + zwei Fixes (**fok** DST-korrekte Kamera-Schlafdauer,
-**eor** OTA-Auto-Rollback). Alle 828 Unit-Tests grün, jeder Cluster code-reviewed
-(6r2 + 3sr adversarial auf Verhaltens-Parität geprüft). Diese Session prüft, was die
-Tests **nicht** abdecken: echte Telegram-Zustellung, MQTT/Hardware-Timing, OTA am
-echten Pi, Zeitzone am realen Kalendertag.
+**Umfang:** drei verhaltenserhaltende Refactors (**6r2** Watchdog-Flanken, **3sr**
+Benachrichtigungs-Registry, **cs9** typisierte Datenbankzugriffe) + zwei Fixes (**fok**
+DST-korrekte Kamera-Schlafdauer, **eor** OTA-Auto-Rollback). Alle 840 Unit-Tests grün,
+jeder Cluster code-reviewed (6r2, 3sr, cs9 adversarial auf Verhaltens-Parität geprüft).
+Diese Session prüft, was die Tests **nicht** abdecken: echte Telegram-Zustellung,
+MQTT/Hardware-Timing, OTA am echten Pi, Zeitzone am realen Kalendertag, Zustand über
+einen echten Daemon-Neustart hinweg.
 
 > Dieser Plan bündelt die aktuelle master-Vorlage; er wird beim nächsten Release
 > (Version dann via `release`-Skill) zur Release-Abnahme. **Noch nicht durchgeführt** —
@@ -57,6 +58,15 @@ echten Pi, Zeitzone am realen Kalendertag.
 - [ ] Nach Rollback: `/status` zeigt die laufende (alte) Version; `systemctl status` active, keine Traceback-Zeilen.
 - [ ] Attempt-/Rollback-Marker in `/tmp` werden gesetzt und wieder geräumt (kein Dauer-Rückstand).
 
+## 5 · cs9 — Typisierte Datenbankzugriffe (verhaltenserhaltend)
+> Regenereignis-Zustand, Kamera-Koppelfenster und der Aufnahme-Verzug-Schlüssel laufen jetzt
+> über benannte Zugriffe in `database.py` statt roher, in zwei Adaptern duplizierter Literale
+> (ADR 0045 abgeschlossen). Reine Umlagerung — kein Verhalten geändert.
+- [ ] **Regenereignis übersteht einen Neustart:** Regen laufen lassen (`RainEventStarted`), Daemon währenddessen neu starten (`sudo systemctl restart garden-irrigation`) → **kein zweites** „🌧 Regen erkannt", Gesamtmenge läuft nach dem Neustart korrekt weiter, `/tagesbericht` zeigt die volle Menge.
+- [ ] **Kamera-Kopplung funktioniert wie zuvor:** ⚙️ Einstellungen ▸ 📷 Kamera koppeln starten, Kamera meldet sich → **„✅ Kamera-Kopplung erfolgreich!"**; Timeout ohne Meldung → **„❌ Kamera-Kopplung fehlgeschlagen"**. Koppelfenster schließt sich in beiden Fällen zuverlässig (zweiter Kopplungsversuch startet sauber).
+- [ ] **Getimte Fotos weiterhin dedupliziert:** über mehrere Aufnahme-Zeitpunkte hinweg kein doppelt zugestelltes Foto (dieselbe `last_delivered_target`-Logik wie zuvor, nur zentralisiert).
+- [ ] `journalctl` zeigt keine neuen Fehler/Tracebacks rund um Regenereignis, Kopplung oder Foto-Zustellung.
+
 ---
 
 ## Abbruch-/Rollback-Kriterien
@@ -65,7 +75,8 @@ echten Pi, Zeitzone am realen Kalendertag.
 - **Watchdog feuert wiederholt** statt einmal je Episode, oder entwarnt fälschlich → 6r2-Regression.
 - **Kamera trifft ihre Zeitpunkte um ~1 h daneben** (an einem Umstellungstag) → fok-Regression.
 - **Update-Fehler ohne Auto-Rollback** (Dienst bleibt kaputt/tot) → eor-Regression.
+- **Doppeltes „Regen erkannt" nach Neustart**, hängendes Koppelfenster oder doppelt zugestelltes Foto → cs9-Regression.
 
 ## Nach erfolgreicher Session
 - [ ] Kurzes Go/No-Go notieren; bei Go geht das Bündel ins nächste Release (`release`-Skill).
-- [ ] Offen für später: `cs9` (typisierte Metadaten, P3), `mtb`/Feature 0018 (Aktions-Buttons — 3sr ist der Enabler), `top` (wartet auf Kamera-Telemetrie), `55t` (Kopplungs-Folgeaktionen).
+- [ ] Offen für später: `mtb`/Feature 0018 (Aktions-Buttons — 3sr ist der Enabler), `top` (wartet auf Kamera-Telemetrie), `55t` (Kopplungs-Folgeaktionen).
