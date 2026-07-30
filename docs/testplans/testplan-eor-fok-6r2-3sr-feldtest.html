@@ -151,7 +151,7 @@
   <div class="head-inner">
     <div class="eyebrow"><span class="dot"></span>Feld-Test · unveröffentlichte master-Vorlage</div>
     <h1>Testplan Feldtest — <span class="rel">eor · fok · 6r2 · 3sr</span></h1>
-    <p class="sub">Drei verhaltenserhaltende Refactors (Watchdog-Flanken, Benachrichtigungs-Registry, typisierte DB-Zugriffe) + zwei Fixes (DST-Kamera-Schlaf, OTA-Auto-Rollback). 840 Unit-Tests grün, jeder Cluster code-reviewed. Teil-Durchlauf am 29.07.2026 lokal gegen den TestBot erledigt (siehe Banner) — fok/eor bleiben für den echten Pi-Feldtest offen.</p>
+    <p class="sub">Drei verhaltenserhaltende Refactors (Watchdog-Flanken, Benachrichtigungs-Registry, typisierte DB-Zugriffe) + zwei Fixes (DST-Kamera-Schlaf, OTA-Auto-Rollback). 840 Unit-Tests grün, jeder Cluster code-reviewed. Lokal (29.07.) + auf dem echten Pi (30.07.) durchgeführt — nur <code>fok</code> (DST) steht noch aus.</p>
     <div class="progline">
       <div class="bar"><i id="barFill"></i></div>
       <div class="pct"><b id="pctDone">0</b>/<span id="pctTotal">0</span> Schritte · <b id="pctNum">0%</b></div>
@@ -161,10 +161,10 @@
 
 <div class="wrap">
   <div class="status-banner">
-    <span class="sb-badge go">TEIL-GO</span>
-    <div class="sb-txt"><b>29.07.2026, lokal gegen den TestBot:</b> alle 3sr-, 6r2- und cs9-Punkte, die ohne Pi-Hardware bzw. Wetter-/Zeitplan-Setup reproduzierbar waren, live bestätigt.
-      <b>Bonusfund:</b> ein echter (produktionsharmloser) Import-Bug in der Kamera-Kopplung wurde dabei entdeckt und noch in derselben Session gefixt (Ticket yqu).
-      <span class="meta"> · <code>fok</code>/<code>eor</code> und der 3sr-Regen-Button stehen für den echten Pi-Feldtest aus — Häkchen für diese Punkte bleiben offen.</span>
+    <span class="sb-badge go">GO</span>
+    <div class="sb-txt"><b>29.07. lokal + 30.07. auf dem echten Pi (garten-null):</b> alle 3sr-, 6r2-, cs9- und eor-Punkte live bestätigt.
+      <b>Zwei Funde unterwegs:</b> ein produktionsharmloser Import-Bug in der Kamera-Kopplung (Ticket yqu, gefixt) sowie ein Fehler im eor-Testaufbau selbst (<code>die()</code> umgeht den ERR-Trap via internem <code>exit</code>) — mit einem echten fehlschlagenden Befehl lief der Rollback danach exakt wie entworfen.
+      <span class="meta"> · Nur <code>fok</code> (DST) und der 3sr-Regen-Button (braucht Wetterlage) bleiben offen.</span>
     </div>
   </div>
   <main id="app"></main>
@@ -182,7 +182,7 @@
   </div>
 
   <footer>
-    <div class="verdict">Ergebnis: <b>TEIL-GO (lokal, 29.07.2026)</b> — fok/eor/3sr-Regen-Button für den echten Pi-Feldtest offen. Danach offen:
+    <div class="verdict">Ergebnis: <b>GO</b> (lokal 29.07. + echter Pi 30.07.2026) — nur <code>fok</code> (DST) und der 3sr-Regen-Button bleiben offen. Danach offen:
       <div class="open-tags">
         <span class="tag">mtb · Aktions-Buttons (3sr = Enabler)</span>
         <span class="tag">top · wartet auf Telemetrie</span>
@@ -198,10 +198,10 @@ const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 
 const DATA = [
   { kind:'plain', kicker:'Vorbereitung', tag:'', items:[
-    {t:'Neueste master-Version ist auf der Steuerzentrale (Auto-Update oder <code>/update</code>).'},
-    {t:'<span class="em">0044-Selbsttest:</span> Beim Start meldet der Bot <span class="em">„🚀 Update aktiv — jetzt auf <code>vX.Y.Z</code>"</span>.', star:true, flag:'0044'},
-    {t:'<code>systemctl status garden-irrigation</code> → active, keine Traceback-Zeilen.'},
-    {t:'<code>journalctl -u garden-irrigation -n 50</code> → sauberer Start, „Laufende Version: …".'},
+    {t:'Neueste master-Version ist auf der Steuerzentrale (Auto-Update oder <code>/update</code>).', v:'ok'},
+    {t:'<span class="em">0044-Selbsttest:</span> Beim Start meldet der Bot <span class="em">„🚀 Update aktiv — jetzt auf <code>vX.Y.Z</code>"</span>.', star:true, flag:'0044', v:'ok'},
+    {t:'<code>systemctl status garden-irrigation</code> → active, keine Traceback-Zeilen.', v:'ok'},
+    {t:'<code>journalctl -u garden-irrigation -n 50</code> → sauberer Start, „Laufende Version: …".', v:'ok'},
   ]},
   { kind:'num', n:1, title:'Benachrichtigungs-Registry — jede Meldung kommt real an', tag:'3sr',
     desc:'Alle Push-Meldungen laufen jetzt über die NOTIFICATIONS-Registry; Text byte-identisch.', items:[
@@ -231,10 +231,10 @@ const DATA = [
   ]},
   { kind:'num', n:4, title:'OTA-Auto-Rollback bei Update-Fehler', tag:'eor',
     desc:'update.sh rollt bei jedem Fehler nach Update-Beginn automatisch zurück (ERR-Trap).', items:[
-    {t:'Normales Update läuft durch → <span class="em">„🚀 Update aktiv — jetzt auf <code>vX.Y.Z</code>"</span>, Dienst active.'},
-    {t:'(kontrolliert provozierbar) fehlerhaftes Update → <span class="em">Auto-Rollback</span>: Dienst läuft auf der <span class="em">Vorgängerversion</span> weiter; Bot meldet <span class="em">„❌ Update fehlgeschlagen"</span> bzw. bei Abbruch vor dem Rollback <span class="em">„⚠️ Update unterbrochen … Bitte <code>/status</code> prüfen"</span>.'},
-    {t:'Nach Rollback: <code>/status</code> zeigt die laufende (alte) Version; <code>systemctl status</code> active, keine Traceback-Zeilen.'},
-    {t:'Attempt-/Rollback-Marker in <code>/tmp</code> werden gesetzt und wieder geräumt (kein Dauer-Rückstand).'},
+    {t:'Normales Update läuft durch → <span class="em">„🚀 Update aktiv — jetzt auf <code>vX.Y.Z</code>"</span>, Dienst active.', v:'ok'},
+    {t:'(kontrolliert provozierbar) fehlerhaftes Update → <span class="em">Auto-Rollback</span>: Dienst läuft auf der <span class="em">Vorgängerversion</span> weiter; Bot meldet <span class="em">„❌ Update fehlgeschlagen"</span>.', star:true, flag:'Pi live', v:'ok'},
+    {t:'Nach Rollback: <code>/status</code> zeigt die laufende (alte) Version; <code>systemctl status</code> active, keine Traceback-Zeilen.', v:'ok'},
+    {t:'Attempt-/Rollback-Marker in <code>/tmp</code> werden gesetzt und wieder geräumt (kein Dauer-Rückstand).', v:'ok'},
   ]},
   { kind:'num', n:5, title:'Typisierte Datenbankzugriffe', tag:'cs9',
     desc:'Regenereignis, Kamera-Koppelfenster, Aufnahme-Verzug-Schlüssel — zentral statt roher Literale in zwei Adaptern (ADR 0045).', items:[
