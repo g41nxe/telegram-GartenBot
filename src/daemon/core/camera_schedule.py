@@ -78,6 +78,48 @@ def _absolute_targets(now: datetime, photo_times: list):
     return targets
 
 
+def daylight_filter(is_daylight, types):
+    """Baut den Aufnahme-Filter ``(target_dt, label) -> bool`` oder None (= nicht filtern).
+
+    Trennt die beiden Fragen sauber: `is_daylight` (aus `core/sun.py`) weiß, wann Licht ist;
+    `types` weiß, welche Sorte Aufnahme-Zeitpunkt sich davon aufhalten lässt. Ein Guss-Foto
+    entsteht als Nebenwirkung eines Zeitplans, den der Benutzer wegen der Bewässerung auf
+    22:00 gelegt hat — eine feste Fotozeit hat er dagegen bewusst gesetzt. Welche davon der
+    Dunkelheit weichen, entscheidet die Konfiguration, nicht dieses Modul.
+
+    Ohne `is_daylight` (keine Koordinaten konfiguriert) oder ohne `types` gibt es keinen
+    Filter — dann bleibt das Verhalten das vorherige.
+    """
+    if is_daylight is None or not types:
+        return None
+
+    erlaubte_typen = set(types)
+
+    def photo_allowed(target_dt: datetime, label: dict) -> bool:
+        if (label or {}).get("type") not in erlaubte_typen:
+            return True
+        return is_daylight(target_dt)
+
+    return photo_allowed
+
+
+def _all_targets(now, schedules, photo_times, after_offset_minutes, photo_allowed=None):
+    """Alle Aufnahme-Zeitpunkte als (target_dt, caption, label) — bereits gefiltert.
+
+    Der Filter greift hier und nur hier: Ein unterdrückter Zeitpunkt existiert damit für
+    *jeden* Verbraucher nicht. Filterte stattdessen erst die Zustellung, bliebe der Zeitpunkt
+    für den Watchdog bestehen und würde als verpasst gemeldet (ADR 0041) — das schwarze Foto
+    wäre durch einen Fehlalarm ersetzt, und die Kamera wäre nachts trotzdem aufgewacht.
+    """
+    targets = (
+        _guss_targets(now, schedules, after_offset_minutes)
+        + _absolute_targets(now, photo_times)
+    )
+    if photo_allowed is None:
+        return targets
+    return [t for t in targets if photo_allowed(t[0], t[2])]
+
+
 def _real_seconds(now: datetime, target: datetime, tz) -> float:
     """Tatsächlich verstrichene Sekunden von ``now`` bis ``target``.
 
@@ -101,6 +143,7 @@ def compute_next_sleep_seconds(
     interval_seconds: int,
     after_offset_minutes: int,
     tz=None,
+    photo_allowed=None,
 ) -> int:
     """Berechnet die optimale Schlafdauer für die Kamera.
 
@@ -113,9 +156,8 @@ def compute_next_sleep_seconds(
     """
     best_seconds = interval_seconds
 
-    all_targets = (
-        _guss_targets(now, schedules, after_offset_minutes)
-        + _absolute_targets(now, photo_times)
+    all_targets = _all_targets(
+        now, schedules, photo_times, after_offset_minutes, photo_allowed
     )
 
     for target_dt, _, _label in all_targets:
@@ -131,6 +173,7 @@ def faelliger_aufnahme_zeitpunkt(
     schedules: list,
     photo_times: list,
     after_offset_minutes: int,
+    photo_allowed=None,
 ) -> tuple | None:
     """Gibt den jüngsten bereits fälligen Aufnahme-Zeitpunkt zurück: (target_dt, caption, label).
 
@@ -143,9 +186,8 @@ def faelliger_aufnahme_zeitpunkt(
     konfiguriert, liegt immer einer in der Vergangenheit — vor der ersten Fotozeit des Tages
     ist das der Zeitpunkt des Vortags, der bis dahin offen bleibt.
     """
-    all_targets = (
-        _guss_targets(now, schedules, after_offset_minutes)
-        + _absolute_targets(now, photo_times)
+    all_targets = _all_targets(
+        now, schedules, photo_times, after_offset_minutes, photo_allowed
     )
 
     best = None
@@ -164,6 +206,7 @@ def verpasste_aufnahme_zeitpunkte(
     photo_times: list,
     after_offset_minutes: int,
     zuletzt_zugestellt: datetime | None,
+    photo_allowed=None,
 ) -> list:
     """Aufnahme-Zeitpunkte, die abgelöst wurden, ohne je ein Bild erhalten zu haben (ADR 0041).
 
@@ -178,9 +221,8 @@ def verpasste_aufnahme_zeitpunkte(
 
     faellige = sorted(
         target_dt
-        for target_dt, _caption, _label in (
-            _guss_targets(now, schedules, after_offset_minutes)
-            + _absolute_targets(now, photo_times)
+        for target_dt, _caption, _label in _all_targets(
+            now, schedules, photo_times, after_offset_minutes, photo_allowed
         )
         if zuletzt_zugestellt < target_dt <= now
     )
@@ -222,14 +264,14 @@ def next_photo_target(
     schedules: list,
     photo_times: list,
     after_offset_minutes: int,
+    photo_allowed=None,
 ) -> tuple | None:
     """Gibt den nächsten zukünftigen Aufnahme-Zeitpunkt zurück: (target_dt, label) oder None.
 
     label = {"type": "guss", "name": str} | {"type": "fix"}
     """
-    all_targets = (
-        _guss_targets(now, schedules, after_offset_minutes)
-        + _absolute_targets(now, photo_times)
+    all_targets = _all_targets(
+        now, schedules, photo_times, after_offset_minutes, photo_allowed
     )
 
     best_dt = None

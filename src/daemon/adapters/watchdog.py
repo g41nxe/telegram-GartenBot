@@ -3,6 +3,7 @@ from datetime import datetime
 
 from . import database
 from .. import config
+from .. import camera_daylight
 from .mqtt_client import _global_bus
 from ..core.watchdog_events import InactivityAlertTriggered, InactivityAlertResolved
 from ..core.valve_events import ValveStatusReported
@@ -278,6 +279,8 @@ def run_watchdog_check():
 
         verpasst = camera_schedule.verpasste_aufnahme_zeitpunkte(
             now, schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES, zuletzt,
+            # Ein bei Dunkelheit unterdrueckter Zeitpunkt ist kein Verzug, sondern Absicht.
+            photo_allowed=camera_daylight.photo_allowed(),
         )
 
         for target_dt in verpasst:
