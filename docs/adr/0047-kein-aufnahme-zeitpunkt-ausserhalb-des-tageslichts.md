@@ -43,6 +43,17 @@ zwischen 15:50 und 21:33.
   (kein angekündigter Zeitpunkt, der nie kommt). Ein unterdrückter Aufnahme-Zeitpunkt ist
   **nicht vorhanden**, nicht **ausgefallen**.
 
+- **Zweite Prüfung auf die Ankunftszeit des Bildes.** Der Aufnahme-Zeitpunkt allein genügt
+  nicht: Er bleibt offen, bis ein Bild ihn erfüllt (ADR 0040). Liegt die Garten-Kamera im
+  Backoff, kann das Bild zu einem hellen Zeitpunkt Stunden später im Dunkeln entstehen — der
+  Zeitpunkt war hell, die Aufnahme ist es nicht. `camera_receiver` prüft deshalb dasselbe
+  Prädikat ein zweites Mal, nun gegen die Ankunftszeit. Der Zeitpunkt wird dabei **trotzdem
+  als bedient vermerkt**: Die Kamera war nicht stumm, es ist also kein verpasster
+  Aufnahme-Zeitpunkt. Ohne diesen Vermerk ersetzte die Unterdrückung das schwarze Foto durch
+  einen Fehlalarm. Preis: Für dieses eine Bild entfällt auch die Verzugs-Bewertung, die am
+  `TimedPhotoCaptured`-Ereignis hängt — ein lohnender Tausch gegen ein schwarzes Foto plus
+  Fehlalarm.
+
 - **Sonnenauf-/untergang wird gerechnet, nicht abgefragt.** `core/sun.py` implementiert die
   Sonnenaufgangsgleichung (NOAA/Meeus, gekürzte Reihe) mit `math` — rein, ohne I/O, ~2 min
   genau. Der Netzweg hätte Persistenz und Durchreichung der Zeiten erfordert und wäre bei
@@ -60,8 +71,15 @@ zwischen 15:50 und 21:33.
   hat der Benutzer bewusst gesetzt. Beide Lesarten sind vertretbar, deshalb entscheidet die
   Konfiguration und nicht der Code. Leere Menge = Filter aus.
 
-- **Ohne Koordinaten bleibt der Filter aus.** `LATITUDE`/`LONGITUDE` haben den Vorgabewert
-  `0.0` (config.py) — das ist der Golf von Guinea. Lieber nicht filtern als am falschen Ort.
+- **Fehlt eine Voraussetzung, bleibt der Filter aus** — der sichere Rückfall ist das bisherige
+  Verhalten, nicht ein geratenes Fenster. Ein um Stunden verschobenes Tageslicht-Fenster
+  unterdrückte Fotos am hellen Tag und ließe nächtliche durch, also genau das Gegenteil des
+  Gewollten. Drei Fälle: keine Koordinaten (`LATITUDE`/`LONGITUDE` haben den Vorgabewert
+  `0.0` — der Golf von Guinea); **nur eine** der beiden gesetzt (fast sicher eine halb
+  ausgefüllte `.env`, der Ort läge auf Nullmeridian oder Äquator); und eine unbrauchbare
+  `TIMEZONE` — dann rechnete `sun` in UTC, während die Aufnahme-Zeitpunkte lokale Wanduhrzeit
+  sind, in Berlin im Sommer zwei Stunden daneben. Die letzten beiden melden eine Warnung; der
+  erste ist der Normalfall einer Anlage ohne Koordinaten und schweigt.
 
 - **Die Verdrahtung liegt in `src/daemon/camera_daylight.py`.** Nach ADR 0045 folgt der
   Modulort der Kopplung: Der Code liest Konfiguration (also kein Kern-Modul) und wird von

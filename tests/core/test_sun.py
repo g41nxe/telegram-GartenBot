@@ -49,6 +49,43 @@ class TestSunTimes:
         # Naive Wanduhrzeit springt um ~1 h vor (abzüglich ~2 min echter Tagesdrift).
         assert 55 <= _minuten(nach) - _minuten(vor) <= 62
 
+    def test_suedhalbkugel_hat_die_jahreszeit_umgekehrt(self):
+        """Sydney (33.87 S), 21.06.2026 — dort Wintersonnenwende: Aufgang ~07:00, Untergang ~16:54.
+
+        Zusammen mit Berlin faengt dieser Fall ein falsches Vorzeichen in sin(phi)*sin(decl):
+        beide Orte haben dasselbe Datum, aber gegenlaeufige Tageslaenge.
+        """
+        sydney = ZoneInfo("Australia/Sydney")
+        aufgang, untergang = sun.sun_times(date(2026, 6, 21), -33.87, 151.21, tz=sydney)
+
+        assert abs(_minuten(aufgang) - (7 * 60 + 0)) <= 4
+        assert abs(_minuten(untergang) - (16 * 60 + 54)) <= 4
+
+    def test_negativer_laengengrad(self):
+        """New York (74.01 W), 21.06.2026: Aufgang ~05:25, Untergang ~20:31 (EDT).
+
+        Faengt ein falsches Vorzeichen in `j_star = n - longitude/360` — Berlin allein
+        (oestliche Laenge) wuerde es durchgehen lassen.
+        """
+        new_york = ZoneInfo("America/New_York")
+        aufgang, untergang = sun.sun_times(date(2026, 6, 21), 40.71, -74.01, tz=new_york)
+
+        assert abs(_minuten(aufgang) - (5 * 60 + 25)) <= 4
+        assert abs(_minuten(untergang) - (20 * 60 + 31)) <= 4
+
+    def test_aequinoktium_ist_etwas_laenger_als_zwoelf_stunden(self):
+        """Zur Tagundnachtgleiche misst der Tag mehr als 12 h — und das ist richtig so.
+
+        Auf- und Untergang gelten, wenn der *obere Rand* der Sonne den Horizont beruehrt, und
+        die Refraktion hebt ihn zusaetzlich (`_SUN_DISC_ALTITUDE = -0.833°`). In Berlin macht
+        das rund 13 Minuten aus. Ein Ergebnis von exakt 12 h waere ein Zeichen dafuer, dass der
+        Sonnendurchmesser unterschlagen wurde.
+        """
+        aufgang, untergang = sun.sun_times(date(2026, 9, 22), LAT, LON, tz=BERLIN)
+
+        tageslaenge = _minuten(untergang) - _minuten(aufgang)
+        assert 12 * 60 + 5 <= tageslaenge <= 12 * 60 + 25
+
     def test_polartag_liefert_none(self):
         """Spitzbergen im Juni: Die Sonne geht nicht unter — kein Auf-/Untergang bestimmbar."""
         assert sun.sun_times(date(2026, 6, 21), SVALBARD_LAT, SVALBARD_LON, tz=BERLIN) is None

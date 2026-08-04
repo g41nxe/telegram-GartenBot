@@ -21,7 +21,7 @@ def ohne_tageslicht_filter(monkeypatch):
     Receiver prueft `TestTageslichtFilterVerdrahtung` weiter unten mit festen Uhrzeiten.
     """
     monkeypatch.setattr(
-        "src.daemon.camera_daylight.photo_allowed", lambda: None
+        "src.daemon.camera_daylight.build_photo_filter", lambda: None
     )
 
 
@@ -525,7 +525,7 @@ class TestTageslichtFilterVerdrahtung:
 
     def _setze_filter(self, monkeypatch, erlaubt: bool):
         monkeypatch.setattr(
-            "src.daemon.camera_daylight.photo_allowed",
+            "src.daemon.camera_daylight.build_photo_filter",
             lambda: (lambda target_dt, label: erlaubt),
         )
 
@@ -595,3 +595,78 @@ class TestTageslichtFilterVerdrahtung:
         assert settings["sleep_duration_seconds"] == 900, (
             "Fuer einen unterdrueckten Aufnahme-Zeitpunkt darf die Kamera nicht geweckt werden"
         )
+
+    def test_bild_das_erst_nachts_eintrifft_wird_nicht_zugestellt(
+        self, running_server, event_bus, monkeypatch
+    ):
+        """Ein tagsueber faelliger Zeitpunkt, dessen Bild erst im Dunkeln ankommt.
+
+        Der Zeitpunkt bleibt offen, bis ihn ein Bild erfuellt (ADR 0040) — liegt die Kamera im
+        Backoff, entsteht dieses Bild womoeglich Stunden spaeter und ist schwarz. Der Zeitpunkt
+        war hell, die Aufnahme ist es nicht.
+        """
+        from datetime import datetime, timedelta
+        from src.daemon.core.camera_events import TimedPhotoCaptured
+
+        mac = "FC:00:LA:TE:00:01"
+        database.add_camera(mac, "SpaetCam")
+        ziel = (datetime.now() - timedelta(minutes=2)).replace(second=0, microsecond=0)
+        database.add_photo_time(ziel.strftime("%H:%M"))
+
+        # Erlaubt genau die Ziel-Minute (= hell), lehnt jeden anderen Moment ab (= dunkel).
+        monkeypatch.setattr(
+            "src.daemon.camera_daylight.build_photo_filter",
+            lambda: (lambda moment, label: moment.replace(second=0, microsecond=0) == ziel),
+        )
+
+        captured = []
+        event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{running_server}/upload",
+            headers={"X-Camera-MAC": mac},
+            data=JPEG_PAYLOAD,
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+
+        assert not _warte_auf(lambda: len(captured) == 1, timeout=1.0), (
+            "Ein im Dunkeln eingetroffenes Bild darf nicht zugestellt werden"
+        )
+
+    def test_nachts_eingetroffenes_bild_gilt_trotzdem_als_bedient(
+        self, running_server, event_bus, monkeypatch
+    ):
+        """Kehrseite: Der Zeitpunkt wird vermerkt, sonst meldete der Watchdog ihn als verpasst.
+
+        Die Kamera war ja nicht stumm — sie hat geliefert, nur zu spaet und im Dunkeln. Ohne
+        diesen Vermerk haette die Unterdrueckung das schwarze Foto durch einen Fehlalarm
+        ersetzt (ADR 0041).
+        """
+        from datetime import datetime, timedelta
+
+        mac = "FC:00:LA:TE:00:02"
+        database.add_camera(mac, "VermerkCam")
+        ziel = (datetime.now() - timedelta(minutes=2)).replace(second=0, microsecond=0)
+        database.add_photo_time(ziel.strftime("%H:%M"))
+
+        monkeypatch.setattr(
+            "src.daemon.camera_daylight.build_photo_filter",
+            lambda: (lambda moment, label: moment.replace(second=0, microsecond=0) == ziel),
+        )
+
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{running_server}/upload",
+            headers={"X-Camera-MAC": mac},
+            data=JPEG_PAYLOAD,
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+
+        schluessel = database.last_delivered_target_key(mac)
+        assert _warte_auf(lambda: database.get_metadata(schluessel) is not None), (
+            "Der Aufnahme-Zeitpunkt muss als bedient vermerkt sein, sonst gilt er als verpasst"
+        )
+        assert database.get_metadata(schluessel) == ziel.isoformat()

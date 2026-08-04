@@ -1202,7 +1202,7 @@ def handle_status(chat_id: int):
         photo_target = _next_photo_target(
             now, all_schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
             # Was nachts nicht ausgeloest wird, darf der Bot auch nicht ankuendigen.
-            photo_allowed=camera_daylight.photo_allowed(),
+            photo_allowed=camera_daylight.build_photo_filter(),
         )
         if photo_target:
             pt_dt, pt_label = photo_target

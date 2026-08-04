@@ -280,7 +280,7 @@ def run_watchdog_check():
         verpasst = camera_schedule.verpasste_aufnahme_zeitpunkte(
             now, schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES, zuletzt,
             # Ein bei Dunkelheit unterdrueckter Zeitpunkt ist kein Verzug, sondern Absicht.
-            photo_allowed=camera_daylight.photo_allowed(),
+            photo_allowed=camera_daylight.build_photo_filter(),
         )
 
         for target_dt in verpasst:

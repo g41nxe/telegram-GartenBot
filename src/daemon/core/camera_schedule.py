@@ -78,8 +78,16 @@ def _absolute_targets(now: datetime, photo_times: list):
     return targets
 
 
+# Die Label-Typen, die ein Aufnahme-Zeitpunkt tragen kann — zugleich die gültigen Werte für
+# den Geltungsbereich des Tageslicht-Filters (ADR 0047).
+TARGET_TYPES = frozenset({"guss", "fix"})
+
+
 def daylight_filter(is_daylight, types):
-    """Baut den Aufnahme-Filter ``(target_dt, label) -> bool`` oder None (= nicht filtern).
+    """Baut den Aufnahme-Filter ``(moment, label) -> bool`` oder None (= nicht filtern).
+
+    Geprüft wird ein *Zeitpunkt* gegen einen *Label-Typ* — beim Planen der Aufnahme-Zeitpunkt,
+    beim Eintreffen eines Bildes dessen Ankunftszeit (ADR 0047).
 
     Trennt die beiden Fragen sauber: `is_daylight` (aus `core/sun.py`) weiß, wann Licht ist;
     `types` weiß, welche Sorte Aufnahme-Zeitpunkt sich davon aufhalten lässt. Ein Guss-Foto
@@ -93,12 +101,12 @@ def daylight_filter(is_daylight, types):
     if is_daylight is None or not types:
         return None
 
-    erlaubte_typen = set(types)
+    allowed_types = set(types)
 
-    def photo_allowed(target_dt: datetime, label: dict) -> bool:
-        if (label or {}).get("type") not in erlaubte_typen:
+    def photo_allowed(moment: datetime, label: dict) -> bool:
+        if (label or {}).get("type") not in allowed_types:
             return True
-        return is_daylight(target_dt)
+        return is_daylight(moment)
 
     return photo_allowed
 

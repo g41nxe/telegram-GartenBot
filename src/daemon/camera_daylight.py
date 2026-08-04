@@ -31,19 +31,49 @@ def local_tz():
         return None
 
 
-def photo_allowed():
-    """Der Aufnahme-Filter ``(target_dt, label) -> bool`` — oder None, wenn nicht gefiltert wird.
+def build_photo_filter():
+    """Baut den Aufnahme-Filter ``(moment, label) -> bool`` — oder None, wenn nicht gefiltert wird.
 
-    None kommt in drei Fällen: keine Koordinaten in der `.env` (Standard 0.0/0.0 wäre der
-    Golf von Guinea — lieber gar nicht filtern als am falschen Ort), leere Typmenge, oder
-    beides. In allen dreien bleibt das bisherige Verhalten unverändert.
+    None heißt „Verhalten wie vorher" und ist der sichere Rückfall. Er greift, sobald eine
+    Voraussetzung fehlt, statt mit einem falschen Tageslicht-Fenster zu arbeiten — ein um
+    Stunden verschobenes Fenster unterdrückt Fotos am hellen Tag und lässt nächtliche durch,
+    also genau das Gegenteil des Gewollten.
     """
+    types = config.CAMERA_DAYLIGHT_FILTER_TYPES
+    if not types:
+        return None
+
+    unbekannt = set(types) - camera_schedule.TARGET_TYPES
+    if unbekannt:
+        logger.warning(
+            f"CAMERA_DAYLIGHT_FILTER_TYPES enthält unbekannte Werte {sorted(unbekannt)} — "
+            f"gültig sind {sorted(camera_schedule.TARGET_TYPES)}. Sie bleiben wirkungslos."
+        )
+
     lat, lon = config.LATITUDE, config.LONGITUDE
     if not lat and not lon:
+        # Vorgabe 0.0/0.0 heißt „nicht konfiguriert" — das wäre der Golf von Guinea.
         logger.debug("Keine Koordinaten konfiguriert — Tageslicht-Filter bleibt aus.")
+        return None
+    if not lat or not lon:
+        # Nur eine der beiden gesetzt: fast sicher eine halb ausgefüllte .env. Der Ort läge
+        # auf dem Nullmeridian oder dem Äquator und das Fenster wäre um Stunden verschoben.
+        logger.warning(
+            f"Unvollständige Koordinaten (LATITUDE={lat}, LONGITUDE={lon}) — "
+            f"Tageslicht-Filter bleibt aus."
+        )
+        return None
+
+    tz = local_tz()
+    if tz is None:
+        # Ohne Zeitzone rechnete `sun` in UTC, die Aufnahme-Zeitpunkte sind aber lokale
+        # Wanduhrzeit — in Berlin läge das Fenster im Sommer zwei Stunden zu früh.
+        logger.warning(
+            f"Zeitzone '{config.TIMEZONE}' unbrauchbar — Tageslicht-Filter bleibt aus."
+        )
         return None
 
     is_daylight = sun.daylight_predicate(
-        lat, lon, config.CAMERA_DAYLIGHT_MARGIN_MINUTES, tz=local_tz()
+        lat, lon, config.CAMERA_DAYLIGHT_MARGIN_MINUTES, tz=tz
     )
-    return camera_schedule.daylight_filter(is_daylight, config.CAMERA_DAYLIGHT_FILTER_TYPES)
+    return camera_schedule.daylight_filter(is_daylight, types)

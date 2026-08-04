@@ -282,7 +282,7 @@ class TestVerpassteAufnahmeZeitpunkte(unittest.TestCase):
         # tagsueber gruen und nachts rot. Die Wechselwirkung Filter↔Verzugsmeldung prueft
         # `test_unterdrueckter_zeitpunkt_gilt_nicht_als_verpasst` mit festem Praedikat.
         self._daylight_patcher = patch(
-            "daemon.camera_daylight.photo_allowed", return_value=None
+            "daemon.camera_daylight.build_photo_filter", return_value=None
         )
         self._daylight_patcher.start()
         self.events = []
@@ -303,7 +303,7 @@ class TestVerpassteAufnahmeZeitpunkte(unittest.TestCase):
         from datetime import datetime, timedelta
         self._daylight_patcher.stop()
         dunkel = patch(
-            "daemon.camera_daylight.photo_allowed",
+            "daemon.camera_daylight.build_photo_filter",
             return_value=(lambda target_dt, label: False),
         )
         dunkel.start()
