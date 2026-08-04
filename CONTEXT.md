@@ -182,6 +182,10 @@ _Avoid_: Bewässerungs-Foto, Post-Guss-Bild.
 Ein Aufnahme-Zeitpunkt zu einer global konfigurierten, vom Guss unabhängigen Uhrzeit. Wird im Telegram-Bot direkt angelegt und gelöscht und mit der Uhrzeit beschriftet („Foto um 18:00"). Abzugrenzen vom Guss-Foto, das an einen Zeitplan gebunden ist.
 _Avoid_: Absolute Fotozeit, Fix-Uhrzeit.
 
+**Tageslicht-Fenster**:
+Die Spanne zwischen Sonnenaufgang und Sonnenuntergang am Standort der Anlage, um den **Tageslicht-Puffer** an beiden Enden nach innen verkürzt. Sonnenauf- und -untergang werden aus Koordinaten und Datum **gerechnet**, nicht abgefragt (ADR 0047). Ein Aufnahme-Zeitpunkt außerhalb des Tageslicht-Fensters **entsteht gar nicht**: Die Garten-Kamera hat kein Licht, das Bild wäre schwarz. Er wird deshalb weder geweckt noch zugestellt noch als verpasster Aufnahme-Zeitpunkt gemeldet — er ist unterdrückt, nicht ausgefallen.
+_Avoid_: Nachtsperre, Dunkelheits-Check, Helligkeitsfilter.
+
 **Regensensor**:
 Der batteriebetriebene, WLAN-basierte Niederschlagsmesser (Aqua Scope RANWIE01), der Regenmengen und Temperatur lokal im Garten erfasst und per MQTT an die Steuerzentrale sendet. Er ist die primäre Quelle für gemessene Niederschlagsmengen; die ERA5-Reanalyse des Wetter-Dienstes dient als automatischer Fallback bei Ausfall.
 _Avoid_: Wetterstation, Regenmesser, Sensor-Modul.

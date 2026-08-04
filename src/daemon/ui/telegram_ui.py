@@ -8,6 +8,7 @@ import urllib.error
 from datetime import datetime, timedelta
 from pathlib import Path
 from .. import config
+from .. import camera_daylight
 from ..adapters import database, diagnose
 from . import telegram_client
 
@@ -1199,7 +1200,9 @@ def handle_status(chat_id: int):
     if cameras:
         photo_times = database.get_photo_times()
         photo_target = _next_photo_target(
-            now, all_schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES
+            now, all_schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
+            # Was nachts nicht ausgeloest wird, darf der Bot auch nicht ankuendigen.
+            photo_allowed=camera_daylight.build_photo_filter(),
         )
         if photo_target:
             pt_dt, pt_label = photo_target

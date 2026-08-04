@@ -278,13 +278,48 @@ class TestVerpassteAufnahmeZeitpunkte(unittest.TestCase):
         db.add_camera(self.MAC, "Garten01")
         # Kamera meldet sich regelmaessig — der Inaktivitaets-Watchdog schweigt also
         db.update_camera_on_upload(self.MAC)
+        # Die Tests rechnen mit `datetime.now()`; ein aktiver Tageslicht-Filter machte sie
+        # tagsueber gruen und nachts rot. Die Wechselwirkung Filter↔Verzugsmeldung prueft
+        # `test_unterdrueckter_zeitpunkt_gilt_nicht_als_verpasst` mit festem Praedikat.
+        self._daylight_patcher = patch(
+            "daemon.camera_daylight.build_photo_filter", return_value=None
+        )
+        self._daylight_patcher.start()
         self.events = []
         from daemon.core.camera_events import CameraDelayAlertTriggered
         _global_bus.subscribe(CameraDelayAlertTriggered, self.events.append)
 
     def tearDown(self):
+        self._daylight_patcher.stop()
         self._db_patcher.stop()
         self.db_path.unlink(missing_ok=True)
+
+    def test_unterdrueckter_zeitpunkt_gilt_nicht_als_verpasst(self):
+        """Bei Dunkelheit entfaellt der Aufnahme-Zeitpunkt — das ist Absicht, kein Verzug.
+
+        Ohne diese Kopplung haette der Filter das schwarze Foto nur durch einen Fehlalarm
+        ersetzt (ADR 0041/0047).
+        """
+        from datetime import datetime, timedelta
+        self._daylight_patcher.stop()
+        dunkel = patch(
+            "daemon.camera_daylight.build_photo_filter",
+            return_value=(lambda target_dt, label: False),
+        )
+        dunkel.start()
+        self.addCleanup(dunkel.stop)
+
+        now = datetime.now()
+        for stunden in (4, 3, 2):
+            t = (now - timedelta(hours=stunden)).replace(second=0, microsecond=0)
+            db.add_photo_time(t.strftime("%H:%M"))
+        zuletzt = (now - timedelta(hours=5)).replace(second=0, microsecond=0)
+        db.set_metadata(f"last_delivered_target:{self.MAC}", zuletzt.isoformat())
+
+        watchdog.run_watchdog_check()
+
+        assert self.events == [], \
+            "Ein bei Dunkelheit unterdrueckter Zeitpunkt darf keinen Verzug melden"
 
     def test_zwei_abgeloeste_zeitpunkte_ohne_bild_melden(self):
         """Drei faellige Zeitpunkte ohne Bild: zwei sind abgeloest (= verpasst), einer noch offen."""

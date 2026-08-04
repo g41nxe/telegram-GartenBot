@@ -11,6 +11,20 @@ from src.daemon.adapters import camera_receiver, database
 from src.daemon.core.event_bus import EventBus
 from src.daemon import config
 
+@pytest.fixture(autouse=True)
+def ohne_tageslicht_filter(monkeypatch):
+    """Schaltet den Tageslicht-Filter fuer die uebrigen Tests dieser Datei ab.
+
+    Sie arbeiten mit `datetime.now()`, also echter Wanduhrzeit. Mit aktivem Filter waeren sie
+    tagsueber gruen und nachts rot — eine Zeitbombe im CI. Der Filter selbst hat eigene,
+    deterministische Tests (test_sun.py, test_camera_schedule.py); seine Verdrahtung im
+    Receiver prueft `TestTageslichtFilterVerdrahtung` weiter unten mit festen Uhrzeiten.
+    """
+    monkeypatch.setattr(
+        "src.daemon.camera_daylight.build_photo_filter", lambda: None
+    )
+
+
 @pytest.fixture
 def test_db():
     temp_db = tempfile.NamedTemporaryFile(delete=False)
@@ -495,3 +509,164 @@ def test_kamera_wartet_nicht_auf_telegram(running_server, event_bus):
         f"Die Kamera musste {dauer:.1f}s auf die Antwort warten — der Versand blockiert "
         f"ihren Upload-Request"
     )
+
+
+# ===========================================================================
+# Tageslicht-Filter: Verdrahtung im Receiver
+# ===========================================================================
+
+class TestTageslichtFilterVerdrahtung:
+    """Der Filter wird im Receiver tatsaechlich uebergeben — nicht nur im Kern gebaut.
+
+    Statt echter Sonnenstands-Rechnung wird ein festes Praedikat eingesetzt: Ob 22:00 im Juni
+    in Berlin dunkel ist, pruefen die Tests in test_sun.py. Hier geht es allein darum, dass
+    ein abgelehnter Aufnahme-Zeitpunkt kein Foto zustellt.
+    """
+
+    def _setze_filter(self, monkeypatch, erlaubt: bool):
+        monkeypatch.setattr(
+            "src.daemon.camera_daylight.build_photo_filter",
+            lambda: (lambda target_dt, label: erlaubt),
+        )
+
+    def test_dunkler_zeitpunkt_stellt_kein_foto_zu(self, running_server, event_bus, monkeypatch):
+        from datetime import datetime
+        from src.daemon.core.camera_events import TimedPhotoCaptured
+
+        self._setze_filter(monkeypatch, erlaubt=False)
+        database.add_camera("FC:00:DA:RK:00:01", "NachtCam")
+        database.add_photo_time(datetime.now().strftime("%H:%M"))
+
+        captured = []
+        event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{running_server}/upload",
+            headers={"X-Camera-MAC": "FC:00:DA:RK:00:01"},
+            data=JPEG_PAYLOAD,
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+
+        assert not _warte_auf(lambda: len(captured) == 1, timeout=1.0), (
+            "Bei Dunkelheit darf kein TimedPhotoCaptured veroeffentlicht werden"
+        )
+
+    def test_heller_zeitpunkt_stellt_zu(self, running_server, event_bus, monkeypatch):
+        """Gegenprobe: Derselbe Aufbau mit erlaubtem Zeitpunkt liefert das Foto."""
+        from datetime import datetime
+        from src.daemon.core.camera_events import TimedPhotoCaptured
+
+        self._setze_filter(monkeypatch, erlaubt=True)
+        database.add_camera("FC:00:DA:RK:00:02", "TagCam")
+        database.add_photo_time(datetime.now().strftime("%H:%M"))
+
+        captured = []
+        event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{running_server}/upload",
+            headers={"X-Camera-MAC": "FC:00:DA:RK:00:02"},
+            data=JPEG_PAYLOAD,
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+
+        assert _warte_auf(lambda: len(captured) == 1)
+
+    def test_kamera_wird_fuer_dunklen_zeitpunkt_nicht_geweckt(self, running_server, monkeypatch):
+        """/config darf die Schlafdauer nicht auf einen unterdrueckten Zeitpunkt kuerzen."""
+        from datetime import datetime, timedelta
+
+        self._setze_filter(monkeypatch, erlaubt=False)
+        database.add_camera("FC:00:DA:RK:00:03", "SchlafCam")
+        database.add_photo_time((datetime.now() + timedelta(minutes=3)).strftime("%H:%M"))
+
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{running_server}/config",
+            headers={"X-Camera-MAC": "FC:00:DA:RK:00:03"},
+            method="GET",
+        )
+        with urllib.request.urlopen(req) as resp:
+            settings = json.loads(resp.read().decode("utf-8"))
+
+        assert settings["sleep_duration_seconds"] == 900, (
+            "Fuer einen unterdrueckten Aufnahme-Zeitpunkt darf die Kamera nicht geweckt werden"
+        )
+
+    def test_bild_das_erst_nachts_eintrifft_wird_nicht_zugestellt(
+        self, running_server, event_bus, monkeypatch
+    ):
+        """Ein tagsueber faelliger Zeitpunkt, dessen Bild erst im Dunkeln ankommt.
+
+        Der Zeitpunkt bleibt offen, bis ihn ein Bild erfuellt (ADR 0040) — liegt die Kamera im
+        Backoff, entsteht dieses Bild womoeglich Stunden spaeter und ist schwarz. Der Zeitpunkt
+        war hell, die Aufnahme ist es nicht.
+        """
+        from datetime import datetime, timedelta
+        from src.daemon.core.camera_events import TimedPhotoCaptured
+
+        mac = "FC:00:LA:TE:00:01"
+        database.add_camera(mac, "SpaetCam")
+        ziel = (datetime.now() - timedelta(minutes=2)).replace(second=0, microsecond=0)
+        database.add_photo_time(ziel.strftime("%H:%M"))
+
+        # Erlaubt genau die Ziel-Minute (= hell), lehnt jeden anderen Moment ab (= dunkel).
+        monkeypatch.setattr(
+            "src.daemon.camera_daylight.build_photo_filter",
+            lambda: (lambda moment, label: moment.replace(second=0, microsecond=0) == ziel),
+        )
+
+        captured = []
+        event_bus.subscribe(TimedPhotoCaptured, captured.append)
+
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{running_server}/upload",
+            headers={"X-Camera-MAC": mac},
+            data=JPEG_PAYLOAD,
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+
+        assert not _warte_auf(lambda: len(captured) == 1, timeout=1.0), (
+            "Ein im Dunkeln eingetroffenes Bild darf nicht zugestellt werden"
+        )
+
+    def test_nachts_eingetroffenes_bild_gilt_trotzdem_als_bedient(
+        self, running_server, event_bus, monkeypatch
+    ):
+        """Kehrseite: Der Zeitpunkt wird vermerkt, sonst meldete der Watchdog ihn als verpasst.
+
+        Die Kamera war ja nicht stumm — sie hat geliefert, nur zu spaet und im Dunkeln. Ohne
+        diesen Vermerk haette die Unterdrueckung das schwarze Foto durch einen Fehlalarm
+        ersetzt (ADR 0041).
+        """
+        from datetime import datetime, timedelta
+
+        mac = "FC:00:LA:TE:00:02"
+        database.add_camera(mac, "VermerkCam")
+        ziel = (datetime.now() - timedelta(minutes=2)).replace(second=0, microsecond=0)
+        database.add_photo_time(ziel.strftime("%H:%M"))
+
+        monkeypatch.setattr(
+            "src.daemon.camera_daylight.build_photo_filter",
+            lambda: (lambda moment, label: moment.replace(second=0, microsecond=0) == ziel),
+        )
+
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{running_server}/upload",
+            headers={"X-Camera-MAC": mac},
+            data=JPEG_PAYLOAD,
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            assert resp.status == 200
+
+        schluessel = database.last_delivered_target_key(mac)
+        assert _warte_auf(lambda: database.get_metadata(schluessel) is not None), (
+            "Der Aufnahme-Zeitpunkt muss als bedient vermerkt sein, sonst gilt er als verpasst"
+        )
+        assert database.get_metadata(schluessel) == ziel.isoformat()

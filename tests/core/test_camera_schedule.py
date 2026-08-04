@@ -324,3 +324,122 @@ class TestNebelZeitplaeneErzeugenKeinGussFoto:
         )
 
         assert sleep == INTERVAL, "Fuer ein Nebel-Intervall darf die Kamera nicht geweckt werden"
+
+
+# ===========================================================================
+# Tageslicht-Filter — kein Foto bei Dunkelheit
+# ===========================================================================
+
+def _tageslicht(moment):
+    """Testdouble statt echter Sonnenstands-Rechnung: hell von 06:00 bis 21:00."""
+    return 6 <= moment.hour < 21
+
+
+class TestDaylightFilter:
+    """Der Filter selbst: Welche Aufnahme-Zeitpunkte darf es geben?"""
+
+    def test_dunkler_zeitpunkt_wird_abgelehnt(self):
+        f = camera_schedule.daylight_filter(_tageslicht, {"guss", "fix"})
+
+        assert f(_now(12, 0), {"type": "guss"}) is True
+        assert f(_now(23, 0), {"type": "guss"}) is False
+
+    def test_nur_konfigurierte_typen_werden_gefiltert(self):
+        """Bei `guss` bleibt eine bewusst gesetzte feste Fotozeit auch nachts bestehen."""
+        f = camera_schedule.daylight_filter(_tageslicht, {"guss"})
+
+        assert f(_now(23, 0), {"type": "guss"}) is False
+        assert f(_now(23, 0), {"type": "fix"}) is True
+
+    def test_leere_typmenge_schaltet_den_filter_ab(self):
+        """Keine Typen heißt dasselbe wie kein Filter — nicht ein Prädikat, das alles durchwinkt."""
+        assert camera_schedule.daylight_filter(_tageslicht, set()) is None
+
+    def test_ohne_pruefer_kein_filter(self):
+        """Fehlen die Koordinaten, liefert die Fabrik None — der Aufrufer filtert dann nicht."""
+        assert camera_schedule.daylight_filter(None, {"guss", "fix"}) is None
+
+
+class TestDunkleAufnahmeZeitpunkteEntfallen:
+    """Ein unterdrückter Zeitpunkt existiert für ALLE Verbraucher nicht — sonst würde aus dem
+    schwarzen Foto ein Fehlalarm (ADR 0041) oder ein sinnloses Aufwecken der Kamera."""
+
+    def _filter(self, typen={"guss", "fix"}):
+        return camera_schedule.daylight_filter(_tageslicht, typen)
+
+    def test_naechtliches_guss_foto_wird_nicht_zugestellt(self):
+        """Guss um 22:00, 30 min Dauer → Zeitpunkt 22:32 liegt im Dunkeln."""
+        now = datetime(2026, 6, 26, 22, 35)
+
+        result = camera_schedule.faelliger_aufnahme_zeitpunkt(
+            now, [_schedule("22:00", 30)], [], OFFSET, photo_allowed=self._filter()
+        )
+
+        assert result is None
+
+    def test_taegliches_guss_foto_bleibt(self):
+        now = datetime(2026, 6, 26, 10, 35)
+
+        result = camera_schedule.faelliger_aufnahme_zeitpunkt(
+            now, [_schedule("10:00", 30)], [], OFFSET, photo_allowed=self._filter()
+        )
+
+        assert result is not None
+        assert result[0] == datetime(2026, 6, 26, 10, 32)
+
+    def test_kamera_wird_fuer_dunklen_zeitpunkt_nicht_geweckt(self):
+        now = datetime(2026, 6, 26, 22, 25)
+
+        sleep = camera_schedule.compute_next_sleep_seconds(
+            now, [_schedule("22:00", 30)], [], INTERVAL, OFFSET,
+            photo_allowed=self._filter()
+        )
+
+        assert sleep == INTERVAL
+
+    def test_dunkler_zeitpunkt_gilt_nicht_als_verpasst(self):
+        """Kein Bild zu einem unterdrückten Zeitpunkt ist der Normalfall, kein Alarm."""
+        now = datetime(2026, 6, 27, 8, 0)
+
+        verpasst = camera_schedule.verpasste_aufnahme_zeitpunkte(
+            now,
+            [_schedule("22:00", 30)],
+            [_photo_time("07:00")],
+            OFFSET,
+            zuletzt_zugestellt=datetime(2026, 6, 26, 12, 0),
+            photo_allowed=self._filter(),
+        )
+
+        assert verpasst == []
+
+    def test_naechster_zeitpunkt_ueberspringt_die_dunkelheit(self):
+        """Um 22:00 ist der nächste sichtbare Zeitpunkt die Fotozeit am Morgen."""
+        now = datetime(2026, 6, 26, 22, 0)
+
+        result = camera_schedule.next_photo_target(
+            now, [_schedule("22:30", 30)], [_photo_time("07:00")], OFFSET,
+            photo_allowed=self._filter()
+        )
+
+        assert result is not None
+        assert result[0] == datetime(2026, 6, 27, 7, 0)
+
+    def test_typ_beschraenkung_wirkt_durchgehend(self):
+        """Nur Guss-Fotos gefiltert → die feste Fotozeit um 23:00 wird weiter zugestellt."""
+        now = datetime(2026, 6, 26, 23, 5)
+
+        result = camera_schedule.faelliger_aufnahme_zeitpunkt(
+            now, [], [_photo_time("23:00")], OFFSET,
+            photo_allowed=self._filter({"guss"})
+        )
+
+        assert result is not None
+
+    def test_ohne_filter_bleibt_das_verhalten_unveraendert(self):
+        now = datetime(2026, 6, 26, 22, 35)
+
+        result = camera_schedule.faelliger_aufnahme_zeitpunkt(
+            now, [_schedule("22:00", 30)], [], OFFSET
+        )
+
+        assert result is not None

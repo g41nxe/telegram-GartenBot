@@ -233,6 +233,19 @@ try:
 except ValueError:
     CAMERA_AFTER_GUSS_OFFSET_MINUTES = 2
 
+try:
+    CAMERA_DAYLIGHT_MARGIN_MINUTES = int(os.getenv("CAMERA_DAYLIGHT_MARGIN_MINUTES", "30"))
+except ValueError:
+    CAMERA_DAYLIGHT_MARGIN_MINUTES = 30
+
+# Welche Aufnahme-Zeitpunkte die Dunkelheit unterdrueckt — Werte aus dem Label-Typ
+# ("guss", "fix"), kommagetrennt. Leer schaltet den Tageslicht-Filter ab.
+CAMERA_DAYLIGHT_FILTER_TYPES = frozenset(
+    teil.strip().lower()
+    for teil in os.getenv("CAMERA_DAYLIGHT_FILTER_TYPES", "guss,fix").split(",")
+    if teil.strip()
+)
+
 
 VERSION_FILE = _ROOT / "VERSION"
 

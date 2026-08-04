@@ -4,12 +4,12 @@ import shutil
 import logging
 import threading
 from datetime import datetime
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 from pathlib import Path
 
 from .. import config
+from .. import camera_daylight
 from . import database
 from ..core.event_bus import EventBus
 from ..core.camera_events import CameraImageReceived, CameraRegistered, TimedPhotoCaptured
@@ -18,16 +18,6 @@ from ..core import camera_schedule
 logger = logging.getLogger("garden_camera_receiver")
 
 _global_bus = None
-
-
-def _local_tz():
-    """Konfigurierte Zeitzone für die DST-korrekte Schlafdauer (Ticket fok). Unbekannter Name →
-    None, damit die naive Rechnung greift statt eines Absturzes."""
-    try:
-        return ZoneInfo(config.TIMEZONE)
-    except (ZoneInfoNotFoundError, ValueError) as e:
-        logger.warning(f"Unbekannte TIMEZONE '{config.TIMEZONE}': {e} — rechne naiv.")
-        return None
 
 
 def _ist_neuer_zeitpunkt(target_dt: datetime, zuletzt_zugestellt: str | None) -> bool:
@@ -149,7 +139,9 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
         photo_times = database.get_photo_times()
         sleep_secs = camera_schedule.compute_next_sleep_seconds(
             datetime.now(), schedules, photo_times, interval,
-            config.CAMERA_AFTER_GUSS_OFFSET_MINUTES, tz=_local_tz()
+            config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
+            tz=camera_daylight.local_tz(),
+            photo_allowed=camera_daylight.build_photo_filter(),
         )
         settings = {
             "sleep_duration_seconds": sleep_secs,
@@ -241,27 +233,44 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
             # Ein Aufnahme-Zeitpunkt wird vom ersten Bild erfuellt, das NACH ihm eintrifft
             # (ADR 0040). Er bleibt offen, bis der naechste ihn abloest — die Kamera trifft
             # ihn bauartbedingt nie exakt, und ein verworfenes Bild waere ein stiller Verlust.
+            photo_filter = camera_daylight.build_photo_filter()
             faellig = camera_schedule.faelliger_aufnahme_zeitpunkt(
                 now,
                 database.get_schedules(),
                 database.get_photo_times(),
                 config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
+                photo_allowed=photo_filter,
             )
             if faellig:
-                target_dt, caption, _label = faellig
+                target_dt, caption, label = faellig
                 # Zustand: zuletzt zugestellter Aufnahme-Zeitpunkt, je Kamera. Der Zeitstempel
                 # ist eindeutig — anders als der fruehere Schluessel `Datum|Beschriftung`, der
                 # zwei gleichnamige Zeitplaene kollidieren liess.
                 dedup_key = database.last_delivered_target_key(mac)
                 if _ist_neuer_zeitpunkt(target_dt, database.get_metadata(dedup_key)):
+                    # Der Zeitpunkt gilt als bedient, auch wenn das Bild gleich verworfen wird:
+                    # Die Kamera war nicht stumm, es ist also kein verpasster Aufnahme-Zeitpunkt
+                    # (ADR 0041). Ohne diesen Vermerk ersetzte die Unterdrueckung das schwarze
+                    # Foto durch einen Fehlalarm.
                     database.set_metadata(dedup_key, target_dt.isoformat())
-                    caption = camera_schedule.beschriftung_mit_verzug(
-                        caption, target_dt, now, config.AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN
-                    )
-                    _global_bus.publish(
-                        TimedPhotoCaptured(wish_name, str(file_path), caption,
-                                           target_dt, now, mac_address=mac)
-                    )
+
+                    # Zweite Pruefung, nun auf die **Ankunftszeit**: Ein tagsueber faelliger
+                    # Zeitpunkt bleibt offen, bis ihn ein Bild erfuellt (ADR 0040). Liegt die
+                    # Kamera im Backoff, kann dieses Bild Stunden spaeter im Dunkeln entstehen —
+                    # der Zeitpunkt war hell, die Aufnahme ist es nicht.
+                    if photo_filter is not None and not photo_filter(now, label):
+                        logger.info(
+                            f"Aufnahme-Zeitpunkt {target_dt:%d.%m. %H:%M} als bedient vermerkt, "
+                            f"aber das Bild traf im Dunkeln ein ({now:%H:%M}) — kein Versand."
+                        )
+                    else:
+                        caption = camera_schedule.beschriftung_mit_verzug(
+                            caption, target_dt, now, config.AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN
+                        )
+                        _global_bus.publish(
+                            TimedPhotoCaptured(wish_name, str(file_path), caption,
+                                               target_dt, now, mac_address=mac)
+                        )
 
 _server_instance = None
 
