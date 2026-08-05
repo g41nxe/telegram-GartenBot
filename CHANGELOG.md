@@ -1,3 +1,15 @@
+## v1.20.0 — 2026-08-05
+
+### Neu
+- Keine schwarzen Fotos mehr: Aufnahmen außerhalb des Tageslichts entfallen
+- Die Kamera schläft nachts durch, statt für ein schwarzes Bild aufzuwachen
+- Tageslicht-Fenster einstellbar: Puffer in Minuten und betroffene Foto-Arten
+
+### Wartung
+- Kamera-Module nutzen relative Importe (behebt eine Kopplungs-Falle beim lokalen Start)
+
+---
+
 ## v1.19.1 — 2026-07-29
 
 ### Behoben
