@@ -65,3 +65,16 @@ import:
 # - github.token    → use GITHUB_TOKEN env var instead
 
 sync.remote: "git+ssh://git@github.com/g41nxe/telegram-GartenBot.git"
+
+# Eigener Status neben open/in_progress/blocked/deferred/closed.
+#
+# awaiting_acceptance = Umsetzung fertig und ausgeliefert, aber die Feld-Abnahme
+# (Testplan unter docs/testplans/) ist noch nicht protokolliert. Weder "in Arbeit"
+# noch "erledigt": `bd ready` blendet solche Vorgaenge aus, sie gelten aber nicht
+# als abgeschlossen. Entstanden, weil cy1 monatelang als in_progress gefuehrt wurde,
+# obwohl nur noch die Abnahme fehlte.
+#
+# Hier versioniert (nicht nur per `bd config set`): Sonst laege der Wert allein in
+# der gitignorierten Dolt-DB und fehlte nach einem frischen Clone mit `bd bootstrap`
+# — die JSONL enthielte dann einen Status, den bd nicht kennt.
+status.custom: "awaiting_acceptance"

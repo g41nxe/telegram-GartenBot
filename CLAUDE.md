@@ -13,8 +13,15 @@ This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full 
 bd ready              # Find available work
 bd show <id>          # View issue details
 bd update <id> --claim  # Claim work
+bd update <id> --status awaiting_acceptance   # Umsetzung fertig, Feld-Abnahme offen
 bd close <id>         # Complete work
 ```
+
+**Eigener Status `awaiting_acceptance`** (konfiguriert in `.beads/config.yaml`): Umsetzung fertig
+und ausgeliefert, aber die Feld-Abnahme (Testplan unter `docs/testplans/`) ist noch nicht
+protokolliert. Weder „in Arbeit" noch „erledigt" — `bd ready` blendet solche Vorgänge aus, sie
+gelten aber nicht als abgeschlossen. Erst `bd close`, wenn ein Ergebnis-Commit zum Testplan
+existiert (Muster: `docs(testplan): … — GO`).
 
 ### Rules
 
