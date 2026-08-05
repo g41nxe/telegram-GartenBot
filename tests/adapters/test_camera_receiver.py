@@ -21,7 +21,7 @@ def ohne_tageslicht_filter(monkeypatch):
     Receiver prueft `TestTageslichtFilterVerdrahtung` weiter unten mit festen Uhrzeiten.
     """
     monkeypatch.setattr(
-        "src.daemon.camera_daylight.build_photo_filter", lambda: None
+        camera_receiver.camera_daylight, "build_photo_filter", lambda: None
     )
 
 
@@ -525,7 +525,7 @@ class TestTageslichtFilterVerdrahtung:
 
     def _setze_filter(self, monkeypatch, erlaubt: bool):
         monkeypatch.setattr(
-            "src.daemon.camera_daylight.build_photo_filter",
+            camera_receiver.camera_daylight, "build_photo_filter",
             lambda: (lambda target_dt, label: erlaubt),
         )
 
@@ -615,7 +615,7 @@ class TestTageslichtFilterVerdrahtung:
 
         # Erlaubt genau die Ziel-Minute (= hell), lehnt jeden anderen Moment ab (= dunkel).
         monkeypatch.setattr(
-            "src.daemon.camera_daylight.build_photo_filter",
+            camera_receiver.camera_daylight, "build_photo_filter",
             lambda: (lambda moment, label: moment.replace(second=0, microsecond=0) == ziel),
         )
 
@@ -652,7 +652,7 @@ class TestTageslichtFilterVerdrahtung:
         database.add_photo_time(ziel.strftime("%H:%M"))
 
         monkeypatch.setattr(
-            "src.daemon.camera_daylight.build_photo_filter",
+            camera_receiver.camera_daylight, "build_photo_filter",
             lambda: (lambda moment, label: moment.replace(second=0, microsecond=0) == ziel),
         )
 

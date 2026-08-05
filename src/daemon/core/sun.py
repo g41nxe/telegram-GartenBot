@@ -25,18 +25,35 @@ _OBLIQUITY = 23.4397
 # atmosphärische Refraktion. Der Zeitpunkt, zu dem der obere Rand den Horizont berührt.
 _SUN_DISC_ALTITUDE = -0.833
 
-# Zustände, wenn die Sonne an diesem Tag den Horizont gar nicht kreuzt.
+# Zustand des Tages: Regelfall mit Auf- und Untergang, oder die Sonne kreuzt den Horizont
+# an diesem Tag gar nicht.
+NORMAL = "normal"
 POLAR_DAY = "polar_day"
 POLAR_NIGHT = "polar_night"
 
 
-def _julian_day_at_midnight_ut(day: date) -> float:
-    """Julianisches Datum für 00:00 UT des Kalendertags.
+def _day_number(day: date, tz) -> int:
+    """Tageszahl seit dem 01.01.2000 — verankert am **lokalen Mittag**, nicht an 00:00 UT.
 
-    ``toordinal()`` zählt Tage ab 01.01.0001; der Versatz 1721424.5 verschiebt auf die
-    julianische Zählung (Probe: 01.01.2000 → 2451544.5).
+    Der lokale Mittag ist der richtige Anker, weil die Reihenentwicklung um den wahren Mittag
+    herum rechnet. Ein Anker auf 00:00 UT wäre stillschweigend an die UT-Kalenderdatei
+    gebunden: Bei großem Zeitzonen-Versatz weichen lokales und UT-Datum voneinander ab, und
+    die Rechnung lieferte den Bogen des Nachbartags. In Berlin fällt das nie auf — deshalb
+    hier explizit.
+
+    ``toordinal()`` zählt Tage ab 01.01.0001; der Versatz 1721425.0 verschiebt auf die
+    julianische Zählung für 12:00 UT (Probe: 01.01.2000 12:00 → 2451545.0).
     """
-    return day.toordinal() + 1721424.5
+    noon_local = datetime(day.year, day.month, day.day, 12)
+    noon_utc = noon_local.replace(tzinfo=tz or timezone.utc).astimezone(timezone.utc)
+
+    jd = (
+        noon_utc.date().toordinal()
+        + 1721425.0
+        + (noon_utc - noon_utc.replace(hour=12, minute=0, second=0, microsecond=0)).total_seconds()
+        / 86400.0
+    )
+    return round(jd - _JD_2000 + 0.0008)
 
 
 def _from_julian(jd: float) -> datetime:
@@ -51,14 +68,17 @@ def _localize(moment: datetime, tz) -> datetime:
     return moment.replace(tzinfo=None)
 
 
-def _solar_event_days(day: date, latitude: float, longitude: float):
-    """Kern der Rechnung: (jd_sonnenaufgang, jd_sonnenuntergang) oder POLAR_DAY/POLAR_NIGHT.
+def _sun_window(day: date, latitude: float, longitude: float, tz):
+    """Kern der Rechnung: ``(NORMAL, (aufgang, untergang))`` oder ``(POLAR_DAY|POLAR_NIGHT, None)``.
+
+    Immer dasselbe Paar (Zustand, Zeiten) — so unterscheiden beide Aufrufer den Sonderfall auf
+    demselben Weg, und die Umrechnung in Ortszeit steht an einer Stelle.
 
     Der Stundenwinkel ``omega`` ist der halbe Tagbogen. Existiert er nicht — weil die Sonne den
     Horizont an diesem Tag nicht kreuzt —, liegt ``cos_omega`` außerhalb [-1, 1]; das Vorzeichen
     unterscheidet Polartag von Polarnacht und wird deshalb unterschieden statt verworfen.
     """
-    n = math.ceil(_julian_day_at_midnight_ut(day) - _JD_2000 + 0.0008)
+    n = _day_number(day, tz)
 
     # Mittlere Sonnenzeit am Ort.
     j_star = n - longitude / 360.0
@@ -95,19 +115,22 @@ def _solar_event_days(day: date, latitude: float, longitude: float):
     if abs(denominator) < 1e-12:
         # Exakt am Pol: kein sinnvoller Tagbogen. Über das Vorzeichen der Deklination
         # entscheidet sich, welche Halbkugel gerade Sommer hat.
-        return POLAR_DAY if sin_declination * latitude > 0 else POLAR_NIGHT
+        return (POLAR_DAY if sin_declination * latitude > 0 else POLAR_NIGHT), None
 
     cos_omega = (
         math.sin(math.radians(_SUN_DISC_ALTITUDE)) - math.sin(phi) * sin_declination
     ) / denominator
 
     if cos_omega < -1.0:
-        return POLAR_DAY      # Sonne bleibt über dem Horizont.
+        return POLAR_DAY, None      # Sonne bleibt über dem Horizont.
     if cos_omega > 1.0:
-        return POLAR_NIGHT    # Sonne bleibt darunter.
+        return POLAR_NIGHT, None    # Sonne bleibt darunter.
 
     omega = math.degrees(math.acos(cos_omega)) / 360.0
-    return j_transit - omega, j_transit + omega
+    return NORMAL, (
+        _localize(_from_julian(j_transit - omega), tz),
+        _localize(_from_julian(j_transit + omega), tz),
+    )
 
 
 def sun_times(day: date, latitude: float, longitude: float, tz=None) -> tuple | None:
@@ -116,12 +139,8 @@ def sun_times(day: date, latitude: float, longitude: float, tz=None) -> tuple | 
     None bedeutet: Die Sonne kreuzt an diesem Tag den Horizont nicht (Polartag oder Polarnacht).
     Wer die beiden Fälle unterscheiden muss, nutzt `daylight_predicate`.
     """
-    result = _solar_event_days(day, latitude, longitude)
-    if isinstance(result, str):
-        return None
-
-    jd_rise, jd_set = result
-    return _localize(_from_julian(jd_rise), tz), _localize(_from_julian(jd_set), tz)
+    _zustand, zeiten = _sun_window(day, latitude, longitude, tz)
+    return zeiten
 
 
 def daylight_predicate(latitude: float, longitude: float, margin_minutes: int = 0, tz=None):
@@ -138,15 +157,12 @@ def daylight_predicate(latitude: float, longitude: float, margin_minutes: int = 
     margin = timedelta(minutes=max(0, margin_minutes))
 
     def is_daylight(moment: datetime) -> bool:
-        result = _solar_event_days(moment.date(), latitude, longitude)
-        if result == POLAR_DAY:
-            return True
-        if result == POLAR_NIGHT:
-            return False
+        zustand, zeiten = _sun_window(moment.date(), latitude, longitude, tz)
+        if zustand is not NORMAL:
+            return zustand == POLAR_DAY
 
-        jd_rise, jd_set = result
-        start = _localize(_from_julian(jd_rise), tz) + margin
-        end = _localize(_from_julian(jd_set), tz) - margin
+        aufgang, untergang = zeiten
+        start, end = aufgang + margin, untergang - margin
         if start >= end:
             return False
         return start <= moment <= end

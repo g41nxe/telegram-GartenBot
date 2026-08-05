@@ -94,6 +94,36 @@ class TestSunTimes:
         """Spitzbergen im Dezember: Die Sonne geht nicht auf."""
         assert sun.sun_times(date(2026, 12, 21), SVALBARD_LAT, SVALBARD_LON, tz=BERLIN) is None
 
+    def test_grosser_zeitzonen_versatz_liefert_den_richtigen_tag(self):
+        """Kiritimati (157 W, aber UTC+14): lokales und UT-Datum fallen auseinander.
+
+        Genau hier bricht ein Anker auf 00:00 UT — er berechnete den Bogen des Nachbartags.
+        Geprueft wird die Eigenschaft, nicht die Minute: Der Aufgang gehoert zum angefragten
+        lokalen Datum und liegt am Morgen, der Untergang am Abend. Aequatornah gilt das
+        ganzjaehrig.
+        """
+        kiritimati = ZoneInfo("Pacific/Kiritimati")
+        angefragt = date(2026, 6, 21)
+
+        aufgang, untergang = sun.sun_times(angefragt, 1.87, -157.43, tz=kiritimati)
+
+        assert aufgang.date() == angefragt
+        assert untergang.date() == angefragt
+        assert 5 * 60 <= _minuten(aufgang) <= 7 * 60 + 30
+        assert 17 * 60 + 30 <= _minuten(untergang) <= 19 * 60 + 30
+
+    def test_exakt_am_pol(self):
+        """Am Pol selbst wird cos(phi) null — die Deklination entscheidet ueber die Jahreszeit."""
+        assert sun.sun_times(date(2026, 6, 21), 90.0, 0.0, tz=BERLIN) is None
+        assert sun.sun_times(date(2026, 12, 21), -90.0, 0.0, tz=BERLIN) is None
+
+        nordpol = sun.daylight_predicate(90.0, 0.0, 0, tz=BERLIN)
+        assert nordpol(datetime(2026, 6, 21, 3, 0)) is True    # Polartag
+        assert nordpol(datetime(2026, 12, 21, 12, 0)) is False  # Polarnacht
+
+        suedpol = sun.daylight_predicate(-90.0, 0.0, 0, tz=BERLIN)
+        assert suedpol(datetime(2026, 6, 21, 12, 0)) is False   # dort Polarnacht
+
     def test_ohne_zeitzone_wird_utc_gerechnet(self):
         """Ohne tz bleibt das Ergebnis UTC-Wanduhrzeit — Aufgang am 21.06. gegen 02:43 UTC."""
         aufgang, _ = sun.sun_times(date(2026, 6, 21), LAT, LON, tz=None)
