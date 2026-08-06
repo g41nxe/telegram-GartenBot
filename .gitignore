@@ -145,3 +145,11 @@ camera-fotos/
 # Brainstorming-Begleitserver (ephemer)
 .superpowers/
 docs/superpowers/
+
+# Lokale Dev-Server-Konfiguration der Browser-Vorschau (maschinenspezifische
+# absolute Pfade, teils auf andere Repos). .claude/ ist sonst versioniert
+# (memory/), deshalb hier ausdruecklich ausgenommen.
+.claude/launch.json
+
+# Absturz-Dumps der Git-Bash
+*.stackdump
