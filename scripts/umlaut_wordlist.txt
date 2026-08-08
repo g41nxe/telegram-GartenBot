@@ -1,0 +1,56 @@
+# ASCII-transliterierte deutsche Fragmente, die auf einen fehlenden Umlaut/ss-statt-ß-Fehler
+# hindeuten. Ein Treffer prüft den Kontext selbst -- englische/technische Wörter mit
+# zufälligem ae/oe/ue/ss werden bewusst vermieden (siehe check_umlauts.py). Eine Zeile pro
+# Fragment, Kommentare mit '#'. Bei neuen Fällen einfach ergänzen.
+
+# Ironie am Rande: eine frühe Fassung dieses Skripts (und dieser Liste) enthielt selbst
+# ASCII-transliterierte Umlaute in den Kommentaren -- gefunden, indem das Skript gegen die
+# eigene Quelldatei laufen gelassen wurde. Bei Zweifel: einfach gegenprüfen.
+
+fuer
+ueber
+moecht
+moegl
+koenn
+muess
+duerf
+wuerd
+waere
+natuerl
+zusaetz
+unabhaeng
+abhaeng
+vollstaend
+staend
+waehrend
+zuverlaess
+verlaess
+schluess
+loesch
+erhoeh
+hoeh
+groess
+raeum
+spaet
+naechst
+ergaenz
+geaender
+aender
+veraender
+pruef
+gefaehr
+waerm
+kaelt
+gruen
+schoen
+ueberspring
+fliess
+aussen
+strass
+spass
+waecht
+zustaend
+uebergab
+ruecksicht
+faehig
+gemaess
