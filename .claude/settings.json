@@ -13,11 +13,11 @@
     ],
     "PreToolUse": [
       {
-        "matcher": "Bash|Edit|Write",
+        "matcher": "Bash|PowerShell|Edit|Write",
         "hooks": [
           {
             "type": "command",
-            "command": "python scripts/check_umlauts.py"
+            "command": "python \"$(git rev-parse --show-toplevel 2>/dev/null)/scripts/check_umlauts.py\" 2>/dev/null || true"
           }
         ]
       }

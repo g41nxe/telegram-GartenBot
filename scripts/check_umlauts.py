@@ -6,8 +6,9 @@ Liest das Hook-JSON von stdin (siehe https://docs.claude.com/en/docs/claude-code
 Grund: Doku allein (docs/agents/encoding.md) hat das wiederkehrende Problem nicht
 verhindert -- siehe [[feedback-german-umlaut-encoding]] im Agent-Gedächtnis.
 
-Exit 0: kein Treffer, Tool-Aufruf läuft normal weiter.
-Exit 2: Treffer gefunden, stderr wird Claude als Grund für den Abbruch zurückgegeben.
+Kein Treffer: kein Output, Exit 0, Tool-Aufruf läuft normal weiter.
+Treffer: JSON mit hookSpecificOutput.permissionDecision="deny" auf stdout, Exit 0 -- das
+aktuelle PreToolUse-Blockierschema (das ältere reine decision:"block" gilt dafür als veraltet).
 """
 import json
 import re
@@ -66,14 +67,20 @@ def main() -> int:
         return 0
 
     unique_hits = sorted(set(hits))
-    print(
+    reason = (
         "Mögliche ASCII-transliterierte deutsche Umlaute gefunden: "
         + ", ".join(f'"{h}"' for h in unique_hits)
-        + ".\nBitte prüfen und echte UTF-8-Umlaute verwenden (ä/ö/ü/ß) statt ae/oe/ue/ss.\n"
-        + "Falscher Treffer (z. B. echtes englisches Wort)? scripts/umlaut_wordlist.txt anpassen.",
-        file=sys.stderr,
+        + ". Bitte prüfen und echte UTF-8-Umlaute verwenden (ä/ö/ü/ß) statt ae/oe/ue/ss. "
+        + "Falscher Treffer (z. B. echtes englisches Wort)? scripts/umlaut_wordlist.txt anpassen."
     )
-    return 2
+    print(json.dumps({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason,
+        }
+    }))
+    return 0
 
 
 if __name__ == "__main__":
