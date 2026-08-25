@@ -29,19 +29,36 @@ from daemon.ui.telegram_ui import (
 
 class TestValveFormattingMarkdownSafety(unittest.TestCase):
     """Regression: ein mqtt_name mit Unterstrich (z.B. valve_ffff) darf parse_mode=Markdown
-    nicht brechen — sonst lehnt Telegram die ganze /status-Nachricht mit HTTP 400 ab."""
+    nicht brechen — sonst lehnt Telegram die ganze /status-Nachricht mit HTTP 400 ab.
 
-    def test_expanded_valve_id_is_markdown_safe(self):
+    Die technische ID wird gar nicht mehr angezeigt; damit entfällt die Bruchstelle
+    an der Wurzel statt sie zu maskieren."""
+
+    def _valve(self):
+        return {"wish_name": "Rechts Nebelregen", "mqtt_name": "valve_ffff",
+                "battery": 100, "linkquality": 0, "last_update": None,
+                "valve_abnormal_state": "normal"}
+
+    def test_expanded_omits_technical_id(self):
+        """Der mqtt_name gehört nicht in die Nutzeransicht."""
         from daemon.ui import telegram_ui
-        valve = {"wish_name": "Rechts Nebelregen", "mqtt_name": "valve_ffff",
-                 "battery": 100, "linkquality": 0, "last_update": None,
-                 "valve_abnormal_state": "normal"}
+        out = telegram_ui._format_valve_expanded(self._valve(), "red")
+        self.assertNotIn("valve_ffff", out)
+        self.assertNotIn("ID:", out)
+
+    def test_expanded_escapes_underscore_in_wish_name(self):
+        """Der Wunschname ist die verbliebene Quelle für Markdown-Sonderzeichen.
+
+        Ein blanker Unterstrich im Namen würde Telegram die ganze /status-Nachricht
+        mit HTTP 400 verwerfen lassen — er muss maskiert ankommen.
+        """
+        from daemon.ui import telegram_ui
+        valve = self._valve()
+        valve["wish_name"] = "Links_Sprenger"
         out = telegram_ui._format_valve_expanded(valve, "red")
-        # Technische ID muss in einem Code-Span stehen → Unterstrich wird literal.
-        self.assertIn("`valve_ffff`", out)
-        # Außerhalb von Code-Spans dürfen keine ungeraden Unterstriche stehen.
-        outside = out.replace("`valve_ffff`", "")
-        self.assertEqual(outside.count("_") % 2, 0)
+        self.assertIn("Links\\_Sprenger", out)
+        # Kein unmaskierter Unterstrich mehr übrig.
+        self.assertEqual(out.replace("\\_", "").count("_"), 0)
 
     def test_md_escape_escapes_legacy_specials(self):
         from daemon.ui import telegram_ui
@@ -634,19 +651,31 @@ class TestStatusWeatherBlock(unittest.TestCase):
 def _make_valve(wish_name="Terrasse", mqtt_name="garden_valve",
                 battery=100, lqi=150,
                 last_update="2026-06-18T14:00:00",
-                abnormal="normal"):
-    return {"wish_name": wish_name, "mqtt_name": mqtt_name,
+                abnormal="normal", valve_id=1):
+    # `id` gehört dazu: Produktionsdaten haben immer eine, und der Watchdog-Zweig in
+    # _valve_has_watchdog_alert wird ohne sie stillschweigend übersprungen — die Tests
+    # wären dann nur scheinbar abgedeckt.
+    return {"id": valve_id, "wish_name": wish_name, "mqtt_name": mqtt_name,
             "battery": battery, "linkquality": lqi,
             "last_update": last_update, "valve_abnormal_state": abnormal}
 
 def _status_call_args(mock_client, mock_db, mock_ctrl, *,
-                      valves=None, services_ok=True, broker=True, bridge=True):
-    """Ruft /status ab und gibt den gesendeten Text zurück."""
+                      valves=None, services_ok=True, broker=True, bridge=True,
+                      watchdog_alert_valve_ids=()):
+    """Ruft /status ab und gibt den gesendeten Text zurück.
+
+    `get_flag` wird bewusst explizit verdrahtet: unkonfiguriert liefert ein MagicMock
+    ein truthy Objekt, womit jedes Ventil als stumm gälte.
+    """
     from daemon.adapters import mqtt_client as mc
     mock_db.get_all_valves.return_value = valves or []
     mock_db.get_all_cameras.return_value = []
     mock_db.get_last_weather.return_value = None
     mock_db.get_recent_history.return_value = []
+    mock_db.watchdog_valve_alert_key.side_effect = lambda i: f"watchdog_alert_active_valve_{i}"
+    mock_db.get_flag.side_effect = lambda k: k in {
+        f"watchdog_alert_active_valve_{i}" for i in watchdog_alert_valve_ids
+    }
     mock_ctrl.get_active_cycle.return_value = None
 
     with patch.object(mc, "HAS_PAHO", not services_ok or True), \
@@ -722,11 +751,41 @@ class TestStatusGartenAmpel(unittest.TestCase):
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
-    def test_status_nicht_gruen_ventil_zeigt_mqtt_name(self, mock_client, mock_db, mock_ctrl):
-        """Nicht-grünes Ventil (schwache Batterie): mqtt_name sichtbar."""
+    def test_status_watchdog_alert_turns_headline_red(self, mock_client, mock_db, mock_ctrl):
+        """Ende-zu-Ende über /status: aktives Watchdog-Flag → rote Kopfzeile.
+
+        Deckt den Zweig ab, den die Einzeltests von _garden_ampel_level nicht durch
+        handle_status treiben (telegram_GartenBot-b7y).
+        """
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve(valve_id=2)],
+                                 watchdog_alert_valve_ids=(2,))
+        self.assertIn("Es gibt ein Problem", text)
+        self.assertIn("kein Signal seit", text)
+        # Die veralteten Messwerte dürfen daneben keine Gesundheit behaupten.
+        self.assertNotIn("LQI", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_stays_green_without_watchdog_alert(self, mock_client, mock_db, mock_ctrl):
+        """Gegenprobe: ohne gesetztes Flag bleibt dasselbe Ventil grün."""
+        text = _status_call_args(mock_client, mock_db, mock_ctrl,
+                                 valves=[_make_valve(valve_id=2)])
+        self.assertIn("Alles im grünen Bereich", text)
+        self.assertNotIn("kein Signal", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_status_never_shows_mqtt_name(self, mock_client, mock_db, mock_ctrl):
+        """Der mqtt_name ist eine technische ID und gehört in keiner Stufe in den Status.
+
+        Ersetzt die frühere Erwartung, dass nicht-grüne Ventile ihre ID ausweisen.
+        """
         text = _status_call_args(mock_client, mock_db, mock_ctrl,
                                  valves=[_make_valve(battery=10, mqtt_name="garden_valve")])
-        self.assertIn("garden_valve", text)
+        self.assertNotIn("garden_valve", text)
 
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.database")
@@ -1158,14 +1217,119 @@ class TestGartenAmpel(unittest.TestCase):
         v["last_update"] = None
         self.assertEqual(self._fn([v], services_ok=True), "red")
 
-    def test_gruen_ventil_mit_letztem_signal_kein_status_gruen(self):
-        """_format_valve_compact für grünes Ventil zeigt kein 🪫/0% wenn battery=None."""
+    # --- Inaktivitäts-Watchdog (telegram_GartenBot-b7y) ---
+    #
+    # Ein Ventil, das seit Tagen schweigt, behält seinen alten `last_update`-Wert und
+    # damit bisher sein grünes Urteil. Der Watchdog hält die Antwort im persistierten
+    # Flag bereits vor — der Tagesbericht liest es, die Status-Ampel bisher nicht.
+
+    def _mock_db(self, mdb, alerted_valve_ids=()):
+        mdb.watchdog_valve_alert_key.side_effect = lambda i: f"watchdog_alert_active_valve_{i}"
+        mdb.get_flag.side_effect = lambda k: k in {
+            f"watchdog_alert_active_valve_{i}" for i in alerted_valve_ids
+        }
+
+    def test_red_on_active_watchdog_alert(self):
+        """Aktives Watchdog-Flag → rot, auch wenn Batterie/LQI/Zustand tadellos sind."""
+        v = self._valve()
+        v["id"] = 2
+        with patch("daemon.ui.telegram_ui.database") as mdb:
+            self._mock_db(mdb, alerted_valve_ids=(2,))
+            self.assertEqual(self._fn([v], services_ok=True, cameras=[]), "red")
+
+    def test_green_when_watchdog_flag_unset(self):
+        """Ohne aktives Flag bleibt ein gesundes Ventil grün (kein Fehlalarm)."""
+        v = self._valve()
+        v["id"] = 2
+        with patch("daemon.ui.telegram_ui.database") as mdb:
+            self._mock_db(mdb, alerted_valve_ids=())
+            self.assertEqual(self._fn([v], services_ok=True, cameras=[]), "green")
+
+    def test_watchdog_alert_isolated_to_affected_valve(self):
+        """Zwei Ventile, nur eines gestört → Gesamturteil rot; das gesunde bleibt grün."""
+        healthy, silent = self._valve(), self._valve()
+        healthy["id"], silent["id"] = 1, 2
+        with patch("daemon.ui.telegram_ui.database") as mdb:
+            self._mock_db(mdb, alerted_valve_ids=(2,))
+            self.assertEqual(self._fn([healthy, silent], services_ok=True, cameras=[]), "red")
+            self.assertEqual(self._fn([healthy], services_ok=True, cameras=[]), "green")
+
+    def test_valve_without_id_does_not_crash(self):
+        """Ein Ventil-Dict ohne 'id' (Alt-Aufrufer/Test-Fixture) darf nicht abstürzen."""
+        with patch("daemon.ui.telegram_ui.database") as mdb:
+            self._mock_db(mdb, alerted_valve_ids=(2,))
+            self.assertEqual(self._fn([self._valve()], services_ok=True, cameras=[]), "green")
+
+    def test_compact_valve_without_battery_shows_no_zero_percent(self):
+        """_format_valve_compact für ein grünes Ventil zeigt kein 🪫/0 % wenn battery=None."""
         from daemon.ui.telegram_ui import _format_valve_compact
         valve = {"wish_name": "Terrasse", "battery": None, "linkquality": None,
                  "last_update": "2026-06-18T14:00:00", "valve_abnormal_state": "normal"}
         text = _format_valve_compact(valve)
         self.assertNotIn("0 %", text)
         self.assertNotIn("🪫 Leer", text)
+
+
+class TestStatusValveLineWatchdog(unittest.TestCase):
+    """Die Gerätezeile im Status darf ein stummes Ventil nicht als „aktiv" ausweisen."""
+
+    def _valve(self):
+        return {"id": 2, "wish_name": "Rechts Nebelregen", "mqtt_name": "valve_ffff",
+                "battery": 100, "linkquality": 180, "valve_abnormal_state": "normal",
+                "last_update": "2026-08-22T13:30:01"}
+
+    def test_expanded_shows_no_signal_on_watchdog_alert(self):
+        """Bei aktivem Alarm nennt die Zeile den Ausfall, nicht nur den alten Zeitstempel."""
+        from daemon.ui import telegram_ui
+        out = telegram_ui._format_valve_expanded(self._valve(), "red", no_signal=True)
+        self.assertIn("kein Signal seit", out)
+        self.assertIn("22.08.", out)
+
+    def test_no_signal_without_timestamp_still_explains(self):
+        """Ohne verwertbaren Zeitstempel muss der Ausfall trotzdem benannt werden.
+
+        Sonst bliebe von der Zeile nur „🔴 Name" übrig — ein rotes Ventil ohne
+        Begründung. Tritt auf, wenn das Watchdog-Flag steht, `last_update` aber leer
+        ist (Ventil entkoppelt und unter derselben valve_id neu angelegt).
+        """
+        from daemon.ui import telegram_ui
+        valve = self._valve()
+        valve["last_update"] = None
+        out = telegram_ui._format_valve_expanded(valve, "red", no_signal=True)
+        self.assertIn("kein Signal", out)
+        self.assertNotIn("seit None", out)
+
+    def test_no_signal_with_unparsable_timestamp_still_explains(self):
+        """Auch ein kaputter Zeitstempel darf die Begründung nicht verschlucken."""
+        from daemon.ui import telegram_ui
+        valve = self._valve()
+        valve["last_update"] = "kaputt"
+        out = telegram_ui._format_valve_expanded(valve, "red", no_signal=True)
+        self.assertIn("kein Signal", out)
+
+    def test_no_signal_omits_stale_readings(self):
+        """Batterie und Funkgüte stammen aus der letzten empfangenen Meldung.
+
+        Bei einem stummen Ventil behaupten sie Gesundheit, die niemand mehr geprüft
+        hat — „🔋 100 % · 📶 Sehr gut" neben „kein Signal" ist ein Widerspruch.
+        """
+        from daemon.ui import telegram_ui
+        out = telegram_ui._format_valve_expanded(self._valve(), "red", no_signal=True)
+        self.assertNotIn("100 %", out)
+        self.assertNotIn("LQI", out)
+        self.assertNotIn("🔋", out)
+
+    def test_yellow_keeps_readings(self):
+        """Ohne Ausfall bleiben die Messwerte — bei einer Batteriewarnung sind sie die Aussage."""
+        from daemon.ui import telegram_ui
+        valve = self._valve()
+        valve["battery"] = 15
+        out = telegram_ui._format_valve_expanded(valve, "yellow")
+        self.assertIn("15 %", out)
+        self.assertIn("LQI", out)
+        self.assertIn("Letztes Signal", out)
+        self.assertNotIn("kein Signal seit", out)
+
 
 class TestEreignisBenachrichtigungen(unittest.TestCase):
     """Tests für Design-System-konforme Event-Benachrichtigungen (Schritt 5)."""

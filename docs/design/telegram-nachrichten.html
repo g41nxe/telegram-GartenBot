@@ -121,7 +121,6 @@ Fr, 19.06. · 14:32 Uhr
 🟡 Terrasse
    🔋 15 % · 📶 ausreichend (80 LQI)
    Letztes Signal: 19.06. um 12:18 Uhr
-   ID: garden_valve
 
 ⏰ <b>Nächster Guss:</b> heute 20:15 Uhr · Hochbeet abends · 15 Min</div>
     <ul class="variants">
@@ -130,7 +129,15 @@ Fr, 19.06. · 14:32 Uhr
       <li>Versionszeile entfällt (Feature 0025)</li>
       <li>Nächster-Guss-Sektion entfällt wenn kein aktiver Zeitplan vorhanden</li>
       <li>Ventil grün: einzeilig, kein <code>mqtt_name</code>, keine LQI-Zahl</li>
-      <li>Ventil gelb/rot: mehrzeilig mit Batterie-%, LQI-Zahl, Zeitstempel, ID</li>
+      <li>Ventil gelb/rot: mehrzeilig mit Batterie-%, LQI-Zahl und Zeitstempel</li>
+      <li>Der technische <code>mqtt_name</code> wird nirgends im Status angezeigt — auf keiner
+          Ampelstufe</li>
+      <li>Ventil mit aktivem Inaktivitäts-Watchdog: Ampel immer 🔴, und die Zeile benennt den
+          Ausfall — <code>⚠️ kein Signal seit 22.08. um 13:30 Uhr</code> statt
+          <code>Letztes Signal: …</code>. Batterie- und LQI-Zeile entfällt dann ganz: die Werte
+          stammen aus der letzten empfangenen Meldung und würden neben „kein Signal" eine
+          Gesundheit behaupten, die seit dem Ausfall niemand geprüft hat. Es bleibt:
+          <br><code>🔴 Rechts Nebelregen</code><br><code>   ⚠️ kein Signal seit 22.08. um 13:30 Uhr</code></li>
       <li>Kamera offline: <code>🔴 kein Bild seit 17.06. um 12:15 Uhr</code></li>
       <li>Kamera mit Akkustand: <code>Hochbeet · 🟢 14:15 Uhr · 🔋 Voll (78%)</code> — Akkustand ≤ Schwellenwert kippt Garten-Ampel auf 🟡</li>
       <li>Kamera ohne bekannten Akkustand (battery = NULL): kein Batterie-Label</li>

@@ -589,6 +589,19 @@ def _get_lqi_description(lqi_val) -> str:
     else:
         return "🔴 Keine Verbindung (0 LQI)"
 
+def _valve_has_watchdog_alert(valve: dict) -> bool:
+    """True, wenn der Inaktivitäts-Watchdog für dieses Ventil Alarm gemeldet hat.
+
+    `last_update` beantwortet nur, **ob** je ein Signal kam — nicht, **wie alt** es ist.
+    Ein seit Tagen stummes Ventil behält seinen alten Zeitstempel und wirkt dadurch
+    gesund. Die Antwort auf „seit wann still?" hat der Watchdog bereits getroffen und
+    im Flag hinterlegt; hier wird sie nur gelesen, nicht neu berechnet.
+    """
+    valve_id = valve.get("id")
+    if valve_id is None:
+        return False
+    return bool(database.get_flag(database.watchdog_valve_alert_key(valve_id)))
+
 def _garden_ampel_level(valves: list, services_ok: bool, cameras: list | None = None) -> str:
     """Gibt 'green', 'yellow' oder 'red' zurück — schlimmste aktive Stufe gewinnt."""
     if not services_ok:
@@ -597,6 +610,10 @@ def _garden_ampel_level(valves: list, services_ok: bool, cameras: list | None = 
     worst = "green"
     for v in valves:
         if not v.get("last_update"):
+            return "red"
+        # Ein gemeldeter Inaktivitäts-Alarm wiegt schwerer als jede Momentaufnahme von
+        # Batterie und Funkgüte: die stammen aus derselben veralteten Meldung.
+        if _valve_has_watchdog_alert(v):
             return "red"
         abnormal = v.get("valve_abnormal_state") or "normal"
         if abnormal != "normal":
@@ -657,30 +674,47 @@ def _format_valve_compact(valve: dict) -> str:
     lqi_label = _get_lqi_label(lqi if lqi is not None else 100)
     return f"{_md_escape(valve['wish_name'])} · 🟢 aktiv · {battery_label} · 📶 {lqi_label}"
 
-def _format_valve_expanded(valve: dict, level: str) -> str:
-    """Mehrzeilige Ventil-Darstellung für nicht-grüne Geräte (mit Details)."""
+def _format_valve_expanded(valve: dict, level: str, no_signal: bool = False) -> str:
+    """Mehrzeilige Ventil-Darstellung für nicht-grüne Geräte (mit Details).
+
+    `no_signal` benennt den Ausfall beim Namen: derselbe Zeitstempel bedeutet etwas
+    anderes, wenn der Watchdog das Ventil bereits als stumm gemeldet hat.
+    """
     icon = "🟡" if level == "yellow" else "🔴"
-    battery = valve.get("battery")
-    lqi = valve.get("linkquality")
-    battery_val = int(battery) if battery is not None else 0
-    lqi_val = int(lqi) if lqi is not None else 0
-    lqi_desc = _get_lqi_description(lqi_val)
     last_update_str = valve.get("last_update")
-    last_signal_line = ""
+    stamp = None
     if last_update_str:
         try:
             last_up = datetime.fromisoformat(last_update_str)
-            last_signal_line = f"\n   Letztes Signal: {last_up.strftime('%d.%m. um %H:%M')} Uhr"
+            stamp = f"{last_up.strftime('%d.%m. um %H:%M')} Uhr"
         except Exception:
             pass
-    return (
-        f"{icon} {_md_escape(valve['wish_name'])}\n"
-        f"   🔋 {battery_val} % · 📶 {lqi_desc}"
-        f"{last_signal_line}\n"
-        # Code-Span: der mqtt_name (z.B. valve_ffff) enthält Unterstriche; ohne Backticks
-        # bricht das die Telegram-Markdown-Analyse und die ganze Nachricht wird 400-verworfen.
-        f"   ID: `{valve['mqtt_name']}`"
-    )
+
+    if no_signal:
+        # Der Ausfall wird auch ohne verwertbaren Zeitstempel benannt: sonst bliebe von
+        # der Zeile nur „🔴 Name" übrig — ein rotes Ventil ohne jede Begründung, während
+        # der Watchdog per Nachricht bereits Alarm gemeldet hat.
+        last_signal_line = (
+            f"\n   ⚠️ kein Signal seit {stamp}" if stamp else "\n   ⚠️ kein Signal empfangen"
+        )
+    elif stamp:
+        last_signal_line = f"\n   Letztes Signal: {stamp}"
+    else:
+        last_signal_line = ""
+
+    # Batterie und Funkgüte stammen aus der zuletzt empfangenen Meldung. Bei einem
+    # stummen Ventil behaupten sie eine Gesundheit, die seit dem Ausfall niemand mehr
+    # geprüft hat — „🔋 100 % · 📶 Sehr gut" neben „kein Signal" widerspricht sich.
+    # Dann zählt nur, seit wann Funkstille herrscht.
+    readings_line = ""
+    if not no_signal:
+        battery = valve.get("battery")
+        lqi = valve.get("linkquality")
+        battery_val = int(battery) if battery is not None else 0
+        lqi_desc = _get_lqi_description(int(lqi) if lqi is not None else 0)
+        readings_line = f"\n   🔋 {battery_val} % · 📶 {lqi_desc}"
+
+    return f"{icon} {_md_escape(valve['wish_name'])}{readings_line}{last_signal_line}"
 
 # --- Befehlsverarbeitung ---
 
@@ -1091,7 +1125,9 @@ def handle_status(chat_id: int):
         if vlvl == "green":
             valve_lines.append(_format_valve_compact(valve))
         else:
-            valve_lines.append(_format_valve_expanded(valve, vlvl))
+            valve_lines.append(
+                _format_valve_expanded(valve, vlvl, no_signal=_valve_has_watchdog_alert(valve))
+            )
     valves_text = "\n".join(valve_lines) if valve_lines else "Keine Ventile registriert."
 
     # Kamera-Abschnitt (Logik unverändert, Format angepasst)
