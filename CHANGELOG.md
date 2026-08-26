@@ -1,3 +1,16 @@
+## v1.20.1 — 2026-08-26
+
+### Behoben
+- Status meldet ein ausgefallenes Ventil jetzt rot statt „alles im grünen Bereich"
+- Ventil-Ausfall wird nach 1 Stunde gemeldet statt erst nach 24 Stunden
+- Ausgefallenes Ventil zeigt „kein Signal seit …" statt veralteter Batterie-Werte
+
+### Wartung
+- Technische Geräte-IDs verschwinden aus der Status-Ansicht
+- Prüfung gegen falsch geschriebene Umlaute in erzeugten Texten
+
+---
+
 ## v1.20.0 — 2026-08-05
 
 ### Neu
