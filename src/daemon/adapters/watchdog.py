@@ -13,7 +13,6 @@ from ..core.camera_events import (CameraImageReceived, CameraInactivityAlertTrig
 from ..core.sensor_events import RainSensorMeasured, RainSensorInactivityAlertTriggered, RainSensorInactivityAlertResolved
 from ..core import camera_schedule
 from ..core import edge_alarm
-from ..core import watchdog_threshold
 
 logger = logging.getLogger("garden_watchdog")
 
@@ -194,9 +193,7 @@ def run_watchdog_check():
     if not config.WATCHDOG_ENABLED:
         return
 
-    max_seconds = config.WATCHDOG_VALVE_TIMEOUT_HOURS * 3600
-    min_seconds = config.WATCHDOG_VALVE_MIN_TIMEOUT_MINUTES * 60
-    factor = config.WATCHDOG_VALVE_INTERVAL_FACTOR
+    timeout_hours = config.WATCHDOG_VALVE_TIMEOUT_HOURS
     now = datetime.now()
 
     for valve in database.get_all_valves():
@@ -213,28 +210,19 @@ def run_watchdog_check():
         except Exception:
             continue
 
-        hours_silent = (now - last_up).total_seconds() / 3600
-
-        # Wie lange darf dieses Ventil schweigen? Nicht 24 Stunden für alle, sondern ein
-        # Vielfaches seines eigenen Melde-Takts (Ticket 8zj). Ohne Messdaten bleibt es
-        # beim konfigurierten Fixwert.
-        interval = database.get_device_report_interval_seconds(valve["mqtt_name"])
-        timeout_seconds = watchdog_threshold.valve_timeout_seconds(
-            interval, min_seconds, max_seconds, factor
-        )
-        timeout_hours = timeout_seconds / 3600
+        seconds_silent = (now - last_up).total_seconds()
+        hours_silent = seconds_silent / 3600
 
         event = _check_edge(
             flag_key,
-            faulted=(hours_silent * 3600 > timeout_seconds),
+            faulted=(seconds_silent > timeout_hours * 3600),
             on_raise=lambda: InactivityAlertTriggered(wish_name, valve_id, hours_silent, timeout_hours),
             on_clear=lambda: InactivityAlertResolved(wish_name, valve_id),
         )
         if isinstance(event, InactivityAlertTriggered):
             logger.warning(
                 f"Watchdog-Alert: Ventil '{wish_name}' seit {hours_silent:.1f}h still "
-                f"(Schwelle {timeout_hours:.1f}h bei Melde-Takt "
-                f"{f'{interval:.0f}s' if interval else 'unbekannt'})."
+                f"(Schwelle {timeout_hours:.1f}h)."
             )
         elif isinstance(event, InactivityAlertResolved):
             # Ventil wurde zwischen zwei Checks reaktiviert (z.B. nach Daemon-Neustart)

@@ -424,11 +424,19 @@ class TestVerpasstEntwarntNie(unittest.TestCase):
             "Der Alarm muss bestehen bleiben"
 
 
-class TestValveTimeoutFromInterval(unittest.TestCase):
-    """Die Ventil-Schwelle folgt dem gemessenen Melde-Takt (Ticket 8zj).
+class TestValveTimeoutOneHour(unittest.TestCase):
+    """Die Ventil-Schwelle liegt bei einer Stunde statt bei 24 (Ticket 8zj).
 
-    Bisher galt ein fester 24-Stunden-Wert: Bei einem Ventil im 5-Minuten-Takt
-    verstrichen 288 ausgebliebene Meldungen, bevor der Watchdog etwas sagte.
+    Beide Ventile der Anlage funken im Ruhezustand im 5-Minuten-Takt (Median 299 s über
+    55 bzw. 78 Tage Produktionsdaten). Bei 24 Stunden Schwelle verstrichen damit 288
+    ausgebliebene Meldungen, bevor der Watchdog etwas sagte; bei einer Stunde sind es
+    zwölf.
+
+    Eine aus dem gemessenen Takt abgeleitete Schwelle wurde erprobt und wieder verworfen:
+    Ein Ventil hat zwei Melde-Takte — im Guss rund 6 s, in Ruhe rund 299 s — und eine
+    Messung über die jüngsten Meldungen erwischt je nach Zeitpunkt den einen oder den
+    anderen. Für die Ausfallerkennung zählt allein der Ruhe-Takt. Da beide Geräte
+    denselben haben, trägt ein fester Wert dieselbe Aussage ohne diese Fallstricke.
     """
 
     def setUp(self):
@@ -447,19 +455,7 @@ class TestValveTimeoutFromInterval(unittest.TestCase):
         except PermissionError:
             pass
 
-    def _log_interval(self, seconds: int, count: int = 20):
-        """Schreibt einen gleichmaessigen Melde-Takt in device_status_log."""
-        conn = sqlite3.connect(self.db_path)
-        base = datetime.now() - timedelta(seconds=seconds * count)
-        conn.executemany(
-            "INSERT INTO device_status_log (timestamp, device_name, battery, linkquality) "
-            "VALUES (?, 'test_valve', 100, 150)",
-            [((base + timedelta(seconds=i * seconds)).isoformat(),) for i in range(count)],
-        )
-        conn.commit()
-        conn.close()
-
-    def _run(self, silent_hours: float):
+    def _run(self, silent_hours: float, timeout_hours: float = 1.0):
         _set_last_update(
             self.db_path, "test_valve",
             (datetime.now() - timedelta(hours=silent_hours)).isoformat(),
@@ -468,31 +464,27 @@ class TestValveTimeoutFromInterval(unittest.TestCase):
         _global_bus.subscribe(InactivityAlertTriggered, captured.append)
         try:
             with patch("daemon.adapters.watchdog.config.WATCHDOG_ENABLED", True), \
-                 patch("daemon.adapters.watchdog.config.WATCHDOG_VALVE_TIMEOUT_HOURS", 24.0), \
-                 patch("daemon.adapters.watchdog.config.WATCHDOG_VALVE_MIN_TIMEOUT_MINUTES", 60.0), \
-                 patch("daemon.adapters.watchdog.config.WATCHDOG_VALVE_INTERVAL_FACTOR", 3.0):
+                 patch("daemon.adapters.watchdog.config.WATCHDOG_VALVE_TIMEOUT_HOURS", timeout_hours):
                 watchdog.run_watchdog_check()
         finally:
             _global_bus.unsubscribe(InactivityAlertTriggered, captured.append)
         return captured
 
-    def test_alert_long_before_24h_for_chatty_valve(self):
-        """5-Minuten-Takt: nach 2 h still ist der Alarm faellig, nicht erst nach 24 h."""
-        self._log_interval(300)
-        self.assertEqual(len(self._run(silent_hours=2)), 1)
+    def test_alert_after_one_hour(self):
+        """90 Minuten still → Alarm. Vorher hätte das 24 Stunden gedauert."""
+        self.assertEqual(len(self._run(silent_hours=1.5)), 1)
 
-    def test_no_alert_within_the_floor(self):
-        """Innerhalb der Mindestschwelle (1 h) bleibt es still — kein Fehlalarm."""
-        self._log_interval(300)
+    def test_no_alert_within_timeout(self):
+        """Eine halbe Stunde Funkstille ist noch kein Ausfall."""
         self.assertEqual(len(self._run(silent_hours=0.5)), 0)
 
-    def test_slow_valve_keeps_longer_grace(self):
-        """Ein Ventil im 90-Minuten-Takt darf laenger schweigen (3 x 90 Min = 4.5 h)."""
-        self._log_interval(90 * 60, count=10)
-        self.assertEqual(len(self._run(silent_hours=3)), 0)
-        self.assertEqual(len(self._run(silent_hours=5)), 1)
+    def test_alert_reports_configured_timeout(self):
+        """Das Ereignis trägt die tatsächlich geltende Schwelle."""
+        events = self._run(silent_hours=1.5)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].timeout_hours, 1.0)
+        self.assertGreater(events[0].hours_silent, 1.0)
 
-    def test_without_history_falls_back_to_fixed_timeout(self):
-        """Ohne Messdaten bleibt das bisherige Verhalten: erst nach 24 h."""
-        self.assertEqual(len(self._run(silent_hours=5)), 0)
-        self.assertEqual(len(self._run(silent_hours=25)), 1)
+    def test_threshold_stays_configurable(self):
+        """Die Schwelle bleibt eine Einstellung: mit 24 h meldet dasselbe Ventil nicht."""
+        self.assertEqual(len(self._run(silent_hours=1.5, timeout_hours=24.0)), 0)
