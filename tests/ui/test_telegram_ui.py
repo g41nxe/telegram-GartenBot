@@ -1936,9 +1936,21 @@ class TestRainOverride(unittest.TestCase):
             mock_client.edit_message_text.called or mock_client.answer_callback_query.called)
 
 class TestStatusNaechstesPhoto(unittest.TestCase):
-    """Feature 0035: 'Nächstes Foto' Zeile in /status."""
+    """Feature 0035: Die Foto-Ankündigung in /status.
 
-    def _make_schedule(self, time="06:00", duration=10, is_active=1, name="Rasen"):
+    Die Guss-Zeit liegt mit Bedacht auf 10:00: Der Aufnahme-Zeitpunkt ergibt sich als
+    Guss-Ende plus CAMERA_AFTER_GUSS_OFFSET_MINUTES, und `handle_status` blendet
+    Aufnahmen aus, die der Dunkelheits-Filter ohnehin unterdrücken würde. Bei der
+    früheren Vorgabe 06:00 lag der Zeitpunkt (06:12) im Sommer nach, im Spätsommer aber
+    vor Sonnenaufgang — die Tests brachen mit dem Wandern des Sonnenaufgangs übers Jahr
+    (telegram_GartenBot-1bp). 10:12 ist ganzjährig hell.
+
+    Dass die Unterdrückung bei Dunkelheit wirkt, prüft
+    `test_dark_photo_target_is_not_announced` ausdrücklich, statt es dem Kalender zu
+    überlassen.
+    """
+
+    def _make_schedule(self, time="10:00", duration=10, is_active=1, name="Rasen"):
         return {
             "id": 1, "name": name, "time": time, "duration_minutes": duration,
             "is_active": is_active, "days": "everyday", "target_volume_liters": 0,
@@ -2004,10 +2016,47 @@ class TestStatusNaechstesPhoto(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_status_foto_anlass_im_text(self, mock_client, mock_db, mock_ctrl):
-        """'Nächstes Foto' Zeile enthält den Anlass (Zeitplan-Name oder 'feste Fotozeit')."""
+        """Die Foto-Zeile nennt den Anlass — hier den Zeitplan-Namen.
+
+        Geprüft wird die Foto-Zeile selbst, nicht nur das Vorkommen des Namens
+        irgendwo im Status: „Rasen" steht ohnehin im Nächster-Guss-Block, womit die
+        frühere Fassung dieses Tests auch dann grün blieb, wenn die Foto-Zeile ganz
+        fehlte.
+        """
         text = self._status_with(mock_client, mock_db, mock_ctrl,
                                  schedules=[self._make_schedule(name="Rasen")])
-        self.assertIn("Rasen", text)
+        foto_zeile = next(z for z in text.splitlines() if "Nächstes Foto" in z)
+        self.assertIn("nach Guss", foto_zeile)
+        self.assertIn("Rasen", foto_zeile)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_dark_photo_target_is_not_announced(self, mock_client, mock_db, mock_ctrl):
+        """Was der Dunkelheits-Filter unterdrückt, kündigt der Bot nicht an.
+
+        Der Filter wird ersetzt statt auf eine Jahreszeit gehofft — die Astronomie
+        selbst ist in test_camera_daylight.py geprüft, hier zählt allein die
+        Verdrahtung in handle_status.
+        """
+        with patch("daemon.ui.telegram_ui.camera_daylight.build_photo_filter",
+                   return_value=lambda dt, label: False):
+            text = self._status_with(mock_client, mock_db, mock_ctrl)
+        self.assertNotIn("Nächstes Foto", text)
+
+    @patch("daemon.ui.telegram_ui._watering_ctrl")
+    @patch("daemon.ui.telegram_ui.database")
+    @patch("daemon.ui.telegram_ui.telegram_client")
+    def test_lit_photo_target_is_announced(self, mock_client, mock_db, mock_ctrl):
+        """Gegenprobe: Bei erlaubender Helligkeit erscheint die Zeile.
+
+        Ohne diese Gegenprobe bewiese der Test oben nur, dass irgendetwas die Zeile
+        verschluckt — nicht, dass es der Filter ist.
+        """
+        with patch("daemon.ui.telegram_ui.camera_daylight.build_photo_filter",
+                   return_value=lambda dt, label: True):
+            text = self._status_with(mock_client, mock_db, mock_ctrl)
+        self.assertIn("Nächstes Foto", text)
 
 class TestHandleAufnahmen(unittest.TestCase):
     """Feature 0035: Zwei-Abschnitt-Ansicht in handle_aufnahmen."""
