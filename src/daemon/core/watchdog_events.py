@@ -2,7 +2,7 @@ from .event_bus import Event
 
 
 class InactivityAlertTriggered(Event):
-    def __init__(self, device_name: str, valve_id: int, hours_silent: float, timeout_hours: int):
+    def __init__(self, device_name: str, valve_id: int, hours_silent: float, timeout_hours: float):
         self.device_name = device_name
         self.valve_id = valve_id
         self.hours_silent = hours_silent

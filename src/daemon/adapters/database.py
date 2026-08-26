@@ -754,6 +754,59 @@ def log_device_status(device_name: str, battery: int, linkquality: int):
     finally:
         conn.close()
 
+def get_device_report_interval_seconds(device_name: str, sample: int = 50) -> float | None:
+    """Misst den typischen Melde-Takt eines Geräts als Median der letzten Abstände.
+
+    Grundlage für die Inaktivitäts-Schwelle (Ticket 8zj): „seit wann still?" ist nur
+    im Verhältnis zum normalen Takt des Geräts zu beantworten.
+
+    Median statt Mittelwert, weil eine einzelne Lücke — typischerweise ein früherer
+    Ausfall — den Mittelwert nach oben zöge und die Schwelle genau dann anhöbe, wenn sie
+    greifen soll.
+
+    Gibt None zurück, wenn sich kein Abstand bilden lässt (unbekanntes Gerät oder nur
+    ein Eintrag); der Aufrufer bleibt dann beim konfigurierten Fixwert.
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT timestamp
+            FROM device_status_log
+            WHERE device_name = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """, (device_name, sample))
+        stamps = []
+        for row in cursor.fetchall():
+            try:
+                stamps.append(datetime.fromisoformat(row["timestamp"]))
+            except (TypeError, ValueError):
+                continue
+
+        if len(stamps) < 2:
+            return None
+
+        # DESC gelesen → Abstände zum jeweils älteren Nachbarn.
+        gaps = [
+            (stamps[i] - stamps[i + 1]).total_seconds()
+            for i in range(len(stamps) - 1)
+        ]
+        gaps = [g for g in gaps if g > 0]
+        if not gaps:
+            return None
+
+        gaps.sort()
+        mid = len(gaps) // 2
+        if len(gaps) % 2:
+            return gaps[mid]
+        return (gaps[mid - 1] + gaps[mid]) / 2
+    except Exception as e:
+        logger.error(f"Fehler beim Ermitteln des Melde-Intervalls für {device_name}: {e}")
+        return None
+    finally:
+        conn.close()
+
 def get_device_status_stats_last_24h(device_name: str) -> dict:
     """Errechnet Signalstärkestatistiken der letzten 24 Stunden für ein bestimmtes Gerät."""
     conn = get_connection()

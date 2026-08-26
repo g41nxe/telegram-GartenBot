@@ -152,10 +152,27 @@ UNEXPECTED_VALVE_ALERT_ENABLED = os.getenv("UNEXPECTED_VALVE_ALERT_ENABLED", "tr
 
 # --- Inaktivitäts-Watchdog ---
 WATCHDOG_ENABLED = os.getenv("WATCHDOG_ENABLED", "true").lower() == "true"
+# Obergrenze: Spätestens nach dieser Zeit gilt Schweigen als Störung — auch ohne
+# messbaren Melde-Takt.
 try:
     WATCHDOG_VALVE_TIMEOUT_HOURS = float(os.getenv("WATCHDOG_VALVE_TIMEOUT_HOURS", "24"))
 except ValueError:
     WATCHDOG_VALVE_TIMEOUT_HOURS = 24.0
+# Die tatsächliche Schwelle leitet sich aus dem gemessenen Melde-Takt ab — analog zu der
+# Regel, die der Watchdog für Kameras längst anwendet (`max(3 × sleep_duration, 1 h)`),
+# nur dass der Takt bei Ventilen nicht konfiguriert, sondern gemessen ist:
+# Faktor × Takt, begrenzt nach unten durch die Mindestschwelle und nach oben durch
+# WATCHDOG_VALVE_TIMEOUT_HOURS.
+try:
+    WATCHDOG_VALVE_MIN_TIMEOUT_MINUTES = float(
+        os.getenv("WATCHDOG_VALVE_MIN_TIMEOUT_MINUTES", "60")
+    )
+except ValueError:
+    WATCHDOG_VALVE_MIN_TIMEOUT_MINUTES = 60.0
+try:
+    WATCHDOG_VALVE_INTERVAL_FACTOR = float(os.getenv("WATCHDOG_VALVE_INTERVAL_FACTOR", "3"))
+except ValueError:
+    WATCHDOG_VALVE_INTERVAL_FACTOR = 3.0
 
 GITHUB_PAT = os.getenv("GITHUB_PAT", "")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "")

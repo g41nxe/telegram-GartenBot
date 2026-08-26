@@ -422,3 +422,77 @@ class TestVerpasstEntwarntNie(unittest.TestCase):
         assert entwarnungen == [], "Ein gestoerter Zeitpunkt darf nie entwarnen"
         assert db.get_metadata(f"watchdog_delay_alert_active_camera_{self.MAC}") == "1", \
             "Der Alarm muss bestehen bleiben"
+
+
+class TestValveTimeoutFromInterval(unittest.TestCase):
+    """Die Ventil-Schwelle folgt dem gemessenen Melde-Takt (Ticket 8zj).
+
+    Bisher galt ein fester 24-Stunden-Wert: Bei einem Ventil im 5-Minuten-Takt
+    verstrichen 288 ausgebliebene Meldungen, bevor der Watchdog etwas sagte.
+    """
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._db_patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._db_patcher.start()
+        db.init_db()
+        self.valve_id = db.add_valve("Testventil", "test_valve")
+
+    def tearDown(self):
+        self._db_patcher.stop()
+        import gc
+        gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def _log_interval(self, seconds: int, count: int = 20):
+        """Schreibt einen gleichmaessigen Melde-Takt in device_status_log."""
+        conn = sqlite3.connect(self.db_path)
+        base = datetime.now() - timedelta(seconds=seconds * count)
+        conn.executemany(
+            "INSERT INTO device_status_log (timestamp, device_name, battery, linkquality) "
+            "VALUES (?, 'test_valve', 100, 150)",
+            [((base + timedelta(seconds=i * seconds)).isoformat(),) for i in range(count)],
+        )
+        conn.commit()
+        conn.close()
+
+    def _run(self, silent_hours: float):
+        _set_last_update(
+            self.db_path, "test_valve",
+            (datetime.now() - timedelta(hours=silent_hours)).isoformat(),
+        )
+        captured = []
+        _global_bus.subscribe(InactivityAlertTriggered, captured.append)
+        try:
+            with patch("daemon.adapters.watchdog.config.WATCHDOG_ENABLED", True), \
+                 patch("daemon.adapters.watchdog.config.WATCHDOG_VALVE_TIMEOUT_HOURS", 24.0), \
+                 patch("daemon.adapters.watchdog.config.WATCHDOG_VALVE_MIN_TIMEOUT_MINUTES", 60.0), \
+                 patch("daemon.adapters.watchdog.config.WATCHDOG_VALVE_INTERVAL_FACTOR", 3.0):
+                watchdog.run_watchdog_check()
+        finally:
+            _global_bus.unsubscribe(InactivityAlertTriggered, captured.append)
+        return captured
+
+    def test_alert_long_before_24h_for_chatty_valve(self):
+        """5-Minuten-Takt: nach 2 h still ist der Alarm faellig, nicht erst nach 24 h."""
+        self._log_interval(300)
+        self.assertEqual(len(self._run(silent_hours=2)), 1)
+
+    def test_no_alert_within_the_floor(self):
+        """Innerhalb der Mindestschwelle (1 h) bleibt es still — kein Fehlalarm."""
+        self._log_interval(300)
+        self.assertEqual(len(self._run(silent_hours=0.5)), 0)
+
+    def test_slow_valve_keeps_longer_grace(self):
+        """Ein Ventil im 90-Minuten-Takt darf laenger schweigen (3 x 90 Min = 4.5 h)."""
+        self._log_interval(90 * 60, count=10)
+        self.assertEqual(len(self._run(silent_hours=3)), 0)
+        self.assertEqual(len(self._run(silent_hours=5)), 1)
+
+    def test_without_history_falls_back_to_fixed_timeout(self):
+        """Ohne Messdaten bleibt das bisherige Verhalten: erst nach 24 h."""
+        self.assertEqual(len(self._run(silent_hours=5)), 0)
+        self.assertEqual(len(self._run(silent_hours=25)), 1)
