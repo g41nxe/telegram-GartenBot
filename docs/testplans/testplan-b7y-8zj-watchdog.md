@@ -53,22 +53,50 @@ Vorhersage aus Daemon-Start (26.08. 22:43:27) und Stundentakt des Watchdogs:
 | Schwelle (1 h) | 16:05:02 |
 | Nächster Prüflauf | **16:43:27** |
 
-- [ ] Gegen **16:43** trifft die Telegram-Meldung ein:
+- [x] Gegen **16:43** trifft die Telegram-Meldung ein:
       **„⚠️ Verbindung verloren: Ventil ‚Links Sprenger' hat seit 1.x Stunden kein Signal
       gesendet."**
-- [ ] Die genannte Dauer liegt bei rund **1,6 Stunden** — nicht bei 24.
-- [ ] `journalctl` zeigt die zugehörige Zeile mit Schwellenangabe:
+- [x] Die genannte Dauer liegt bei rund **1,6 Stunden** — nicht bei 24.
+- [x] `journalctl` zeigt die zugehörige Zeile mit Schwellenangabe:
       „Watchdog-Alert: Ventil ‚Links Sprenger' seit 1.6h still (Schwelle 1.0h)."
-- [ ] `/status` weist danach **beide** Ventile rot aus.
-- [ ] Batterie wieder einsetzen → Entwarnung
+- [x] `/status` weist danach **beide** Ventile rot aus.
+- [x] Batterie wieder einsetzen → Entwarnung
       **„🟢 Verbindung wiederhergestellt"**, `/status` für „Links Sprenger" wieder grün.
 
 ---
 
 ## Ergebnis
 
-_(nach der Abnahme ausfüllen)_
+**Datum:** 30.08.2026
+**Ergebnis:** GO
 
-**Datum:**
-**Ergebnis:**
-**Abweichungen:**
+**1 · b7y** — bestätigt. `/status` meldete „🔴 Es gibt ein Problem"; „Rechts Nebelregen"
+erschien mit „⚠️ kein Signal seit 22.08. um 13:30 Uhr" und ohne Batterie-/Signalstärke-Zeile.
+Vor dem Fix stand dort „🟢 aktiv · 🔋 Voll · 📶 gut" bei grüner Kopfzeile.
+
+**2 · 8zj** — bestätigt, und zwar zum vorausberechneten Zeitpunkt. Aus Daemon-Start
+(26.08. 22:43:27) und Stundentakt ergab sich als Meldezeit 16:43:27; eingetroffen ist sie
+um 16:43:00:
+
+    16:43:00  Verbindung verloren: Ventil "Links Sprenger" hat seit 1.6 Stunden kein Signal gesendet.
+    16:43:01  Watchdog-Alert: Ventil 'Links Sprenger' seit 1.6h still (Schwelle 1.0h).
+
+Beide Flags danach auf 1. Mit der alten 24-Stunden-Schwelle wäre die Meldung erst am
+31.08. gegen 15:05 gekommen.
+
+Die Entwarnung nach dem Wiedereinsetzen der Batterie kam um 16:56:26 — zwei Sekunden nach
+dem ersten wieder eingegangenen Signal (16:56:28). Sie hängt am Ventil-Ereignis, nicht am
+Prüftakt, und ist deshalb sofort. Flag für Ventil 1 zurück auf 0, Ventil 2 unverändert 1
+(weiterhin ausgebaut).
+
+**Abweichungen:** keine im geprüften Verhalten.
+
+Zwei Punkte aus Abschnitt 1 blieben ungeprüft, weil sie den Befund nicht berühren: das
+Ausbleiben der technischen ID im Status und der Gegencheck über `/tagesbericht`. Beide
+sind durch Unit-Tests abgedeckt.
+
+**Folgebefund während der Abnahme:** Zwischen dem Reißen der Schwelle (16:05) und der
+Meldung (16:43) vergingen 38 Minuten, weil der Watchdog nur stündlich prüft — die
+Wartezeit ist im schlechtesten Fall doppelt so lang wie die Schwelle. Behoben in
+Commit 0512925 (`WATCHDOG_CHECK_INTERVAL_SECONDS`, Vorgabe 300 s); wirksam ab dem
+nächsten Release.
