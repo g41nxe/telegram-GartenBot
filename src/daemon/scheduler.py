@@ -321,10 +321,10 @@ def _scheduler_loop():
                     t_cleanup = threading.Thread(target=_cleanup_camera_photos_safe, daemon=True)
                     t_cleanup.start()
             
-            # Stündliche Hintergrundprüfungen
+            # Wiederkehrende Hintergrundprüfungen
             current_timestamp = time.time()
 
-            if current_timestamp - last_watchdog_check >= 3600:
+            if current_timestamp - last_watchdog_check >= config.WATCHDOG_CHECK_INTERVAL_SECONDS:
                 last_watchdog_check = current_timestamp
                 t_watchdog = threading.Thread(target=watchdog.run_watchdog_check, daemon=True)
                 t_watchdog.start()

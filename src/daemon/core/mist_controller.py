@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, Tuple
 from .event_bus import EventBus
 from .mist_events import MistIntervalStarted, MistIntervalEnded
 
-logger = logging.getLogger("garden_nebel_controller")
+logger = logging.getLogger("garden_mist_controller")
 
 __all__ = ["MistController", "MistIntervalStarted", "MistIntervalEnded"]
 

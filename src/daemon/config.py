@@ -152,6 +152,17 @@ UNEXPECTED_VALVE_ALERT_ENABLED = os.getenv("UNEXPECTED_VALVE_ALERT_ENABLED", "tr
 
 # --- Inaktivitäts-Watchdog ---
 WATCHDOG_ENABLED = os.getenv("WATCHDOG_ENABLED", "true").lower() == "true"
+# Wie oft der Watchdog nachsieht. Der Takt begrenzt, wie lange zwischen dem Reißen der
+# Schwelle und der Meldung vergehen kann — bei stündlichem Takt und einstündiger Schwelle
+# wartet man im schlechtesten Fall zwei Stunden. Die Untergrenze schützt die
+# Steuerzentrale vor einer Dauerschleife.
+try:
+    WATCHDOG_CHECK_INTERVAL_SECONDS = max(
+        30, int(os.getenv("WATCHDOG_CHECK_INTERVAL_SECONDS", "300"))
+    )
+except ValueError:
+    WATCHDOG_CHECK_INTERVAL_SECONDS = 300
+
 # Wie lange darf ein Ventil schweigen, bevor das Schweigen eine Störung ist?
 # Die Ventile funken im Ruhezustand im 5-Minuten-Takt; eine Stunde entspricht also zwölf
 # ausgebliebenen Meldungen. Der frühere Wert von 24 Stunden ließ 288 davon verstreichen.

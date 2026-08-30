@@ -101,3 +101,42 @@ class TestGetSetting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWatchdogCheckInterval(unittest.TestCase):
+    """Der Prüf-Takt des Watchdogs ist konfigurierbar (Ticket 8zj, Folgebefund).
+
+    Er begrenzt, wie lange zwischen dem Reißen der Schwelle und der Meldung vergehen
+    kann: Bei einem Takt von einer Stunde und einer Schwelle von einer Stunde wartet man
+    im schlechtesten Fall zwei Stunden auf die Nachricht.
+    """
+
+    def tearDown(self):
+        import importlib
+        import daemon.config as cfg
+        importlib.reload(cfg)
+
+    def _reload(self, env_vars):
+        import importlib
+        import daemon.config as cfg
+        with patch.dict(os.environ, env_vars, clear=False):
+            importlib.reload(cfg)
+        return cfg
+
+    def test_default_is_five_minutes(self):
+        cfg = self._reload({})
+        self.assertEqual(cfg.WATCHDOG_CHECK_INTERVAL_SECONDS, 300)
+
+    def test_value_from_environment(self):
+        cfg = self._reload({"WATCHDOG_CHECK_INTERVAL_SECONDS": "60"})
+        self.assertEqual(cfg.WATCHDOG_CHECK_INTERVAL_SECONDS, 60)
+
+    def test_nonsense_falls_back_to_default(self):
+        """Ein unlesbarer Wert darf den Watchdog nicht lahmlegen."""
+        cfg = self._reload({"WATCHDOG_CHECK_INTERVAL_SECONDS": "gleich"})
+        self.assertEqual(cfg.WATCHDOG_CHECK_INTERVAL_SECONDS, 300)
+
+    def test_floor_prevents_busy_loop(self):
+        """Ein zu kleiner Wert wird angehoben — die Steuerzentrale soll nicht dauernd prüfen."""
+        cfg = self._reload({"WATCHDOG_CHECK_INTERVAL_SECONDS": "1"})
+        self.assertGreaterEqual(cfg.WATCHDOG_CHECK_INTERVAL_SECONDS, 30)

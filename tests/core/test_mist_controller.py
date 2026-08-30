@@ -12,7 +12,7 @@ from daemon.core.mist_controller import MistController
 from daemon.core.mist_events import MistIntervalStarted, MistIntervalEnded
 
 
-class TestNebelController(unittest.TestCase):
+class TestMistController(unittest.TestCase):
     """Tests für die Nebel-Steuerung (Burst-Loop). Timing wird über die Transitions-
     Methoden direkt getrieben — keine sleep-basierten Tests."""
 
@@ -86,7 +86,7 @@ class TestNebelController(unittest.TestCase):
         bus = EventBus()
         nebel = MistController(bus, lambda t, p: False)   # Publish schlägt immer fehl
         try:
-            with self.assertLogs("garden_nebel_controller", level="WARNING") as cm:
+            with self.assertLogs("garden_mist_controller", level="WARNING") as cm:
                 nebel.start("terrace_mist", 20, 5, self._future(), "nebel")
             self.assertTrue(any("ON" in m for m in cm.output))
             self.assertTrue(nebel.is_active("terrace_mist"))
