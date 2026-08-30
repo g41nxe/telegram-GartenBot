@@ -2,7 +2,7 @@
 
 Treibt „🌫️ Sofort-Nebel" (Ventil → Stoß-Dauer → Pause → Laufzeit → Start) durch die
 echten Dispatcher mit gemocktem telegram_client / database / Nebel-Steuerung. Paritäts-
-Anker für die SofortNebelAssistent-Migration: grün VOR und NACH der Migration.
+Anker für die InstantMistAssistent-Migration: grün VOR und NACH der Migration.
 """
 import sys
 import unittest
@@ -21,7 +21,7 @@ class TestSofortNebelFlow(unittest.TestCase):
         manual_states.clear()
         self.tc = patch("daemon.ui.telegram_ui.telegram_client").start()
         self.db = patch("daemon.ui.telegram_ui.database").start()
-        self.nebel = patch("daemon.ui.telegram_ui._nebel_ctrl").start()
+        self.nebel = patch("daemon.ui.telegram_ui._mist_ctrl").start()
         self.addCleanup(patch.stopall)
         self.nebel.start.return_value = (True, "OK")
         self._valve = {"id": 3, "wish_name": "Terrasse", "mqtt_name": "terrace_mist"}

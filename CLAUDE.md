@@ -163,6 +163,14 @@ Rund 7 % der Bezeichner sind noch deutsch, dazu 36 Mischformen wie `handle_bewae
 
 Beim Umbenennen die Aufrufstellen in `tests/` mitziehen und die Suite grün halten — sie ist das einzige Netz für diese Art Änderung.
 
+**Nicht umbenannt werden Werte, die das System verlassen.** Sie sehen aus wie Bezeichner, sind aber Schnittstellen nach außen, und eine Umbenennung bricht laufende Installationen:
+
+- **Konfigurationsschlüssel** — `NEBEL_ON_SECONDS` und Geschwister stehen so in `garden.conf` und `.env`; `.env` wird bei Releases bewusst nicht überschrieben.
+- **Datenbank-Werte** — `mode='nebel'` steht in `schedules`; ein neuer Wert macht bestehende Zeitpläne unlesbar.
+- **Callback-Daten und View-Namen** — `nebel_cancel`, `wiz_mode_nebel` stecken in Inline-Keyboards, die zum Zeitpunkt des Updates noch offen im Chat liegen.
+
+Daher heißt die Kühlfunktion im Code `mist`, ihre Konfiguration aber weiterhin `NEBEL_*`. Das ist kein Versehen, sondern die Grenze zwischen innen und außen.
+
 ## Configuration
 
 Configuration is split into two files (ADR 0030):

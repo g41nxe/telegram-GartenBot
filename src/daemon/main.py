@@ -54,7 +54,7 @@ def main():
     # 3. Ereignis-Kanal & Guss-Steuerung initialisieren und verdrahten (IoC)
     logger.info("Initialisiere Ereignis-Kanal & Guss-Steuerung...")
     from .core.watering_controller import WateringController
-    from .core.nebel_controller import NebelController
+    from .core.mist_controller import MistController
     from .adapters.database_adapter import DatabaseLoggerAdapter
     from .adapters.rain_event_adapter import RainEventAdapter
 
@@ -63,11 +63,11 @@ def main():
 
     # Nebel-Steuerung (Feature 0032): eigene Engine fürs Kühlen; beansprucht ihr Ventil
     # bei der Guss-Steuerung, damit Nebelstöße nicht als Fremdöffnung gelten.
-    nebel_ctrl = NebelController(
+    mist_ctrl = MistController(
         mqtt_client._global_bus, mqtt_client.client_instance.publish,
         claim_fn=watering_ctrl.claim_valve, release_fn=watering_ctrl.release_valve,
     )
-    scheduler.set_nebel_controller(nebel_ctrl)
+    scheduler.set_mist_controller(mist_ctrl)
 
     # Initialisiere den DB-Logger Adapter zur Event-Archivierung
     db_adapter = DatabaseLoggerAdapter(mqtt_client._global_bus)
@@ -94,7 +94,7 @@ def main():
     logger.info("Initialisiere Telegram-Bot...")
     from .ui import telegram_ui as _telegram_ui
     _telegram_ui.set_watering_controller(watering_ctrl)
-    _telegram_ui.set_nebel_controller(nebel_ctrl)
+    _telegram_ui.set_mist_controller(mist_ctrl)
     _telegram_ui.subscribe_event_handlers()
     if not config.TELEGRAM_BOT_TOKEN:
         logger.warning(

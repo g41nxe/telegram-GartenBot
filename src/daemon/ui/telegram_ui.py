@@ -41,9 +41,9 @@ from ..core.system_events import (
     SoftwareUpdateActivated, SoftwareUpdateRolledBack, SoftwareUpdateFailed,
 )
 from ..core.valve_events import UnexpectedValveOpened, UnexpectedValveResolved
-from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
+from ..core.mist_events import MistIntervalStarted, MistIntervalEnded
 from .assistent import (
-    ScheduleAssistent, GussAssistent, SofortNebelAssistent,
+    ScheduleAssistent, GussAssistent, InstantMistAssistent,
     CameraPairAssistent, CameraSettingsAssistent, PairingNameAssistent,
     DeleteConfirmAssistent, EditAssistent, Prompt, Reject, Done,
 )
@@ -52,17 +52,17 @@ logger = logging.getLogger("garden_telegram_ui")
 
 # Module-level controller reference — set once at daemon startup by main.py
 _watering_ctrl = None
-_nebel_ctrl = None
+_mist_ctrl = None
 
 def set_watering_controller(ctrl) -> None:
     """Verdrahtet die Guss-Steuerung für manuelle Bewässerungsbefehle. Einmalig von main.py aufrufen."""
     global _watering_ctrl
     _watering_ctrl = ctrl
 
-def set_nebel_controller(ctrl) -> None:
+def set_mist_controller(ctrl) -> None:
     """Verdrahtet die Nebel-Steuerung für Sofort-Nebel (Feature 0032). Einmalig von main.py aufrufen."""
-    global _nebel_ctrl
-    _nebel_ctrl = ctrl
+    global _mist_ctrl
+    _mist_ctrl = ctrl
 
 def _resolve_valve_wish_name(mqtt_name: str) -> str:
     """Löst den Wunschnamen eines Ventils auf; Fallback ist der mqtt_name."""
@@ -74,19 +74,19 @@ def _resolve_valve_wish_name(mqtt_name: str) -> str:
         pass
     return mqtt_name
 
-def _start_sofort_nebel(valve: dict, minutes: int, on_seconds: int = None, pause_minutes: int = None):
+def _start_instant_mist(valve: dict, minutes: int, on_seconds: int = None, pause_minutes: int = None):
     """Startet einen Sofort-Nebel auf einem Ventil; Laufzeit hart gedeckelt. (Feature 0032/0031)
 
     Stoß-Dauer und Pause werden pro Lauf übergeben (Feature 0031); fehlen sie, gelten die
     Config-Defaults als Fallback. Es wird nichts persistiert.
     """
-    if _nebel_ctrl is None:
+    if _mist_ctrl is None:
         return False, "Nebel-Steuerung nicht initialisiert."
     on_seconds = on_seconds if on_seconds is not None else config.NEBEL_ON_SECONDS
     pause_minutes = pause_minutes if pause_minutes is not None else config.NEBEL_PAUSE_MINUTES
     capped = min(minutes, config.NEBEL_MANUAL_MAX_MINUTES)
     end = datetime.now() + timedelta(minutes=capped)
-    return _nebel_ctrl.start(
+    return _mist_ctrl.start(
         valve["mqtt_name"], on_seconds, pause_minutes, end, "nebel_manual",
     )
 
@@ -412,7 +412,7 @@ def get_mode_wizard_keyboard() -> dict:
         ]
     }
 
-def get_nebel_end_hour_keyboard() -> dict:
+def get_mist_end_hour_keyboard() -> dict:
     """Endstunde des Nebel-Fensters (6x4-Grid, eigene Callbacks)."""
     rows = []
     for r in range(4):
@@ -421,7 +421,7 @@ def get_nebel_end_hour_keyboard() -> dict:
     rows.append([{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}])
     return {"inline_keyboard": rows}
 
-def get_nebel_end_minute_keyboard() -> dict:
+def get_mist_end_minute_keyboard() -> dict:
     """Endminute des Nebel-Fensters (5-Minuten-Schritte, eigene Callbacks)."""
     rows = []
     for r in range(3):
@@ -430,19 +430,19 @@ def get_nebel_end_minute_keyboard() -> dict:
     rows.append([{"text": "❌ Abbrechen", "callback_data": "wiz_cancel"}])
     return {"inline_keyboard": rows}
 
-def get_nebel_on_keyboard(prefix: str = "nb_on", cancel_cb: str = "wiz_cancel") -> dict:
+def get_mist_on_keyboard(prefix: str = "nb_on", cancel_cb: str = "wiz_cancel") -> dict:
     """Dauer eines Nebelstoßes in Sekunden. Eigener Callback-Präfix trennt Zeitplan- und Sofort-Flow."""
     presets = [10, 15, 20, 30, 45, 60]
     row = [{"text": f"{s}s", "callback_data": f"{prefix}_{s}"} for s in presets]
     return {"inline_keyboard": [row, [{"text": "❌ Abbrechen", "callback_data": cancel_cb}]]}
 
-def get_nebel_pause_keyboard(prefix: str = "nb_pause", cancel_cb: str = "wiz_cancel") -> dict:
+def get_mist_pause_keyboard(prefix: str = "nb_pause", cancel_cb: str = "wiz_cancel") -> dict:
     """Pause zwischen Nebelstößen in Minuten. Eigener Callback-Präfix trennt Zeitplan- und Sofort-Flow."""
     presets = [1, 2, 3, 5, 10, 15]
     row = [{"text": f"{m}min", "callback_data": f"{prefix}_{m}"} for m in presets]
     return {"inline_keyboard": [row, [{"text": "❌ Abbrechen", "callback_data": cancel_cb}]]}
 
-def get_nebel_now_keyboard() -> dict:
+def get_mist_now_keyboard() -> dict:
     """Laufzeit-Auswahl für den Sofort-Nebel (gedeckelt durch NEBEL_MANUAL_MAX_MINUTES)."""
     presets = [30, 60, 120]
     row = [{"text": f"{m} Min", "callback_data": f"nebel_dur_{m}"} for m in presets]
@@ -796,10 +796,10 @@ def _active_stop_sources() -> list:
             sources.append(("guss", name))
         for name in _watering_ctrl.get_unexpected_open_valves():
             sources.append(("extern", name))
-    if _nebel_ctrl:
-        nebel_name = _nebel_ctrl.get_active_window()
-        if nebel_name:
-            sources.append(("nebel", nebel_name))
+    if _mist_ctrl:
+        mist_name = _mist_ctrl.get_active_window()
+        if mist_name:
+            sources.append(("nebel", mist_name))
     return sources
 
 def _stop_source(kind: str, mqtt_name: str):
@@ -812,7 +812,7 @@ def _stop_source(kind: str, mqtt_name: str):
         _watering_ctrl.force_close(mqtt_name)
         label = f"{label} (extern geöffnet)"
     else:
-        _nebel_ctrl.stop(mqtt_name)
+        _mist_ctrl.stop(mqtt_name)
         label = f"{label} (Nebel)"
     return label
 
@@ -1518,7 +1518,7 @@ def _process_message(msg_obj: dict):
 # Präsentation: View → deutscher Prompt-Text, Keyboard-Typ → Inline-Keyboard, plus die lebende
 # Prompt-Nachricht (ADR 0039) über show_step. Wässern- UND Nebel-Pfad (mode-Verzweigung).
 
-def _nebel_prompt_text(view: str, d: dict) -> str:
+def _mist_prompt_text(view: str, d: dict) -> str:
     """Prompt-Texte des Nebel-Zweigs (mode='nebel'). Faithful zu den alten Wizard-Texten."""
     name = d.get("name", "")
     if view == "name":
@@ -1568,7 +1568,7 @@ def _nebel_prompt_text(view: str, d: dict) -> str:
 
 def _schedule_prompt_text(view: str, d: dict) -> str:
     if d.get("mode") == "nebel":
-        return _nebel_prompt_text(view, d)
+        return _mist_prompt_text(view, d)
     name = d.get("name", "")
     if view == "name":
         return ("🆕 *Neuen Zeitplan anlegen — Name*\n\n"
@@ -1627,13 +1627,13 @@ def _schedule_keyboard(kind: str, a: ScheduleAssistent) -> dict:
     if kind == "volume":
         return get_volume_wizard_keyboard("wiz")
     if kind == "nebel_end_hour":
-        return get_nebel_end_hour_keyboard()
+        return get_mist_end_hour_keyboard()
     if kind == "nebel_end_minute":
-        return get_nebel_end_minute_keyboard()
+        return get_mist_end_minute_keyboard()
     if kind == "nebel_on":
-        return get_nebel_on_keyboard()
+        return get_mist_on_keyboard()
     if kind == "nebel_pause":
-        return get_nebel_pause_keyboard()
+        return get_mist_pause_keyboard()
     if kind == "days":
         return get_days_wizard_keyboard(a.data.get("days", []))
     if kind == "valve":
@@ -1730,9 +1730,9 @@ def _start_guss_from_assistent(chat_id, state, message_id):
         telegram_client.edit_message_text(
             chat_id, message_id, f"🟢 *Befehl gesendet:* Bewässerung gestartet ({dur} Min / {vol}l).")
 
-# --- Sofort-Nebel über den SofortNebelAssistent (Ticket cy1) --------------------------------
+# --- Sofort-Nebel über den InstantMistAssistent (Ticket cy1) --------------------------------
 
-def _sofort_nebel_prompt_text(view: str, d: dict) -> str:
+def _instant_mist_prompt_text(view: str, d: dict) -> str:
     if view == "on":
         return "🌫️ *Sofort-Nebel — Stoß-Dauer*\n\nWie lange soll ein Nebelstoß dauern?"
     if view == "pause":
@@ -1741,23 +1741,23 @@ def _sofort_nebel_prompt_text(view: str, d: dict) -> str:
         return "🌫️ *Sofort-Nebel — Laufzeit*\n\nWie lange soll gekühlt werden?"
     return ""
 
-def _sofort_nebel_keyboard(kind: str, a) -> dict:
+def _instant_mist_keyboard(kind: str, a) -> dict:
     if kind == "nebel_now_on":
-        return get_nebel_on_keyboard("nebel_now_on", "nebel_cancel")
+        return get_mist_on_keyboard("nebel_now_on", "nebel_cancel")
     if kind == "nebel_now_pause":
-        return get_nebel_pause_keyboard("nebel_now_pause", "nebel_cancel")
+        return get_mist_pause_keyboard("nebel_now_pause", "nebel_cancel")
     if kind == "nebel_now_runtime":
-        return get_nebel_now_keyboard()
+        return get_mist_now_keyboard()
     return {"inline_keyboard": [[{"text": "❌ Abbrechen", "callback_data": "nebel_cancel"}]]}
 
-def _start_sofort_nebel_from_assistent(chat_id, state, message_id):
+def _start_instant_mist_from_assistent(chat_id, state, message_id):
     a = state["assistent"]
     valve = a.valve
     on_seconds = a.data["on_seconds"]
     pause_minutes = a.data["pause_minutes"]
     minutes = a.data["minutes"]
     _state_del(manual_states, chat_id)
-    ok, msg = _start_sofort_nebel(valve, minutes, on_seconds, pause_minutes)
+    ok, msg = _start_instant_mist(valve, minutes, on_seconds, pause_minutes)
     if ok:
         telegram_client.edit_message_text(
             chat_id, message_id,
@@ -2076,10 +2076,10 @@ WIZARDS = {
         callbacks=[("man_dur_custom", "custom"), ("man_vol_custom", "custom"),
                    ("man_dur_", int), ("man_vol_", int)],
         on_done=_start_guss_from_assistent, cancel="man_cancel"),
-    SofortNebelAssistent: WizardSpec(
-        store=manual_states, text=_sofort_nebel_prompt_text, keyboard=_sofort_nebel_keyboard,
+    InstantMistAssistent: WizardSpec(
+        store=manual_states, text=_instant_mist_prompt_text, keyboard=_instant_mist_keyboard,
         callbacks=[("nebel_now_on_", int), ("nebel_now_pause_", int), ("nebel_dur_", int)],
-        on_done=_start_sofort_nebel_from_assistent, cancel="nebel_cancel"),
+        on_done=_start_instant_mist_from_assistent, cancel="nebel_cancel"),
     CameraPairAssistent: WizardSpec(
         store=wizard_states, text=_camera_prompt_text, keyboard=_camera_keyboard,
         callbacks=[("camsetup_res_", _valid_resolution), ("camsetup_qual_", _valid_quality)],
@@ -2276,8 +2276,8 @@ def _process_callback_query(cb_obj: dict):
                 "❌ Es ist noch kein Ventil gekoppelt. Koppel zuerst ein Ventil über Einstellungen."
             )
         elif len(valves) == 1:
-            # Ticket cy1: Sofort-Nebel läuft über den SofortNebelAssistent (einheitliche Engine).
-            _start_wizard(chat_id, SofortNebelAssistent(valves[0]))
+            # Ticket cy1: Sofort-Nebel läuft über den InstantMistAssistent (einheitliche Engine).
+            _start_wizard(chat_id, InstantMistAssistent(valves[0]))
         else:
             rows = [[{"text": f"🚰 {v['wish_name']}", "callback_data": f"nebel_now_valve_{v['id']}"}] for v in valves]
             rows.append([{"text": "❌ Abbrechen", "callback_data": "nebel_cancel"}])
@@ -2294,12 +2294,12 @@ def _process_callback_query(cb_obj: dict):
         if valve is None:
             telegram_client.edit_message_text(chat_id, message_id, "❌ Ventil nicht gefunden.")
         else:
-            _start_wizard(chat_id, SofortNebelAssistent(valve), message_id=message_id)
+            _start_wizard(chat_id, InstantMistAssistent(valve), message_id=message_id)
 
     elif data == "nebel_stop":
         telegram_client.answer_callback_query(cb_id, "Nebel wird gestoppt")
-        if _nebel_ctrl is not None:
-            ok, msg = _nebel_ctrl.stop()
+        if _mist_ctrl is not None:
+            ok, msg = _mist_ctrl.stop()
             telegram_client.edit_message_text(chat_id, message_id,
                                               "🛑 *Nebel gestoppt.*" if ok else f"ℹ️ {msg}")
         else:
@@ -2316,15 +2316,15 @@ def _process_callback_query(cb_obj: dict):
             _watering_ctrl.stop_watering()
             for name in _watering_ctrl.get_unexpected_open_valves():
                 _watering_ctrl.force_close(name)
-        if _nebel_ctrl:
-            _nebel_ctrl.stop()
+        if _mist_ctrl:
+            _mist_ctrl.stop()
         telegram_client.edit_message_text(chat_id, message_id, "🛑 *Alles gestoppt* (Güsse, extern offene Ventile und Nebel).")
 
     elif data.startswith("stop_nebel_"):
         name = data[len("stop_nebel_"):]
         telegram_client.answer_callback_query(cb_id, "Nebel wird gestoppt")
-        if _nebel_ctrl:
-            _nebel_ctrl.stop(name)
+        if _mist_ctrl:
+            _mist_ctrl.stop(name)
         valve = database.get_valve_by_mqtt_name(name)
         label = valve["wish_name"] if valve else name
         telegram_client.edit_message_text(chat_id, message_id, f"🛑 *Nebel gestoppt:* {label}")
@@ -2661,7 +2661,7 @@ def _render_watering_stopped(event: WateringCycleStopped) -> str:
         f"⏱️ Laufzeit: ca. {event.duration_run} Min · 💧 {event.volume_run:.1f} l"
     )
 
-def _render_nebel_interval_started(event: NebelIntervalStarted) -> str:
+def _render_mist_interval_started(event: MistIntervalStarted) -> str:
     wish = _md_escape(_resolve_valve_wish_name(event.mqtt_name))
     end_str = ""
     try:
@@ -2676,7 +2676,7 @@ def _render_nebel_interval_started(event: NebelIntervalStarted) -> str:
         f"Quelle: {quelle}"
     )
 
-def _render_nebel_interval_ended(event: NebelIntervalEnded) -> str:
+def _render_mist_interval_ended(event: MistIntervalEnded) -> str:
     wish = _md_escape(_resolve_valve_wish_name(event.mqtt_name))
     return (
         f"🌫️ *Nebel-Intervall beendet*\n"
@@ -2913,8 +2913,8 @@ NOTIFICATIONS = {
     RainSensorInactivityAlertResolved: NotificationSpec(_render_rain_sensor_inactivity_resolved),
     UnexpectedValveOpened: NotificationSpec(_render_unexpected_valve_opened),
     UnexpectedValveResolved: NotificationSpec(_render_unexpected_valve_resolved),
-    NebelIntervalStarted: NotificationSpec(_render_nebel_interval_started),
-    NebelIntervalEnded: NotificationSpec(_render_nebel_interval_ended),
+    MistIntervalStarted: NotificationSpec(_render_mist_interval_started),
+    MistIntervalEnded: NotificationSpec(_render_mist_interval_ended),
 }
 
 

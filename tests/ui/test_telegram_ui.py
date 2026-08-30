@@ -471,7 +471,7 @@ class TestNebelUI(unittest.TestCase):
             "pause_minutes": pause_minutes,
         })
 
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._mist_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_nebel_stop_calls_controller(self, mock_client, mock_nebel):
         mock_nebel.stop.return_value = (True, "gestoppt")
@@ -481,20 +481,20 @@ class TestNebelUI(unittest.TestCase):
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_on_nebel_started_broadcasts(self, mock_client, mock_db):
-        from daemon.ui.telegram_ui import _render_nebel_interval_started
-        from daemon.core.nebel_events import NebelIntervalStarted
+        from daemon.ui.telegram_ui import _render_mist_interval_started
+        from daemon.core.mist_events import MistIntervalStarted
         mock_db.get_all_valves.return_value = [{"wish_name": "Terrasse", "mqtt_name": "terrace_mist"}]
-        msg = _render_nebel_interval_started(NebelIntervalStarted("terrace_mist", "nebel", "2026-06-27T18:00:00"))
+        msg = _render_mist_interval_started(MistIntervalStarted("terrace_mist", "nebel", "2026-06-27T18:00:00"))
         self.assertIn("Nebel-Intervall", msg)
         self.assertIn("Terrasse", msg)
 
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")
     def test_on_nebel_ended_broadcasts(self, mock_client, mock_db):
-        from daemon.ui.telegram_ui import _render_nebel_interval_ended
-        from daemon.core.nebel_events import NebelIntervalEnded
+        from daemon.ui.telegram_ui import _render_mist_interval_ended
+        from daemon.core.mist_events import MistIntervalEnded
         mock_db.get_all_valves.return_value = [{"wish_name": "Terrasse", "mqtt_name": "terrace_mist"}]
-        msg = _render_nebel_interval_ended(NebelIntervalEnded("terrace_mist", "nebel", 45, 9, "fertig"))
+        msg = _render_mist_interval_ended(MistIntervalEnded("terrace_mist", "nebel", 45, 9, "fertig"))
         self.assertIn("9", msg)
         self.assertIn("Terrasse", msg)
 
@@ -1447,7 +1447,7 @@ class TestHauptmenueButtons(unittest.TestCase):
         text = mock_client.send_message.call_args[0][1]
         self.assertIn("Bewässer", text)
 
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._mist_ctrl")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.database")
     @patch("daemon.ui.telegram_ui.telegram_client")

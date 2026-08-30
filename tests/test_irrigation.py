@@ -1043,19 +1043,19 @@ class TestNebelScheduling(unittest.TestCase):
 
     def setUp(self):
         from daemon.core.watering_controller import WateringController
-        from daemon.core.nebel_controller import NebelController
+        from daemon.core.mist_controller import MistController
         from daemon import scheduler
         self.scheduler = scheduler
         self.watering = WateringController(mqtt_client._global_bus, mqtt_client.client_instance.publish)
-        self.nebel = NebelController(
+        self.nebel = MistController(
             mqtt_client._global_bus, mqtt_client.client_instance.publish,
             claim_fn=self.watering.claim_valve, release_fn=self.watering.release_valve)
-        scheduler.set_nebel_controller(self.nebel)
+        scheduler.set_mist_controller(self.nebel)
         self.vid = self._ensure_valve()
 
     def tearDown(self):
         self.nebel.stop()
-        self.scheduler.set_nebel_controller(None)
+        self.scheduler.set_mist_controller(None)
 
     def _ensure_valve(self, mqtt_name="terrace_mist", wish="Terrassen-Düse"):
         for v in database.get_all_valves():
@@ -1072,42 +1072,42 @@ class TestNebelScheduling(unittest.TestCase):
     def test_window_active_starts_nebel(self):
         from datetime import datetime
         sched = self._nebel_sched()
-        self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 14, 0, 0))
+        self.scheduler._ensure_mist_window(sched, datetime(2099, 1, 1, 14, 0, 0))
         self.assertTrue(self.nebel.is_active("terrace_mist"))
 
     def test_outside_window_does_not_start(self):
         from datetime import datetime
         sched = self._nebel_sched()
-        self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 19, 0, 0))
+        self.scheduler._ensure_mist_window(sched, datetime(2099, 1, 1, 19, 0, 0))
         self.assertFalse(self.nebel.is_active("terrace_mist"))
 
     def test_idempotent_within_window(self):
         from datetime import datetime
         sched = self._nebel_sched()
         now = datetime(2099, 1, 1, 14, 0, 0)
-        self.scheduler._ensure_nebel_window(sched, now)
-        self.scheduler._ensure_nebel_window(sched, now)  # zweiter Tick
+        self.scheduler._ensure_mist_window(sched, now)
+        self.scheduler._ensure_mist_window(sched, now)  # zweiter Tick
         self.assertTrue(self.nebel.is_active("terrace_mist"))
 
     def test_nebel_path_does_not_check_weather(self):
         from datetime import datetime
         sched = self._nebel_sched()
         with patch.object(weather, "evaluate_watering_factor") as mock_weather:
-            self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 14, 0, 0))
+            self.scheduler._ensure_mist_window(sched, datetime(2099, 1, 1, 14, 0, 0))
             mock_weather.assert_not_called()
 
     def test_suppressed_window_does_not_restart(self):
         """Ein manuell gestopptes Fenster wird vom Scheduler nicht binnen ≤60s neu angestoßen."""
         from datetime import datetime
         sched = self._nebel_sched()
-        self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 14, 0, 0))
+        self.scheduler._ensure_mist_window(sched, datetime(2099, 1, 1, 14, 0, 0))
         self.assertTrue(self.nebel.is_active("terrace_mist"))
 
         self.nebel.stop("terrace_mist")  # setzt Suppression bis Fenster-Endzeit
         self.assertTrue(self.nebel.is_suppressed("terrace_mist"))
 
         # Nächster Minuten-Tick im Fenster darf NICHT neu starten
-        self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 14, 1, 0))
+        self.scheduler._ensure_mist_window(sched, datetime(2099, 1, 1, 14, 1, 0))
         self.assertFalse(self.nebel.is_active("terrace_mist"))
 
     def test_nebelstoss_does_not_trigger_unexpected_open(self):
@@ -1119,20 +1119,20 @@ class TestNebelScheduling(unittest.TestCase):
         from datetime import datetime
         from daemon.core.event_bus import EventBus
         from daemon.core.watering_controller import WateringController
-        from daemon.core.nebel_controller import NebelController
+        from daemon.core.mist_controller import MistController
         from daemon.core.valve_events import ValveStatusReported, UnexpectedValveOpened
 
         bus = EventBus()
         watering = WateringController(bus, lambda t, p: True)
-        nebel = NebelController(bus, lambda t, p: True,
+        nebel = MistController(bus, lambda t, p: True,
                                 claim_fn=watering.claim_valve, release_fn=watering.release_valve)
-        self.scheduler.set_nebel_controller(nebel)
+        self.scheduler.set_mist_controller(nebel)
         sched = self._nebel_sched()
         opened = []
         bus.subscribe(UnexpectedValveOpened, lambda e: opened.append(e))
         try:
             bus.publish(ValveStatusReported("terrace_mist", "OFF", 0.0, 95, 120))  # bekannter Vorzustand
-            self.scheduler._ensure_nebel_window(sched, datetime(2099, 1, 1, 14, 0, 0))
+            self.scheduler._ensure_mist_window(sched, datetime(2099, 1, 1, 14, 0, 0))
             self.assertTrue(nebel.is_active("terrace_mist"))
             bus.publish(ValveStatusReported("terrace_mist", "ON", 0.0, 95, 120))   # Nebelstoß-Flanke
             self.assertEqual(opened, [])

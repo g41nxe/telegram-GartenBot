@@ -4,6 +4,15 @@ Dieses System steuert lokal die automatisierte Bewässerung eines Gartens unter 
 
 ## Language
 
+Dieses Glossar regelt die **Domänensprache**: wie wir über das System sprechen und wie
+Nutzertexte (Telegram-Nachrichten) formuliert sind. Die _Avoid_-Zeilen gelten für diese
+Sprache — sie verbieten Wörter im Gespräch und in der Oberfläche, nicht Bezeichner im Code.
+
+**Code-Bezeichner sind englisch** (siehe CLAUDE.md, Abschnitt „Code-Sprache"). Wo ein
+deutscher Domänenbegriff eine englische Entsprechung im Code hat, steht sie beim Eintrag
+unter _Im Code_. Das ist kein Widerspruch zu _Avoid_: „Misting" bleibt als **deutsches**
+Wort unerwünscht, `mist` ist der englische Bezeichner derselben Sache.
+
 **Steuerzentrale**:
 Der Raspberry Pi Zero W, welcher die Steuerungslogik ausführt, Zeitpläne verwaltet und die Schnittstelle zum Ventil darstellt.
 _Avoid_: Server, Zentralrechner, Pi
@@ -221,6 +230,7 @@ _Avoid_: Statusampel, Health-Check, Traffic-Light.
 **Nebel-Intervall**:
 Eine wiederkehrende Kühlfunktion, die ein Ventil in regelmäßigen Abständen kurz öffnet, um über eine Nebeldüse die Terrasse abzukühlen — **kein** Bewässerungs-Vorgang. Definiert durch eine kurze ON-Dauer (Sekunden, der Nebelstoß) und eine Pause (Minuten) zwischen den Stößen, die innerhalb eines Nebel-Fensters wiederholt werden. Im Gegensatz zum Kombinierten Guss gibt es **kein Volumenlimit, keine Regen-Überspringlogik und keine Mindest-Flussrate-Defekterkennung** — die geflossene Wassermenge ist für die Kühlung bedeutungslos. Mechanisch ist es ein eigener Zeitplan-Modus (`mode = "nebel"`), läuft aber über eine eigene Engine (Nebel-Steuerung). Siehe ADR 0033.
 _Avoid_: Sprühzyklus, Misting, Vernebelung, Kühl-Guss, Nebel-Bewässerung.
+_Im Code_: `mist` (Sofortstart: `instant_mist`).
 
 **Nebelstoß**:
 Ein einzelnes, sekundenkurzes Öffnen des Nebel-Ventils innerhalb eines Nebel-Intervalls. Wird **nicht** einzeln protokolliert (würde die Datenbank fluten); nur Beginn und Ende des umgebenden Nebel-Fensters werden festgehalten.
@@ -229,6 +239,7 @@ _Avoid_: Sprühstoß, Puls, Burst, Schuss.
 **Nebel-Steuerung**:
 Die softwareseitige Kernkomponente des Bewässerungs-Daemons, die den ON/Pause-Burst-Zyklus eines Nebel-Intervalls mit sekundengenauem Timing fährt (eigener `threading.Timer`-Loop, injizierte `publish_fn`). Pendant zur Guss-Steuerung, aber für die Kühlung statt die Bewässerung. Solange sie ein Ventil bedient, „beansprucht" sie es, damit die Guss-Steuerung dessen reguläre Nebelstöße nicht als Unerwartete Ventilöffnung fehldeutet.
 _Avoid_: Nebel-Controller, Misting-Controller, Spray-Engine.
+_Im Code_: `MistController` in `core/mist_controller.py`.
 
 **Nebel-Fenster**:
 Der durch Start- und Endzeit (an ausgewählten Wochentagen) definierte Tageszeitraum, in dem ein geplantes Nebel-Intervall aktiv ist. Wird zustandslos aus dem Zeitplan abgeleitet: nach einem Daemon-Neustart prüft der Scheduler, ob die aktuelle Zeit in einem Nebel-Fenster liegt, und nimmt den Takt wieder auf.

@@ -250,7 +250,7 @@ class TestNebelTaktFlow(unittest.TestCase):
     def test_nebel_one_valve_shows_stoss_dauer(self, mock_db, mock_tc):
         mock_db.get_all_valves.return_value = [_valve(1, "Terrasse", "terrace_mist")]
         _process_callback_query(_cb("nebel_now"))
-        # Ticket cy1: Sofort-Nebel läuft über den SofortNebelAssistent — der erste Prompt kommt
+        # Ticket cy1: Sofort-Nebel läuft über den InstantMistAssistent — der erste Prompt kommt
         # als lebende Prompt-Nachricht (send_message_id) statt send_message (ADR 0039).
         cb_data = _cb_data(_markup(mock_tc.send_message_id.call_args))
         self.assertTrue(any("nebel_now_on_" in (d or "") for d in cb_data), f"Keine Stoß-Dauer: {cb_data}")
@@ -263,7 +263,7 @@ class TestNebelTaktFlow(unittest.TestCase):
 
         nebel = MagicMock()
         nebel.start.return_value = (True, "ok")
-        with patch.object(telegram_ui, "_nebel_ctrl", nebel):
+        with patch.object(telegram_ui, "_mist_ctrl", nebel):
             _process_callback_query(_cb("nebel_now"))          # → Stoß-Dauer
             _process_callback_query(_cb("nebel_now_on_30"))    # → Pause
             cb_pause = _cb_data(_edit_markup(mock_tc.edit_message_text.call_args))
@@ -285,7 +285,7 @@ class TestNebelTaktFlow(unittest.TestCase):
 # ===========================================================================
 
 class TestStoppSelection(unittest.TestCase):
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._mist_ctrl")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.database")
@@ -300,7 +300,7 @@ class TestStoppSelection(unittest.TestCase):
         self.assertIn("stop_valve_beet_valve", cb_data)
         self.assertIn("stop_valve_all", cb_data)
 
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._mist_ctrl")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.database")
@@ -315,7 +315,7 @@ class TestStoppSelection(unittest.TestCase):
         self.assertIn("stop_nebel_terrace_mist", cb_data)
         self.assertIn("stop_valve_all", cb_data)
 
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._mist_ctrl")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.database")
@@ -324,7 +324,7 @@ class TestStoppSelection(unittest.TestCase):
         mock_water.stop_watering.assert_called_once_with()
         mock_nebel.stop.assert_called_once_with()
 
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._mist_ctrl")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.database")
@@ -333,7 +333,7 @@ class TestStoppSelection(unittest.TestCase):
         _process_callback_query(_cb("stop_nebel_terrace_mist"))
         mock_nebel.stop.assert_called_once_with("terrace_mist")
 
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._mist_ctrl")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.database")
@@ -344,7 +344,7 @@ class TestStoppSelection(unittest.TestCase):
 
     # --- Extern/manuell geöffnete Ventile (Bug-Fix) ---
 
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._mist_ctrl")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.database")
@@ -357,7 +357,7 @@ class TestStoppSelection(unittest.TestCase):
         handle_stopp(100)
         mock_water.force_close.assert_called_once_with("beet_valve")
 
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._mist_ctrl")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.database")
@@ -373,7 +373,7 @@ class TestStoppSelection(unittest.TestCase):
         self.assertIn("stop_extern_beet_valve", cb_data)
         self.assertIn("stop_valve_all", cb_data)
 
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._mist_ctrl")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.database")
@@ -382,7 +382,7 @@ class TestStoppSelection(unittest.TestCase):
         _process_callback_query(_cb("stop_extern_beet_valve"))
         mock_water.force_close.assert_called_once_with("beet_valve")
 
-    @patch("daemon.ui.telegram_ui._nebel_ctrl")
+    @patch("daemon.ui.telegram_ui._mist_ctrl")
     @patch("daemon.ui.telegram_ui._watering_ctrl")
     @patch("daemon.ui.telegram_ui.telegram_client")
     @patch("daemon.ui.telegram_ui.database")

@@ -4,14 +4,14 @@ from datetime import datetime
 from typing import Any, Callable, Dict, Tuple
 
 from .event_bus import EventBus
-from .nebel_events import NebelIntervalStarted, NebelIntervalEnded
+from .mist_events import MistIntervalStarted, MistIntervalEnded
 
 logger = logging.getLogger("garden_nebel_controller")
 
-__all__ = ["NebelController", "NebelIntervalStarted", "NebelIntervalEnded"]
+__all__ = ["MistController", "MistIntervalStarted", "MistIntervalEnded"]
 
 
-class NebelController:
+class MistController:
     """Die Nebel-Steuerung: fährt den ON/Pause-Burst-Zyklus eines Nebel-Intervalls.
 
     Pendant zur Guss-Steuerung, aber fürs Kühlen statt fürs Bewässern. Eigener
@@ -69,7 +69,7 @@ class NebelController:
             if self._claim_fn:
                 self._claim_fn(mqtt_name)
 
-        self.event_bus.publish(NebelIntervalStarted(mqtt_name, source, end_time.isoformat()))
+        self.event_bus.publish(MistIntervalStarted(mqtt_name, source, end_time.isoformat()))
         logger.info(f"Nebel-Steuerung: Nebel-Intervall gestartet für '{mqtt_name}' "
                     f"({on_seconds}s an / {pause_minutes}min Pause, bis {end_time.strftime('%H:%M')}, Quelle: {source}).")
         self._begin_burst(mqtt_name)
@@ -171,5 +171,5 @@ class NebelController:
                 self._release_fn(mqtt_name)
 
         details = f"{reason}: {burst_count} Nebelstöße in {duration_run} Min."
-        self.event_bus.publish(NebelIntervalEnded(mqtt_name, source, duration_run, burst_count, details))
+        self.event_bus.publish(MistIntervalEnded(mqtt_name, source, duration_run, burst_count, details))
         logger.info(f"Nebel-Steuerung: '{mqtt_name}' beendet ({reason}, {burst_count} Stöße).")

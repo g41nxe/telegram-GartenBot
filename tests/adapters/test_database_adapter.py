@@ -13,7 +13,7 @@ from daemon.core.watering_controller import (
     WateringCycleStopped
 )
 from daemon.core.scheduler_events import WeatherDataFetched, WateringSkipped
-from daemon.core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
+from daemon.core.mist_events import MistIntervalStarted, MistIntervalEnded
 from daemon.adapters.database_adapter import DatabaseLoggerAdapter
 
 class TestDatabaseAdapter(unittest.TestCase):
@@ -74,14 +74,14 @@ class TestNebelIntervalLogging(unittest.TestCase):
     def test_nebel_started_logged_once(self, mock_log):
         bus = EventBus()
         DatabaseLoggerAdapter(bus)
-        bus.publish(NebelIntervalStarted("terrace_mist", "nebel", "2026-06-27T18:00:00"))
+        bus.publish(MistIntervalStarted("terrace_mist", "nebel", "2026-06-27T18:00:00"))
         mock_log.assert_called_once_with(0, "nebel", "started", "Nebel-Intervall gestartet.")
 
     @patch("daemon.adapters.database.log_watering")
     def test_nebel_ended_logged_once(self, mock_log):
         bus = EventBus()
         DatabaseLoggerAdapter(bus)
-        bus.publish(NebelIntervalEnded("terrace_mist", "nebel", 45, 9, "Fensterende erreicht: 9 Nebelstöße in 45 Min."))
+        bus.publish(MistIntervalEnded("terrace_mist", "nebel", 45, 9, "Fensterende erreicht: 9 Nebelstöße in 45 Min."))
         mock_log.assert_called_once_with(45, "nebel", "completed", "Fensterende erreicht: 9 Nebelstöße in 45 Min.")
 
 

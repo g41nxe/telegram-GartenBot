@@ -69,7 +69,7 @@ def _is_report_green(valves: list, services_ok: bool) -> bool:
 
 def _format_gestern_aktivitaet(
     success_count: int, failed_count: int, total_volume: float,
-    skip_count: int, nebel_windows: int, nebel_minutes: float,
+    skip_count: int, mist_windows: int, mist_minutes: float,
 ) -> str:
     """Aktivitätszeile des Gestern-Blocks: Guss (💧) plus Nebel-Intervall (🌫️), `·`-gebündelt."""
     if skip_count > 0 and success_count == 0 and failed_count == 0:
@@ -86,8 +86,8 @@ def _format_gestern_aktivitaet(
     elif failed_count > 1:
         line += f" · {failed_count} Fehler"
 
-    if nebel_windows > 0:
-        line += f" · 🌫️ {nebel_windows} Fenster · {int(round(nebel_minutes))} Min"
+    if mist_windows > 0:
+        line += f" · 🌫️ {mist_windows} Fenster · {int(round(mist_minutes))} Min"
 
     return line
 
@@ -124,7 +124,7 @@ def generate_daily_report(today_str: str) -> str:
     # 1. Guss-Statistiken
     success_count, failed_count, total_volume = database.get_watering_stats_last_24h()
     skip_count = database.get_watering_skip_count_last_24h()
-    nebel_windows, nebel_minutes = database.get_nebel_stats_last_24h()
+    mist_windows, mist_minutes = database.get_mist_stats_last_24h()
 
     # 2. Wetterdaten (Live-Abfrage)
     weather_result = None
@@ -161,7 +161,7 @@ def generate_daily_report(today_str: str) -> str:
 
     # 6. Gestern-Block (Rückblick): Aktivitätszeile + Wetterzeile
     aktivitaet_line = _format_gestern_aktivitaet(
-        success_count, failed_count, total_volume, skip_count, nebel_windows, nebel_minutes
+        success_count, failed_count, total_volume, skip_count, mist_windows, mist_minutes
     )
     if rain_sensor_stats:
         gestern_wetter_line = _format_gestern_wetter(

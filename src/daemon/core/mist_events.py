@@ -1,7 +1,7 @@
 from .event_bus import Event
 
 
-class NebelIntervalStarted(Event):
+class MistIntervalStarted(Event):
     """Ein Nebel-Fenster wurde gestartet (geplant oder Sofort-Nebel)."""
     def __init__(self, mqtt_name: str, source: str, end_time: str):
         self.mqtt_name = mqtt_name
@@ -9,7 +9,7 @@ class NebelIntervalStarted(Event):
         self.end_time = end_time
 
 
-class NebelIntervalEnded(Event):
+class MistIntervalEnded(Event):
     """Ein Nebel-Fenster ist beendet (Endzeit erreicht oder manuell gestoppt)."""
     def __init__(self, mqtt_name: str, source: str, duration_run: int, burst_count: int, details: str):
         self.mqtt_name = mqtt_name

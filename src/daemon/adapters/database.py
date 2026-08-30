@@ -707,7 +707,7 @@ def get_watering_stats_last_24h() -> tuple[int, int, float]:
     finally:
         conn.close()
 
-def get_nebel_stats_last_24h() -> tuple[int, float]:
+def get_mist_stats_last_24h() -> tuple[int, float]:
     """Gibt (anzahl_fenster, gesamt_minuten) der abgeschlossenen Nebel-Intervalle der letzten 24h.
 
     Quelle sind die je Fenster protokollierten Abschluss-Einträge (status='completed',

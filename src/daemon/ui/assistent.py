@@ -263,7 +263,7 @@ class GussAssistent(Assistent):
         raise ValueError(f"Unerwartete Eingabe '{value}' im Schritt '{step}'")
 
 
-class SofortNebelAssistent(Assistent):
+class InstantMistAssistent(Assistent):
     """Sofort-Nebel (manueller Start): Stoß-Dauer → Pause → Laufzeit → Aktion. Das Ventil
     (ganzer Datensatz, für mqtt_name + wish_name) ist vorgewählt und liegt außerhalb der
     ``data``. ``Done`` liefert on_seconds/pause_minutes/minutes; die Auslösung (Deckelung auf

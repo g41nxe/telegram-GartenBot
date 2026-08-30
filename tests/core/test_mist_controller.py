@@ -8,8 +8,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from daemon.core.event_bus import EventBus
 from daemon.adapters.mqtt_client import SimulatedMqttAdapter
-from daemon.core.nebel_controller import NebelController
-from daemon.core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
+from daemon.core.mist_controller import MistController
+from daemon.core.mist_events import MistIntervalStarted, MistIntervalEnded
 
 
 class TestNebelController(unittest.TestCase):
@@ -21,7 +21,7 @@ class TestNebelController(unittest.TestCase):
         self.client = SimulatedMqttAdapter(self.bus)
         self.claim = Mock()
         self.release = Mock()
-        self.nebel = NebelController(self.bus, self.client.publish,
+        self.nebel = MistController(self.bus, self.client.publish,
                                      claim_fn=self.claim, release_fn=self.release)
         self.assertTrue(self.client.connect())
 
@@ -33,7 +33,7 @@ class TestNebelController(unittest.TestCase):
 
     def test_start_opens_valve_and_emits_started(self):
         started = []
-        self.bus.subscribe(NebelIntervalStarted, lambda e: started.append(e))
+        self.bus.subscribe(MistIntervalStarted, lambda e: started.append(e))
 
         self.nebel.start("terrace_mist", on_seconds=20, pause_minutes=5,
                          end_time=self._future(), source="nebel")
@@ -57,7 +57,7 @@ class TestNebelController(unittest.TestCase):
 
     def test_stop_closes_valve_and_emits_ended_once(self):
         ended = []
-        self.bus.subscribe(NebelIntervalEnded, lambda e: ended.append(e))
+        self.bus.subscribe(MistIntervalEnded, lambda e: ended.append(e))
 
         self.nebel.start("terrace_mist", 20, 5, self._future(), "nebel")
         self.nebel.stop("terrace_mist")
@@ -70,7 +70,7 @@ class TestNebelController(unittest.TestCase):
 
     def test_reaching_end_time_finishes_window(self):
         ended = []
-        self.bus.subscribe(NebelIntervalEnded, lambda e: ended.append(e))
+        self.bus.subscribe(MistIntervalEnded, lambda e: ended.append(e))
 
         self.nebel.start("terrace_mist", 20, 5, self._future(), "nebel")
         # Fensterende erreichen, während ein Stoß läuft:
@@ -84,7 +84,7 @@ class TestNebelController(unittest.TestCase):
     def test_begin_burst_warns_on_publish_failure(self):
         """Schlägt der ON-Publish fehl (z.B. MQTT down), wird gewarnt — das Fenster läuft weiter."""
         bus = EventBus()
-        nebel = NebelController(bus, lambda t, p: False)   # Publish schlägt immer fehl
+        nebel = MistController(bus, lambda t, p: False)   # Publish schlägt immer fehl
         try:
             with self.assertLogs("garden_nebel_controller", level="WARNING") as cm:
                 nebel.start("terrace_mist", 20, 5, self._future(), "nebel")
@@ -96,7 +96,7 @@ class TestNebelController(unittest.TestCase):
     def test_start_is_idempotent(self):
         """Zustandsloses Anstoßen durch den Scheduler darf keinen zweiten Lauf erzeugen."""
         started = []
-        self.bus.subscribe(NebelIntervalStarted, lambda e: started.append(e))
+        self.bus.subscribe(MistIntervalStarted, lambda e: started.append(e))
 
         self.nebel.start("terrace_mist", 20, 5, self._future(), "nebel")
         ok, _ = self.nebel.start("terrace_mist", 20, 5, self._future(), "nebel")

@@ -12,7 +12,7 @@ from ..core.watering_events import (
 from .mqtt_client import ValveStatusReported
 from ..core.scheduler_events import WeatherDataFetched, WateringSkipped
 from ..core.sensor_events import RainSensorMeasured
-from ..core.nebel_events import NebelIntervalStarted, NebelIntervalEnded
+from ..core.mist_events import MistIntervalStarted, MistIntervalEnded
 from ..core.camera_events import TimedPhotoDeliveryFailed
 
 logger = logging.getLogger("garden_database_adapter")
@@ -32,8 +32,8 @@ class DatabaseLoggerAdapter:
         self.event_bus.subscribe(WeatherDataFetched, self._on_weather_data_fetched)
         self.event_bus.subscribe(WateringSkipped, self._on_watering_skipped)
         self.event_bus.subscribe(RainSensorMeasured, self._on_rain_sensor_measured)
-        self.event_bus.subscribe(NebelIntervalStarted, self._on_nebel_started)
-        self.event_bus.subscribe(NebelIntervalEnded, self._on_nebel_ended)
+        self.event_bus.subscribe(MistIntervalStarted, self._on_mist_started)
+        self.event_bus.subscribe(MistIntervalEnded, self._on_mist_ended)
         self.event_bus.subscribe(TimedPhotoDeliveryFailed, self._on_timed_photo_delivery_failed)
 
     def _on_watering_skipped(self, event: WateringSkipped):
@@ -77,10 +77,10 @@ class DatabaseLoggerAdapter:
     def _on_cycle_interrupted(self, event: WateringCycleInterrupted):
         database.log_watering(event.duration_run, event.source, "interrupted", event.details, watered_volume=event.volume_run)
 
-    def _on_nebel_started(self, event: NebelIntervalStarted):
+    def _on_mist_started(self, event: MistIntervalStarted):
         database.log_watering(0, event.source, "started", "Nebel-Intervall gestartet.")
 
-    def _on_nebel_ended(self, event: NebelIntervalEnded):
+    def _on_mist_ended(self, event: MistIntervalEnded):
         # Pro Fenster genau ein Abschluss-Eintrag; einzelne Nebelstöße werden nicht protokolliert.
         database.log_watering(event.duration_run, event.source, "completed", event.details)
 

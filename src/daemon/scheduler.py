@@ -13,7 +13,7 @@ from .adapters.daily_report import send_daily_report
 logger = logging.getLogger("garden_scheduler")
 
 _controller = None
-_nebel_controller = None
+_mist_controller = None
 
 # Steuerung des Scheduler-Hintergrundthreads
 scheduler_running = False
@@ -27,20 +27,20 @@ def set_controller(ctrl) -> None:
     _controller = ctrl
 
 
-def set_nebel_controller(ctrl) -> None:
+def set_mist_controller(ctrl) -> None:
     """Verdrahtet die Nebel-Steuerung (Feature 0032). Von main.py beim Daemon-Start aufrufen."""
-    global _nebel_controller
-    _nebel_controller = ctrl
+    global _mist_controller
+    _mist_controller = ctrl
 
 
-def _ensure_nebel_window(sched: dict, now: datetime) -> None:
+def _ensure_mist_window(sched: dict, now: datetime) -> None:
     """Stellt zustandslos sicher, dass ein Nebel-Intervall läuft, wenn `now` im Fenster liegt.
 
     Wird je Minute aufgerufen. Liegt die Zeit im Fenster [time, end_time) und läuft für das
     Ventil noch kein Nebel-Intervall, wird die Nebel-Steuerung gestartet. So nimmt ein Fenster
     nach einem Daemon-Neustart von selbst wieder auf. Kein Wetter-Check, keine Skalierung.
     """
-    if _nebel_controller is None:
+    if _mist_controller is None:
         return
     start = sched.get("time")
     end = sched.get("end_time")
@@ -66,8 +66,8 @@ def _ensure_nebel_window(sched: dict, now: datetime) -> None:
             continue
         mqtt_name = valve["mqtt_name"]
         # Nicht neu starten, wenn schon aktiv ODER manuell für dieses Fenster gestoppt (C1).
-        if not _nebel_controller.is_active(mqtt_name) and not _nebel_controller.is_suppressed(mqtt_name):
-            _nebel_controller.start(mqtt_name, on_seconds, pause_minutes, end_dt, "nebel",
+        if not _mist_controller.is_active(mqtt_name) and not _mist_controller.is_suppressed(mqtt_name):
+            _mist_controller.start(mqtt_name, on_seconds, pause_minutes, end_dt, "nebel",
                                     valve_topic=f"zigbee2mqtt/{mqtt_name}")
 
 
@@ -352,7 +352,7 @@ def _scheduler_loop():
 
                 if sched.get("mode") == "nebel":
                     # Nebel-Intervall: fenster-basiert, zustandslos je Minute prüfen.
-                    _ensure_nebel_window(sched, now)
+                    _ensure_mist_window(sched, now)
                     continue
 
                 sched_time = sched.get("time")

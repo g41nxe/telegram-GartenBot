@@ -31,7 +31,7 @@ class TestSendDailyReport(unittest.TestCase):
     def _setup_db_mock(self, mocks, success=1, failed=0, volume=5.0, skip_count=0, valves=None):
         mocks["db"].get_watering_stats_last_24h.return_value = (success, failed, volume)
         mocks["db"].get_watering_skip_count_last_24h.return_value = skip_count
-        mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
+        mocks["db"].get_mist_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = valves or []
         mocks["db"].get_metadata.return_value = None
         mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
@@ -168,7 +168,7 @@ class TestDailyReportDesignSystem(unittest.TestCase):
              patch("daemon.adapters.daily_report.mqtt_client") as mock_mqtt:
             mock_db.get_watering_stats_last_24h.return_value = (1, 0, 5.0)
             mock_db.get_watering_skip_count_last_24h.return_value = 0
-            mock_db.get_nebel_stats_last_24h.return_value = (0, 0.0)
+            mock_db.get_mist_stats_last_24h.return_value = (0, 0.0)
             mock_db.get_all_valves.return_value = []
             mock_db.get_metadata.return_value = None
             mock_db.get_flag.side_effect = lambda k, _m=mock_db: _m.get_metadata(k) == "1"
@@ -206,7 +206,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks = self._make_patches()
         mocks["db"].get_watering_stats_last_24h.return_value = (success, failed, volume)
         mocks["db"].get_watering_skip_count_last_24h.return_value = skip_count
-        mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
+        mocks["db"].get_mist_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = valves or []
         mocks["db"].get_metadata.return_value = None
         mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
@@ -220,7 +220,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks = self._make_patches()
         mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
         mocks["db"].get_watering_skip_count_last_24h.return_value = 0
-        mocks["db"].get_nebel_stats_last_24h.return_value = (2, 360.0)
+        mocks["db"].get_mist_stats_last_24h.return_value = (2, 360.0)
         mocks["db"].get_all_valves.return_value = []
         mocks["db"].get_metadata.return_value = None
         mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
@@ -242,7 +242,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks["db"].get_rain_stats_last_24h.return_value = {}
         mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
         mocks["db"].get_watering_skip_count_last_24h.return_value = 0
-        mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
+        mocks["db"].get_mist_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = []
         mocks["db"].get_metadata.return_value = None
         mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
@@ -282,7 +282,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks = self._make_patches()
         mocks["db"].get_watering_stats_last_24h.return_value = (1, 0, 30.0)
         mocks["db"].get_watering_skip_count_last_24h.return_value = 0
-        mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
+        mocks["db"].get_mist_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = [valve]
         mocks["db"].get_metadata.return_value = None
         mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
@@ -304,7 +304,7 @@ class TestGenerateDailyReportIntegration(unittest.TestCase):
         mocks = self._make_patches()
         mocks["db"].get_watering_stats_last_24h.return_value = (0, 0, 0.0)
         mocks["db"].get_watering_skip_count_last_24h.return_value = 0
-        mocks["db"].get_nebel_stats_last_24h.return_value = (0, 0.0)
+        mocks["db"].get_mist_stats_last_24h.return_value = (0, 0.0)
         mocks["db"].get_all_valves.return_value = [valve]
         mocks["db"].get_metadata.return_value = None
         mocks["db"].get_flag.side_effect = lambda k, _m=mocks["db"]: _m.get_metadata(k) == "1"
@@ -442,16 +442,16 @@ class TestFormatGesternAktivitaet(unittest.TestCase):
     """Aktivitätszeile des Gestern-Blocks: Guss (+ Nebel), Klein-l."""
 
     def test_ein_guss_ohne_nebel(self):
-        result = dr._format_gestern_aktivitaet(1, 0, 245.0, skip_count=0, nebel_windows=0, nebel_minutes=0.0)
+        result = dr._format_gestern_aktivitaet(1, 0, 245.0, skip_count=0, mist_windows=0, mist_minutes=0.0)
         self.assertEqual(result, "💧 1× bewässert · 245 l")
 
     def test_klein_liter(self):
-        result = dr._format_gestern_aktivitaet(1, 0, 245.0, skip_count=0, nebel_windows=0, nebel_minutes=0.0)
+        result = dr._format_gestern_aktivitaet(1, 0, 245.0, skip_count=0, mist_windows=0, mist_minutes=0.0)
         self.assertIn(" l", result)
         self.assertNotIn(" L", result)
 
     def test_mehrere_guesse_mit_nebel(self):
-        result = dr._format_gestern_aktivitaet(2, 0, 410.0, skip_count=0, nebel_windows=5, nebel_minutes=75.0)
+        result = dr._format_gestern_aktivitaet(2, 0, 410.0, skip_count=0, mist_windows=5, mist_minutes=75.0)
         self.assertIn("2× bewässert", result)
         self.assertIn("410 l", result)
         self.assertIn("🌫️", result)
@@ -459,21 +459,21 @@ class TestFormatGesternAktivitaet(unittest.TestCase):
         self.assertIn("75 Min", result)
 
     def test_nicht_bewaessert_mit_nebel(self):
-        result = dr._format_gestern_aktivitaet(0, 0, 0.0, skip_count=0, nebel_windows=4, nebel_minutes=60.0)
+        result = dr._format_gestern_aktivitaet(0, 0, 0.0, skip_count=0, mist_windows=4, mist_minutes=60.0)
         self.assertIn("nicht bewässert", result)
         self.assertIn("🌫️ 4 Fenster · 60 Min", result)
 
     def test_uebersprungen_ohne_doppelte_mm(self):
-        result = dr._format_gestern_aktivitaet(0, 0, 0.0, skip_count=1, nebel_windows=1, nebel_minutes=12.0)
+        result = dr._format_gestern_aktivitaet(0, 0, 0.0, skip_count=1, mist_windows=1, mist_minutes=12.0)
         self.assertIn("💧 Guss übersprungen (Regen)", result)
         self.assertNotIn("mm", result)  # mm-Zahl steht auf der Wetterzeile, nicht hier
 
     def test_mit_fehler(self):
-        result = dr._format_gestern_aktivitaet(2, 1, 410.0, skip_count=0, nebel_windows=0, nebel_minutes=0.0)
+        result = dr._format_gestern_aktivitaet(2, 1, 410.0, skip_count=0, mist_windows=0, mist_minutes=0.0)
         self.assertIn("1 Fehler", result)
 
     def test_ohne_nebel_kein_nebel_emoji(self):
-        result = dr._format_gestern_aktivitaet(1, 0, 100.0, skip_count=0, nebel_windows=0, nebel_minutes=0.0)
+        result = dr._format_gestern_aktivitaet(1, 0, 100.0, skip_count=0, mist_windows=0, mist_minutes=0.0)
         self.assertNotIn("🌫️", result)
 
 

@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from daemon.ui.assistent import (
-    ScheduleAssistent, GussAssistent, SofortNebelAssistent,
+    ScheduleAssistent, GussAssistent, InstantMistAssistent,
     CameraPairAssistent, CameraSettingsAssistent, PairingNameAssistent,
     DeleteConfirmAssistent, EditAssistent, Prompt, Reject, Done,
 )
@@ -277,7 +277,7 @@ class TestSofortNebelAssistent(unittest.TestCase):
 
     def test_full_flow_terminates_with_done(self):
         valve = {"id": 3, "wish_name": "Terrasse", "mqtt_name": "terrace_mist"}
-        a = SofortNebelAssistent(valve)
+        a = InstantMistAssistent(valve)
         p = a.start()
         self.assertEqual(p.view, "on")
         self.assertEqual(a.step, "on")
