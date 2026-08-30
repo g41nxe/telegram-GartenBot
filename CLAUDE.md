@@ -151,7 +151,17 @@ Violations of these rules should be refactored before proceeding.
 
 ## Code-Sprache (Namensgebung)
 
-Code-Bezeichner — Klassen, Funktionen, Variablen, Module — werden **englisch** benannt (konsistent zu `WizardSpec`, `compute_next_sleep_seconds`, den englischen Ereignisklassen). **Deutsch** bleibt ausschließlich in den **Nutzertexten** (Telegram-Nachrichten) und in **bestehenden** deutschen Domänen-Bezeichnern, die nicht umbenannt werden. Neue technische Module sind englisch. `CONTEXT.md` bleibt das (deutsche) Garten-Glossar für Domänenbegriffe — nicht für Infrastruktur-Konzepte.
+**Ziel ist Englisch im Code** — Klassen, Funktionen, Variablen, Module (konsistent zu `WizardSpec`, `compute_next_sleep_seconds`, den englischen Ereignisklassen). Das gilt auch für Domänenbegriffe: Fachbegriffe ohne gute englische Entsprechung nehmen ihre naheliegende englische Form (Nebel → `mist`/`misting`, Guss → `watering`).
+
+**Deutsch bleibt** in den **Nutzertexten** (Telegram-Nachrichten), in **Docstrings und Kommentaren**, in `CONTEXT.md` als Garten-Glossar und in den Beads-Tickets. Die Domänensprache aus `CONTEXT.md` ist dort weiterhin verbindlich — sie verschwindet nur aus den Bezeichnern.
+
+### Pfadfinderregel
+
+Rund 7 % der Bezeichner sind noch deutsch, dazu 36 Mischformen wie `handle_bewaessern_start` oder `_start_sofort_nebel_from_assistent` (Bestandsaufnahme in Ticket `telegram_GartenBot-ob8`).
+
+**Wer eine solche Stelle ohnehin anfasst, benennt sie dabei um.** Ein Modul, das für eine Änderung geöffnet wird, soll danach in *einer* Sprache dasein — nicht halb umbenannt. Umgekehrt gilt: **kein Feldzug**. Bezeichner werden nicht um der Umbenennung willen angefasst; das erzeugt nur Diff-Rauschen und Merge-Konflikte ohne Gegenwert.
+
+Beim Umbenennen die Aufrufstellen in `tests/` mitziehen und die Suite grün halten — sie ist das einzige Netz für diese Art Änderung.
 
 ## Configuration
 
