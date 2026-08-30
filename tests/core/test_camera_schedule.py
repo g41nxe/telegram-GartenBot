@@ -27,84 +27,61 @@ TOLERANCE = 5   # Toleranzfenster
 
 
 # ===========================================================================
-# compute_next_sleep_seconds
+# PhotoPlan.sleep_seconds
 # ===========================================================================
 
 class TestComputeNextSleepSeconds:
     def test_kein_ziel_gibt_volles_intervall(self):
         """Ohne aktive Zeitpläne und ohne Foto-Uhrzeiten → volles Intervall."""
-        result = camera_schedule.compute_next_sleep_seconds(
-            _now(10, 0), [], [], INTERVAL, OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [], OFFSET).sleep_seconds(_now(10, 0), INTERVAL)
         assert result == INTERVAL
 
     def test_absolutes_ziel_in_reichweite(self):
         """Absolute Foto-Uhrzeit in 10 Minuten → sleep = 600 s."""
-        result = camera_schedule.compute_next_sleep_seconds(
-            _now(10, 0), [], [_photo_time("10:10")], INTERVAL, OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("10:10")], OFFSET).sleep_seconds(_now(10, 0), INTERVAL)
         assert result == 600
 
     def test_guss_ziel_start_plus_dauer_plus_offset(self):
         """Zeitplan 10:00, 8 min Dauer, Offset 2 → Ziel 10:10 → sleep = 600 s."""
-        result = camera_schedule.compute_next_sleep_seconds(
-            _now(10, 0), [_schedule("10:00", 8)], [], INTERVAL, OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([_schedule("10:00", 8)], [], OFFSET).sleep_seconds(_now(10, 0), INTERVAL)
         assert result == 600  # 10 Minuten = 600 s
 
     def test_deckelung_durch_intervall(self):
         """Ziel weit in der Zukunft → sleep = Intervall (Deckelung)."""
-        result = camera_schedule.compute_next_sleep_seconds(
-            _now(10, 0), [], [_photo_time("11:00")], INTERVAL, OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("11:00")], OFFSET).sleep_seconds(_now(10, 0), INTERVAL)
         assert result == INTERVAL
 
     def test_mehrere_ziele_kleinster_wert_gewinnt(self):
         """Mehrere Ziele → das nächste (kleinste sleep) gewinnt."""
-        result = camera_schedule.compute_next_sleep_seconds(
-            _now(10, 0),
-            [_schedule("10:00", 8)],   # Ziel 10:10 → 600 s
-            [_photo_time("10:05")],    # Ziel 10:05 → 300 s
-            INTERVAL, OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([_schedule("10:00", 8)], [_photo_time("10:05")], OFFSET).sleep_seconds(_now(10, 0), INTERVAL)
         assert result == 300
 
     def test_inaktiver_zeitplan_wird_ignoriert(self):
         """Inaktiver Zeitplan darf kein Ziel erzeugen."""
-        result = camera_schedule.compute_next_sleep_seconds(
-            _now(10, 0), [_schedule("10:00", 8, is_active=0)], [], INTERVAL, OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([_schedule("10:00", 8, is_active=0)], [], OFFSET).sleep_seconds(_now(10, 0), INTERVAL)
         assert result == INTERVAL
 
     def test_minimum_60_sekunden(self):
         """sleep darf nie unter 60 Sekunden fallen (Kamera-Constraint)."""
-        result = camera_schedule.compute_next_sleep_seconds(
-            _now(10, 0), [], [_photo_time("10:00")], INTERVAL, OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("10:00")], OFFSET).sleep_seconds(_now(10, 0), INTERVAL)
         assert result >= 60
 
     def test_ziel_in_vergangenheit_wird_ignoriert(self):
         """Ziel, das in der Vergangenheit liegt, wird nicht zurückgegeben."""
         # Absolute Uhrzeit 09:00 liegt vor jetzt (10:00) → kein Ziel heute mehr
         # Nächstes Ziel wäre morgen → außerhalb Intervall → volles Intervall
-        result = camera_schedule.compute_next_sleep_seconds(
-            _now(10, 0), [], [_photo_time("09:00")], INTERVAL, OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("09:00")], OFFSET).sleep_seconds(_now(10, 0), INTERVAL)
         assert result == INTERVAL
 
     def test_tagesgrenze_ziel_morgen(self):
         """Absolute Uhrzeit 00:05 bei jetzt 23:50 → ca. 15 Minuten → sleep = 900 s (Intervall klein)."""
         interval = 1800  # 30 Minuten
-        result = camera_schedule.compute_next_sleep_seconds(
-            _now(23, 50), [], [_photo_time("00:05")], interval, OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("00:05")], OFFSET).sleep_seconds(_now(23, 50), interval)
         assert result == 15 * 60  # 15 Minuten = 900 s
 
     def test_genau_auf_ziel_gibt_minimum(self):
         """now == Ziel genau → sleep = 60 s (Minimum)."""
-        result = camera_schedule.compute_next_sleep_seconds(
-            _now(10, 10), [], [_photo_time("10:10")], INTERVAL, OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("10:10")], OFFSET).sleep_seconds(_now(10, 10), INTERVAL)
         assert result == 60
 
 
@@ -122,26 +99,20 @@ class TestDstSleepSeconds:
         # 2026-03-29: 02:00 CET -> 03:00 CEST (die Stunde fällt weg).
         # now 01:30, Fotozeit 03:30: Wanduhr-Delta 2 h, ECHT verstrichen nur 1 h.
         now = datetime(2026, 3, 29, 1, 30)
-        result = camera_schedule.compute_next_sleep_seconds(
-            now, [], [_photo_time("03:30")], 8 * 3600, OFFSET, tz=self.BERLIN
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("03:30")], OFFSET).sleep_seconds(now, 8 * 3600, tz=self.BERLIN)
         assert result == 3600
 
     def test_fall_back_uses_real_elapsed_seconds(self):
         # 2026-10-25: 03:00 CEST -> 02:00 CET (die Stunde kommt doppelt).
         # now 01:30, Fotozeit 03:30: Wanduhr-Delta 2 h, ECHT verstrichen 3 h.
         now = datetime(2026, 10, 25, 1, 30)
-        result = camera_schedule.compute_next_sleep_seconds(
-            now, [], [_photo_time("03:30")], 8 * 3600, OFFSET, tz=self.BERLIN
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("03:30")], OFFSET).sleep_seconds(now, 8 * 3600, tz=self.BERLIN)
         assert result == 3 * 3600
 
     def test_without_tz_stays_naive(self):
         # Ohne tz bleibt es die naive Differenz (Rückwärtskompatibilität, auf Normaltagen gleich).
         now = datetime(2026, 3, 29, 1, 30)
-        result = camera_schedule.compute_next_sleep_seconds(
-            now, [], [_photo_time("03:30")], 8 * 3600, OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("03:30")], OFFSET).sleep_seconds(now, 8 * 3600)
         assert result == 2 * 3600
 
     def test_spring_forward_gate_admits_real_reachable_target(self):
@@ -149,42 +120,37 @@ class TestDstSleepSeconds:
         # now 01:50 (CET), Ziel 03:00 (CEST): naiv 70 min entfernt, ECHT nur 10 min (600 s) —
         # bei Intervall 900 s reichbar, darf also NICHT verworfen werden (Kamera weckt pünktlich).
         now = datetime(2026, 3, 29, 1, 50)
-        result = camera_schedule.compute_next_sleep_seconds(
-            now, [], [_photo_time("03:00")], 900, OFFSET, tz=self.BERLIN
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("03:00")], OFFSET).sleep_seconds(now, 900, tz=self.BERLIN)
         assert result == 600
 
     def test_normal_day_identical_with_and_without_tz(self):
         # Kein Umstellungstag: tz-bewusst und naiv liefern dasselbe.
-        args = (_now(10, 0), [], [_photo_time("10:10")], INTERVAL, OFFSET)
-        assert (camera_schedule.compute_next_sleep_seconds(*args, tz=self.BERLIN)
-                == camera_schedule.compute_next_sleep_seconds(*args) == 600)
+        plan = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("10:10")], OFFSET)
+        now = _now(10, 0)
+        assert (plan.sleep_seconds(now, INTERVAL, tz=self.BERLIN)
+                == plan.sleep_seconds(now, INTERVAL) == 600)
 
 
 # ===========================================================================
-# next_photo_target
+# PhotoPlan.upcoming
 # ===========================================================================
 
 class TestNextPhotoTarget:
     def test_kein_ziel_gibt_none(self):
         """Keine Zeitpläne, keine festen Zeiten → None."""
-        result = camera_schedule.next_photo_target(_now(10, 0), [], [], OFFSET)
+        result = camera_schedule.PhotoPlan.unfiltered([], [], OFFSET).upcoming(_now(10, 0))
         assert result is None
 
     def test_guss_ziel_korrekte_aufnahmezeit(self):
         """Zeitplan 10:00, 8 min Dauer, Offset 2 → Aufnahmezeit 10:10."""
-        result = camera_schedule.next_photo_target(
-            _now(9, 50), [_schedule("10:00", 8, name="Rasen")], [], OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([_schedule("10:00", 8, name="Rasen")], [], OFFSET).upcoming(_now(9, 50))
         assert result is not None
         target_dt, label = result
         assert target_dt.hour == 10 and target_dt.minute == 10
 
     def test_guss_ziel_label_typ_und_name(self):
         """Guss-Ziel → label['type'] == 'guss', label['name'] == Zeitplan-Name."""
-        result = camera_schedule.next_photo_target(
-            _now(9, 50), [_schedule("10:00", 8, name="Rasen")], [], OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([_schedule("10:00", 8, name="Rasen")], [], OFFSET).upcoming(_now(9, 50))
         assert result is not None
         _, label = result
         assert label["type"] == "guss"
@@ -192,9 +158,7 @@ class TestNextPhotoTarget:
 
     def test_fixes_ziel_label_typ(self):
         """Feste Fotozeit → label['type'] == 'fix'."""
-        result = camera_schedule.next_photo_target(
-            _now(10, 0), [], [_photo_time("10:30")], OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("10:30")], OFFSET).upcoming(_now(10, 0))
         assert result is not None
         target_dt, label = result
         assert label["type"] == "fix"
@@ -202,12 +166,7 @@ class TestNextPhotoTarget:
 
     def test_fruehere_von_mehreren_gewinnt(self):
         """Guss-Ziel (10:10) vs. feste Zeit (10:05) → feste Zeit (früher) gewinnt."""
-        result = camera_schedule.next_photo_target(
-            _now(10, 0),
-            [_schedule("10:00", 8, name="Rasen")],   # target 10:10
-            [_photo_time("10:05")],                   # target 10:05
-            OFFSET,
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([_schedule("10:00", 8, name="Rasen")], [_photo_time("10:05")], OFFSET).upcoming(_now(10, 0))
         assert result is not None
         target_dt, label = result
         assert label["type"] == "fix"
@@ -215,16 +174,12 @@ class TestNextPhotoTarget:
 
     def test_inaktiver_zeitplan_kein_guss_ziel(self):
         """Inaktiver Zeitplan erzeugt kein Guss-Ziel."""
-        result = camera_schedule.next_photo_target(
-            _now(9, 50), [_schedule("10:00", 8, is_active=0)], [], OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([_schedule("10:00", 8, is_active=0)], [], OFFSET).upcoming(_now(9, 50))
         assert result is None
 
     def test_vergangenes_ziel_heute_nimmt_morgen(self):
         """Vergangene feste Zeit heute → morgen gleiche Zeit wird zurückgegeben."""
-        result = camera_schedule.next_photo_target(
-            _now(10, 0), [], [_photo_time("09:00")], OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([], [_photo_time("09:00")], OFFSET).upcoming(_now(10, 0))
         assert result is not None
         target_dt, _ = result
         assert target_dt.date() == (_now(10, 0) + timedelta(days=1)).date()
@@ -240,7 +195,7 @@ class TestFaelligerAufnahmeZeitpunkt:
         now = datetime(2026, 7, 13, 8, 28, 59)
         photo_times = [{"id": 1, "time": "08:00"}, {"id": 2, "time": "20:00"}]
 
-        result = camera_schedule.faelliger_aufnahme_zeitpunkt(now, [], photo_times, 2)
+        result = camera_schedule.PhotoPlan.unfiltered([], photo_times, 2).due(now)
 
         assert result is not None, "Ein um 28 min verspaeteter Upload muss den 08:00-Zeitpunkt erfuellen"
         target_dt, caption, _label = result
@@ -252,7 +207,7 @@ class TestFaelligerAufnahmeZeitpunkt:
         now = datetime(2026, 7, 13, 0, 8, 54)
         photo_times = [{"id": 1, "time": "08:00"}, {"id": 2, "time": "20:00"}]
 
-        result = camera_schedule.faelliger_aufnahme_zeitpunkt(now, [], photo_times, 2)
+        result = camera_schedule.PhotoPlan.unfiltered([], photo_times, 2).due(now)
 
         assert result is not None, "Nach Mitternacht ist der 20:00-Zeitpunkt des Vortags noch offen"
         assert result[0] == datetime(2026, 7, 12, 20, 0)
@@ -262,7 +217,7 @@ class TestFaelligerAufnahmeZeitpunkt:
         now = datetime(2026, 7, 13, 6, 0)
         photo_times = [{"id": 1, "time": "08:00"}]
 
-        result = camera_schedule.faelliger_aufnahme_zeitpunkt(now, [], photo_times, 2)
+        result = camera_schedule.PhotoPlan.unfiltered([], photo_times, 2).due(now)
 
         assert result is not None
         assert result[0] == datetime(2026, 7, 12, 8, 0)
@@ -270,7 +225,7 @@ class TestFaelligerAufnahmeZeitpunkt:
     def test_ohne_aufnahme_zeitpunkte_ist_nichts_faellig(self):
         now = datetime(2026, 7, 13, 6, 0)
 
-        assert camera_schedule.faelliger_aufnahme_zeitpunkt(now, [], [], 2) is None
+        assert camera_schedule.PhotoPlan.unfiltered([], [], 2).due(now) is None
 
 
 class TestBeschriftungMitVerzug:
@@ -280,7 +235,7 @@ class TestBeschriftungMitVerzug:
         target = datetime(2026, 7, 14, 20, 0)
         captured = datetime(2026, 7, 14, 20, 0, 14)
 
-        text = camera_schedule.beschriftung_mit_verzug("📷 Foto um 20:00", target, captured, 5)
+        text = camera_schedule.caption_with_delay("📷 Foto um 20:00", target, captured, 5)
 
         assert text == "📷 Foto um 20:00"
 
@@ -288,7 +243,7 @@ class TestBeschriftungMitVerzug:
         target = datetime(2026, 7, 13, 8, 0)
         captured = datetime(2026, 7, 13, 8, 28, 59)
 
-        text = camera_schedule.beschriftung_mit_verzug("📷 Foto um 08:00", target, captured, 5)
+        text = camera_schedule.caption_with_delay("📷 Foto um 08:00", target, captured, 5)
 
         assert text == "📷 Foto um 08:00 · aufgenommen 08:28"
 
@@ -297,7 +252,7 @@ class TestBeschriftungMitVerzug:
         target = datetime(2026, 7, 12, 20, 0)
         captured = datetime(2026, 7, 13, 0, 8, 54)
 
-        text = camera_schedule.beschriftung_mit_verzug("📷 Foto um 20:00", target, captured, 5)
+        text = camera_schedule.caption_with_delay("📷 Foto um 20:00", target, captured, 5)
 
         assert text == "📷 Foto um 20:00 · aufgenommen 13.07. um 00:08"
 
@@ -312,16 +267,14 @@ class TestNebelZeitplaeneErzeugenKeinGussFoto:
     def test_nebel_intervall_erzeugt_keinen_faelligen_zeitpunkt(self):
         now = datetime(2026, 7, 14, 22, 30)
 
-        result = camera_schedule.faelliger_aufnahme_zeitpunkt(now, [self._nebel("22:00")], [], 2)
+        result = camera_schedule.PhotoPlan.unfiltered([self._nebel("22:00")], [], 2).due(now)
 
         assert result is None, "Ein Nebel-Intervall darf kein Guss-Foto ausloesen"
 
     def test_nebel_intervall_weckt_die_kamera_nicht(self):
         now = datetime(2026, 7, 14, 21, 55)
 
-        sleep = camera_schedule.compute_next_sleep_seconds(
-            now, [self._nebel("22:00")], [], INTERVAL, OFFSET
-        )
+        sleep = camera_schedule.PhotoPlan.unfiltered([self._nebel("22:00")], [], OFFSET).sleep_seconds(now, INTERVAL)
 
         assert sleep == INTERVAL, "Fuer ein Nebel-Intervall darf die Kamera nicht geweckt werden"
 
@@ -371,18 +324,14 @@ class TestDunkleAufnahmeZeitpunkteEntfallen:
         """Guss um 22:00, 30 min Dauer → Zeitpunkt 22:32 liegt im Dunkeln."""
         now = datetime(2026, 6, 26, 22, 35)
 
-        result = camera_schedule.faelliger_aufnahme_zeitpunkt(
-            now, [_schedule("22:00", 30)], [], OFFSET, photo_allowed=self._filter()
-        )
+        result = camera_schedule.PhotoPlan([_schedule("22:00", 30)], [], OFFSET, self._filter()).due(now)
 
         assert result is None
 
     def test_taegliches_guss_foto_bleibt(self):
         now = datetime(2026, 6, 26, 10, 35)
 
-        result = camera_schedule.faelliger_aufnahme_zeitpunkt(
-            now, [_schedule("10:00", 30)], [], OFFSET, photo_allowed=self._filter()
-        )
+        result = camera_schedule.PhotoPlan([_schedule("10:00", 30)], [], OFFSET, self._filter()).due(now)
 
         assert result is not None
         assert result[0] == datetime(2026, 6, 26, 10, 32)
@@ -390,10 +339,7 @@ class TestDunkleAufnahmeZeitpunkteEntfallen:
     def test_kamera_wird_fuer_dunklen_zeitpunkt_nicht_geweckt(self):
         now = datetime(2026, 6, 26, 22, 25)
 
-        sleep = camera_schedule.compute_next_sleep_seconds(
-            now, [_schedule("22:00", 30)], [], INTERVAL, OFFSET,
-            photo_allowed=self._filter()
-        )
+        sleep = camera_schedule.PhotoPlan([_schedule("22:00", 30)], [], OFFSET, self._filter()).sleep_seconds(now, INTERVAL)
 
         assert sleep == INTERVAL
 
@@ -401,14 +347,12 @@ class TestDunkleAufnahmeZeitpunkteEntfallen:
         """Kein Bild zu einem unterdrückten Zeitpunkt ist der Normalfall, kein Alarm."""
         now = datetime(2026, 6, 27, 8, 0)
 
-        verpasst = camera_schedule.verpasste_aufnahme_zeitpunkte(
-            now,
+        verpasst = camera_schedule.PhotoPlan(
             [_schedule("22:00", 30)],
             [_photo_time("07:00")],
             OFFSET,
-            zuletzt_zugestellt=datetime(2026, 6, 26, 12, 0),
-            photo_allowed=self._filter(),
-        )
+            self._filter(),
+        ).missed(now, datetime(2026, 6, 26, 12, 0))
 
         assert verpasst == []
 
@@ -416,10 +360,7 @@ class TestDunkleAufnahmeZeitpunkteEntfallen:
         """Um 22:00 ist der nächste sichtbare Zeitpunkt die Fotozeit am Morgen."""
         now = datetime(2026, 6, 26, 22, 0)
 
-        result = camera_schedule.next_photo_target(
-            now, [_schedule("22:30", 30)], [_photo_time("07:00")], OFFSET,
-            photo_allowed=self._filter()
-        )
+        result = camera_schedule.PhotoPlan([_schedule("22:30", 30)], [_photo_time("07:00")], OFFSET, self._filter()).upcoming(now)
 
         assert result is not None
         assert result[0] == datetime(2026, 6, 27, 7, 0)
@@ -428,18 +369,96 @@ class TestDunkleAufnahmeZeitpunkteEntfallen:
         """Nur Guss-Fotos gefiltert → die feste Fotozeit um 23:00 wird weiter zugestellt."""
         now = datetime(2026, 6, 26, 23, 5)
 
-        result = camera_schedule.faelliger_aufnahme_zeitpunkt(
-            now, [], [_photo_time("23:00")], OFFSET,
-            photo_allowed=self._filter({"guss"})
-        )
+        result = camera_schedule.PhotoPlan([], [_photo_time("23:00")], OFFSET, self._filter({"guss"})).due(now)
 
         assert result is not None
 
     def test_ohne_filter_bleibt_das_verhalten_unveraendert(self):
         now = datetime(2026, 6, 26, 22, 35)
 
-        result = camera_schedule.faelliger_aufnahme_zeitpunkt(
-            now, [_schedule("22:00", 30)], [], OFFSET
-        )
+        result = camera_schedule.PhotoPlan.unfiltered([_schedule("22:00", 30)], [], OFFSET).due(now)
 
         assert result is not None
+
+
+# ===========================================================================
+# PhotoPlan — der Aufnahme-Plan als Typ (Ticket nkl)
+# ===========================================================================
+
+class TestPhotoPlan:
+    """Der Plan bündelt, was einen Aufnahme-Zeitpunkt ausmacht.
+
+    Vorher reisten (schedules, photo_times, after_offset_minutes, photo_allowed) als
+    Klumpen durch fünf Funktionen. Entscheidend ist dabei nicht die Kürze, sondern dass
+    der Dunkelheits-Filter nicht mehr stillschweigend weggelassen werden kann: Er hat
+    keinen Vorgabewert, der Aufrufer muss sich äußern.
+    """
+
+    def _plan(self, photo_allowed, schedules=None, photo_times=None):
+        return camera_schedule.PhotoPlan(
+            schedules if schedules is not None else [_schedule("10:00", 10)],
+            photo_times if photo_times is not None else [],
+            OFFSET,
+            photo_allowed,
+        )
+
+    def test_filter_is_mandatory(self):
+        """Ohne Angabe des Filters gibt es keinen Plan — das ist der Kern des Tickets."""
+        with pytest.raises(TypeError):
+            camera_schedule.PhotoPlan([_schedule("10:00", 10)], [], OFFSET)
+
+    def test_unfiltered_states_the_absence_explicitly(self):
+        """`unfiltered()` benennt „kein Filter" als Absicht statt als Versäumnis."""
+        plan = camera_schedule.PhotoPlan.unfiltered([_schedule("10:00", 10)], [], OFFSET)
+        assert plan.photo_allowed is None
+        assert plan.targets(_now(12, 0))
+
+    def test_none_filter_keeps_every_target(self):
+        """photo_allowed=None lässt alle Zeitpunkte stehen (Fall ohne Koordinaten)."""
+        assert len(self._plan(None).targets(_now(12, 0))) == 3   # Vortag, heute, morgen
+
+    def test_filter_removes_targets(self):
+        """Ein ablehnender Filter entfernt die Zeitpunkte für jeden Verbraucher."""
+        plan = self._plan(lambda dt, label: False)
+        now = _now(12, 0)
+        assert plan.targets(now) == []
+        assert plan.due(now) is None
+        assert plan.upcoming(now) is None
+        assert plan.missed(now, _now(0, 0)) == []
+
+    def test_due_returns_most_recent_past_target(self):
+        plan = self._plan(None)
+        target_dt, _caption, _label = plan.due(_now(12, 0))
+        assert target_dt == datetime(2026, 6, 26, 10, 12)
+
+    def test_upcoming_returns_next_future_target(self):
+        plan = self._plan(None)
+        target_dt, label = plan.upcoming(_now(12, 0))
+        assert target_dt == datetime(2026, 6, 27, 10, 12)
+        assert label["type"] == "guss"
+
+    def test_missed_skips_the_still_open_target(self):
+        """Der jüngste fällige Zeitpunkt ist offen, nicht verpasst (ADR 0041)."""
+        plan = self._plan(None, photo_times=[_photo_time("08:00"), _photo_time("09:00")],
+                          schedules=[])
+        verpasst = plan.missed(_now(12, 0), datetime(2026, 6, 26, 7, 0))
+        assert verpasst == [datetime(2026, 6, 26, 8, 0)]
+
+    def test_missed_without_known_state_reports_nothing(self):
+        plan = self._plan(None)
+        assert plan.missed(_now(12, 0), None) == []
+
+    def test_sleep_seconds_stops_at_next_target(self):
+        plan = self._plan(None)
+        # 10:00 + 10 Min Dauer + 2 Min Offset = 10:12; von 10:00 aus 720 s
+        assert plan.sleep_seconds(_now(10, 0), INTERVAL) == 720
+
+    def test_sleep_seconds_respects_interval_ceiling(self):
+        plan = self._plan(None, schedules=[], photo_times=[])
+        assert plan.sleep_seconds(_now(10, 0), INTERVAL) == INTERVAL
+
+    def test_plan_is_immutable(self):
+        """Der Plan beschreibt einen Zustand; er wandelt sich unterwegs nicht."""
+        plan = self._plan(None)
+        with pytest.raises(Exception):
+            plan.after_offset_minutes = 99

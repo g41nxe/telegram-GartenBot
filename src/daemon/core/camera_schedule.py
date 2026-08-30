@@ -8,14 +8,16 @@ bis der naechste ihn abloest (ADR 0040) — ueber Mitternacht hinweg also auch d
 
 Zeitzonen (Ticket fok): Aufnahme-Zeitpunkte sind bewusst **lokale Wanduhrzeit** — „08:00" meint
 08:00 Ortszeit, jeden Tag, unabhängig von Sommer-/Winterzeit. Anzeige, Ordnung und Verzug rechnen
-in dieser Wanduhrzeit. Nur die *physische Schlafdauer* (compute_next_sleep_seconds) braucht die
+in dieser Wanduhrzeit. Nur die *physische Schlafdauer* (PhotoPlan.sleep_seconds) braucht die
 tatsächlich verstrichene Zeit; sie wird über ``tz`` (ZoneInfo) DST-korrekt gerechnet, sonst würde
 die Kamera an den beiden Umstellungstagen bis zu 60 min daneben aufwachen. Die im Frühjahr nicht
 existierende Stunde (02:00–03:00) löst ZoneInfo auf den realen Moment danach auf; die im Herbst
 doppelte Stunde wird als erstes Vorkommen gewertet (``fold=0``).
 """
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any, Callable
 
 
 def _md_escape(text) -> str:
@@ -30,7 +32,7 @@ def _md_escape(text) -> str:
     return re.sub(r"([_*`\[])", r"\\\1", str(text))
 
 
-def _guss_targets(now: datetime, schedules: list, after_offset_minutes: int):
+def _watering_targets(now: datetime, schedules: list, after_offset_minutes: int):
     """Liefert (target_dt, caption, label) für alle aktiven Guss-Zeitpläne — Vortag, heute, morgen.
 
     Nur Zeitpläne im Modus „watering" erzeugen ein Guss-Foto. Ein Nebel-Intervall (ADR 0033)
@@ -111,23 +113,6 @@ def daylight_filter(is_daylight, types):
     return photo_allowed
 
 
-def _all_targets(now, schedules, photo_times, after_offset_minutes, photo_allowed=None):
-    """Alle Aufnahme-Zeitpunkte als (target_dt, caption, label) — bereits gefiltert.
-
-    Der Filter greift hier und nur hier: Ein unterdrückter Zeitpunkt existiert damit für
-    *jeden* Verbraucher nicht. Filterte stattdessen erst die Zustellung, bliebe der Zeitpunkt
-    für den Watchdog bestehen und würde als verpasst gemeldet (ADR 0041) — das schwarze Foto
-    wäre durch einen Fehlalarm ersetzt, und die Kamera wäre nachts trotzdem aufgewacht.
-    """
-    targets = (
-        _guss_targets(now, schedules, after_offset_minutes)
-        + _absolute_targets(now, photo_times)
-    )
-    if photo_allowed is None:
-        return targets
-    return [t for t in targets if photo_allowed(t[0], t[2])]
-
-
 def _real_seconds(now: datetime, target: datetime, tz) -> float:
     """Tatsächlich verstrichene Sekunden von ``now`` bis ``target``.
 
@@ -144,106 +129,11 @@ def _real_seconds(now: datetime, target: datetime, tz) -> float:
     return target.replace(tzinfo=tz).timestamp() - now.replace(tzinfo=tz).timestamp()
 
 
-def compute_next_sleep_seconds(
-    now: datetime,
-    schedules: list,
-    photo_times: list,
-    interval_seconds: int,
-    after_offset_minutes: int,
-    tz=None,
-    photo_allowed=None,
-) -> int:
-    """Berechnet die optimale Schlafdauer für die Kamera.
-
-    Gibt Min(interval_seconds, Sekunden_bis_nächsten_Aufnahme_Zeitpunkt) zurück.
-    Minimum 60 Sekunden (Kamera-Constraint). ``tz`` (ZoneInfo) macht die Schlafdauer an den
-    Sommerzeit-Umstellungen DST-korrekt (Ticket fok).
-
-    Reichweite und Dauer werden BEIDE in echter verstrichener Zeit gemessen — sonst würde am
-    Frühjahrs-Übergang ein real erreichbares Ziel vom naiven Filter verworfen (Review-Befund).
-    """
-    best_seconds = interval_seconds
-
-    all_targets = _all_targets(
-        now, schedules, photo_times, after_offset_minutes, photo_allowed
-    )
-
-    for target_dt, _, _label in all_targets:
-        secs = _real_seconds(now, target_dt, tz)
-        if 0 <= secs <= interval_seconds and secs < best_seconds:
-            best_seconds = int(secs)
-
-    return max(60, best_seconds)
-
-
-def faelliger_aufnahme_zeitpunkt(
-    now: datetime,
-    schedules: list,
-    photo_times: list,
-    after_offset_minutes: int,
-    photo_allowed=None,
-) -> tuple | None:
-    """Gibt den jüngsten bereits fälligen Aufnahme-Zeitpunkt zurück: (target_dt, caption, label).
-
-    Ein Aufnahme-Zeitpunkt wird vom ersten Bild erfüllt, das NACH ihm eintrifft (ADR 0040);
-    er bleibt offen, bis der nächste ihn ablöst. Ein Upload vor dem Zeitpunkt erfüllt ihn
-    nicht — die Kamera wacht bauartbedingt bis zu 60 s zu früh auf, und ein Bild vor dem
-    Nach-Offset kann das Beet mitten im Guss zeigen.
-
-    Gibt None zurück, wenn überhaupt kein Aufnahme-Zeitpunkt konfiguriert ist. Ist einer
-    konfiguriert, liegt immer einer in der Vergangenheit — vor der ersten Fotozeit des Tages
-    ist das der Zeitpunkt des Vortags, der bis dahin offen bleibt.
-    """
-    all_targets = _all_targets(
-        now, schedules, photo_times, after_offset_minutes, photo_allowed
-    )
-
-    best = None
-    for target_dt, caption, label in all_targets:
-        if target_dt > now:
-            continue
-        if best is None or target_dt > best[0]:
-            best = (target_dt, caption, label)
-
-    return best
-
-
-def verpasste_aufnahme_zeitpunkte(
-    now: datetime,
-    schedules: list,
-    photo_times: list,
-    after_offset_minutes: int,
-    zuletzt_zugestellt: datetime | None,
-    photo_allowed=None,
-) -> list:
-    """Aufnahme-Zeitpunkte, die abgelöst wurden, ohne je ein Bild erhalten zu haben (ADR 0041).
-
-    Der jüngste fällige Zeitpunkt zählt nicht dazu: Er ist noch **offen** — das nächste Bild
-    erfüllt ihn. Verpasst ist ein Zeitpunkt erst, wenn ein neuerer ihn abgelöst hat.
-
-    Ohne bekannten Zustand (`zuletzt_zugestellt is None`) wird nichts gemeldet: Nach einem
-    Daemon-Neustart soll keine Alarm-Flut für längst vergangene Zeitpunkte entstehen.
-    """
-    if zuletzt_zugestellt is None:
-        return []
-
-    faellige = sorted(
-        target_dt
-        for target_dt, _caption, _label in _all_targets(
-            now, schedules, photo_times, after_offset_minutes, photo_allowed
-        )
-        if zuletzt_zugestellt < target_dt <= now
-    )
-
-    # Den jüngsten (noch offenen) Zeitpunkt ausnehmen.
-    return faellige[:-1]
-
-
-def beschriftung_mit_verzug(
+def caption_with_delay(
     caption: str,
     target_dt: datetime,
     captured_at: datetime,
-    hinweis_schwelle_minuten: int,
+    notice_threshold_minutes: int,
 ) -> str:
     """Ergänzt die Beschriftung um die echte Aufnahmezeit, sobald der Aufnahme-Verzug auffällt.
 
@@ -257,7 +147,7 @@ def beschriftung_mit_verzug(
     (Aufnahme, JPEG-Kodierung, Übertragung) und damit klein gegen jeden Verzug, der hier zählt.
     """
     verzug = (captured_at - target_dt).total_seconds()
-    if verzug < hinweis_schwelle_minuten * 60:
+    if verzug < notice_threshold_minutes * 60:
         return caption
 
     if captured_at.date() != target_dt.date():
@@ -267,31 +157,124 @@ def beschriftung_mit_verzug(
     return f"{caption} · aufgenommen {zeit}"
 
 
-def next_photo_target(
-    now: datetime,
-    schedules: list,
-    photo_times: list,
-    after_offset_minutes: int,
-    photo_allowed=None,
-) -> tuple | None:
-    """Gibt den nächsten zukünftigen Aufnahme-Zeitpunkt zurück: (target_dt, label) oder None.
+@dataclass(frozen=True)
+class PhotoPlan:
+    """Welche Aufnahme-Zeitpunkte es gibt — und welche davon zählen.
 
-    label = {"type": "guss", "name": str} | {"type": "fix"}
+    Bündelt, was zusammen eine Aussage ergibt: die Guss-Zeitpläne, die festen Fotozeiten,
+    der Nach-Guss-Offset und der Filter. Zuvor reisten diese vier als Klumpen durch fünf
+    Funktionen; jeder Verbraucher musste sie vollständig und in der richtigen Reihenfolge
+    weiterreichen (Ticket nkl).
+
+    `photo_allowed` hat **keinen Vorgabewert**. `None` bleibt der gültige Wert für „nicht
+    filtern" — der Fall ohne konfigurierte Koordinaten, den `daylight_filter` selbst
+    liefert. Aber es ist ein Wert, den man setzt, kein Zustand, in den man versehentlich
+    gerät: Ein vergessener Filter erzeugte keinen Fehler, sondern schwarze Fotos,
+    nächtliches Aufwachen und Ankündigungen für Aufnahmen, die nie entstehen. Wer das
+    nicht will, schreibt `PhotoPlan.unfiltered(...)` und sagt damit, dass er es so meint.
+
+    `now` gehört bewusst nicht dazu: Der Plan beschreibt die Konfiguration, nicht den
+    Moment. Derselbe Plan beantwortet Fragen zu beliebigen Zeitpunkten.
     """
-    all_targets = _all_targets(
-        now, schedules, photo_times, after_offset_minutes, photo_allowed
-    )
 
-    best_dt = None
-    best_label = None
+    schedules: list
+    photo_times: list
+    after_offset_minutes: int
+    photo_allowed: Callable[[datetime, dict], bool] | None
 
-    for target_dt, _caption, label in all_targets:
-        if target_dt <= now:
-            continue
-        if best_dt is None or target_dt < best_dt:
-            best_dt = target_dt
-            best_label = label
+    @classmethod
+    def unfiltered(cls, schedules: list, photo_times: list, after_offset_minutes: int) -> "PhotoPlan":
+        """Ein Plan ohne Dunkelheits-Filter — für Tests und den Fall ohne Koordinaten."""
+        return cls(schedules, photo_times, after_offset_minutes, None)
 
-    if best_dt is None:
-        return None
-    return best_dt, best_label
+    def targets(self, now: datetime) -> list:
+        """Alle Aufnahme-Zeitpunkte als (target_dt, caption, label) — bereits gefiltert.
+
+        Der Filter greift hier und nur hier: Ein unterdrückter Zeitpunkt existiert damit für
+        *jeden* Verbraucher nicht. Filterte stattdessen erst die Zustellung, bliebe der Zeitpunkt
+        für den Watchdog bestehen und würde als verpasst gemeldet (ADR 0041) — das schwarze Foto
+        wäre durch einen Fehlalarm ersetzt, und die Kamera wäre nachts trotzdem aufgewacht.
+        """
+        found = (
+            _watering_targets(now, self.schedules, self.after_offset_minutes)
+            + _absolute_targets(now, self.photo_times)
+        )
+        if self.photo_allowed is None:
+            return found
+        return [t for t in found if self.photo_allowed(t[0], t[2])]
+
+    def due(self, now: datetime) -> tuple | None:
+        """Der jüngste bereits fällige Aufnahme-Zeitpunkt: (target_dt, caption, label).
+
+        Ein Aufnahme-Zeitpunkt wird vom ersten Bild erfüllt, das NACH ihm eintrifft (ADR 0040);
+        er bleibt offen, bis der nächste ihn ablöst. Ein Upload vor dem Zeitpunkt erfüllt ihn
+        nicht — die Kamera wacht bauartbedingt bis zu 60 s zu früh auf, und ein Bild vor dem
+        Nach-Offset kann das Beet mitten im Guss zeigen.
+
+        None, wenn überhaupt kein Aufnahme-Zeitpunkt konfiguriert ist. Ist einer konfiguriert,
+        liegt immer einer in der Vergangenheit — vor der ersten Fotozeit des Tages ist das der
+        Zeitpunkt des Vortags, der bis dahin offen bleibt.
+        """
+        best = None
+        for target_dt, caption, label in self.targets(now):
+            if target_dt > now:
+                continue
+            if best is None or target_dt > best[0]:
+                best = (target_dt, caption, label)
+        return best
+
+    def upcoming(self, now: datetime) -> tuple | None:
+        """Der nächste zukünftige Aufnahme-Zeitpunkt: (target_dt, label) oder None.
+
+        label = {"type": "guss", "name": str} | {"type": "fix"}
+        """
+        best_dt = None
+        best_label = None
+        for target_dt, _caption, label in self.targets(now):
+            if target_dt <= now:
+                continue
+            if best_dt is None or target_dt < best_dt:
+                best_dt, best_label = target_dt, label
+        if best_dt is None:
+            return None
+        return best_dt, best_label
+
+    def missed(self, now: datetime, last_delivered: datetime | None) -> list:
+        """Zeitpunkte, die abgelöst wurden, ohne je ein Bild erhalten zu haben (ADR 0041).
+
+        Der jüngste fällige Zeitpunkt zählt nicht dazu: Er ist noch **offen** — das nächste Bild
+        erfüllt ihn. Verpasst ist ein Zeitpunkt erst, wenn ein neuerer ihn abgelöst hat.
+
+        Ohne bekannten Zustand (`last_delivered is None`) wird nichts gemeldet: Nach einem
+        Daemon-Neustart soll keine Alarm-Flut für längst vergangene Zeitpunkte entstehen.
+        """
+        if last_delivered is None:
+            return []
+
+        overdue = sorted(
+            target_dt
+            for target_dt, _caption, _label in self.targets(now)
+            if last_delivered < target_dt <= now
+        )
+        # Den jüngsten (noch offenen) Zeitpunkt ausnehmen.
+        return overdue[:-1]
+
+    def sleep_seconds(self, now: datetime, interval_seconds: int, tz=None) -> int:
+        """Die optimale Schlafdauer für die Kamera.
+
+        Min(interval_seconds, Sekunden bis zum nächsten Aufnahme-Zeitpunkt), mindestens
+        60 Sekunden (Kamera-Constraint). ``tz`` (ZoneInfo) macht die Schlafdauer an den
+        Sommerzeit-Umstellungen DST-korrekt (Ticket fok).
+
+        Reichweite und Dauer werden BEIDE in echter verstrichener Zeit gemessen — sonst würde am
+        Frühjahrs-Übergang ein real erreichbares Ziel vom naiven Filter verworfen (Review-Befund).
+
+        ``interval_seconds`` und ``tz`` gehören nicht in den Plan: Das Intervall ist eine
+        Eigenschaft der einzelnen Kamera, die Zeitzone eine der Umgebung.
+        """
+        best_seconds = interval_seconds
+        for target_dt, _caption, _label in self.targets(now):
+            secs = _real_seconds(now, target_dt, tz)
+            if 0 <= secs <= interval_seconds and secs < best_seconds:
+                best_seconds = int(secs)
+        return max(60, best_seconds)

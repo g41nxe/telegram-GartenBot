@@ -320,10 +320,10 @@ def test_upload_vor_dem_aufnahme_zeitpunkt_erfuellt_ihn_nicht(running_server, ev
 
     # Alles, was jetzt schon faellig ist (der gleichnamige Zeitpunkt des Vortags), gilt als
     # zugestellt — nicht von Hand ausgerechnet, sonst kippt der Test um Mitternacht.
-    bereits_faellig = camera_schedule.faelliger_aufnahme_zeitpunkt(
-        datetime.now(), database.get_schedules(), database.get_photo_times(),
+    bereits_faellig = camera_schedule.PhotoPlan.unfiltered(
+        database.get_schedules(), database.get_photo_times(),
         config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
-    )
+    ).due(datetime.now())
     assert bereits_faellig is not None
     database.set_metadata(
         "last_delivered_target:FC:00:EE:FF:00:11", bereits_faellig[0].isoformat()

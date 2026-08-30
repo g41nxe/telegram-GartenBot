@@ -281,11 +281,12 @@ def run_watchdog_check():
             database.get_metadata(f"watchdog_delay_last_judged_camera_{mac}")
         )
 
-        verpasst = camera_schedule.verpasste_aufnahme_zeitpunkte(
-            now, schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES, zuletzt,
-            # Ein bei Dunkelheit unterdrueckter Zeitpunkt ist kein Verzug, sondern Absicht.
-            photo_allowed=camera_daylight.build_photo_filter(),
+        # Ein bei Dunkelheit unterdrueckter Zeitpunkt ist kein Verzug, sondern Absicht.
+        plan = camera_schedule.PhotoPlan(
+            schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
+            camera_daylight.build_photo_filter(),
         )
+        verpasst = plan.missed(now, zuletzt)
 
         for target_dt in verpasst:
             if bereits_bewertet is not None and target_dt <= bereits_bewertet:

@@ -16,7 +16,7 @@ from ..adapters.daily_report import generate_daily_report as _generate_daily_rep
 from ..adapters.mqtt_client import _global_bus
 from ..core.weather_codes import get_wmo_description as _get_wmo_description
 from ..core.weather_report import WEATHER_UNAVAILABLE_MESSAGE
-from ..core.camera_schedule import next_photo_target as _next_photo_target
+from ..core.camera_schedule import PhotoPlan
 from ..core.watering_controller import (
     WateringCycleStarted,
     WateringCycleCompleted,
@@ -1235,11 +1235,12 @@ def handle_status(chat_id: int):
     next_photo_text = ""
     if cameras:
         photo_times = database.get_photo_times()
-        photo_target = _next_photo_target(
-            now, all_schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
-            # Was nachts nicht ausgeloest wird, darf der Bot auch nicht ankuendigen.
-            photo_allowed=camera_daylight.build_photo_filter(),
+        # Was nachts nicht ausgeloest wird, darf der Bot auch nicht ankuendigen.
+        photo_plan = PhotoPlan(
+            all_schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
+            camera_daylight.build_photo_filter(),
         )
+        photo_target = photo_plan.upcoming(now)
         if photo_target:
             pt_dt, pt_label = photo_target
             pt_day = "heute" if pt_dt.date() == now.date() else "morgen"

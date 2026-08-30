@@ -137,11 +137,13 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
         interval = camera.get("sleep_duration_seconds", 900)
         schedules = database.get_schedules()
         photo_times = database.get_photo_times()
-        sleep_secs = camera_schedule.compute_next_sleep_seconds(
-            datetime.now(), schedules, photo_times, interval,
+        plan = camera_schedule.PhotoPlan(
+            schedules, photo_times,
             config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
-            tz=camera_daylight.local_tz(),
-            photo_allowed=camera_daylight.build_photo_filter(),
+            camera_daylight.build_photo_filter(),
+        )
+        sleep_secs = plan.sleep_seconds(
+            datetime.now(), interval, tz=camera_daylight.local_tz()
         )
         settings = {
             "sleep_duration_seconds": sleep_secs,
@@ -234,13 +236,13 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
             # (ADR 0040). Er bleibt offen, bis der naechste ihn abloest — die Kamera trifft
             # ihn bauartbedingt nie exakt, und ein verworfenes Bild waere ein stiller Verlust.
             photo_filter = camera_daylight.build_photo_filter()
-            faellig = camera_schedule.faelliger_aufnahme_zeitpunkt(
-                now,
+            plan = camera_schedule.PhotoPlan(
                 database.get_schedules(),
                 database.get_photo_times(),
                 config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
-                photo_allowed=photo_filter,
+                photo_filter,
             )
+            faellig = plan.due(now)
             if faellig:
                 target_dt, caption, label = faellig
                 # Zustand: zuletzt zugestellter Aufnahme-Zeitpunkt, je Kamera. Der Zeitstempel
@@ -264,7 +266,7 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
                             f"aber das Bild traf im Dunkeln ein ({now:%H:%M}) — kein Versand."
                         )
                     else:
-                        caption = camera_schedule.beschriftung_mit_verzug(
+                        caption = camera_schedule.caption_with_delay(
                             caption, target_dt, now, config.AUFNAHME_ABWEICHUNG_HINWEIS_MINUTEN
                         )
                         _global_bus.publish(
