@@ -88,6 +88,21 @@ def init_db():
             )
         """)
         
+        # Kamera-Telemetrie je Upload (Ticket top). Bewusst in der Datenbank statt nur im
+        # Journal: Das hält auf dem Pi rund sechs Tage vor, und bei sechs Uploads am Tag
+        # ist das keine belastbare Stichprobe. Die Datenbank liegt vollständig im
+        # Diagnose-Paket und wird nicht abgeschnitten.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS camera_telemetry_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                mac_address TEXT NOT NULL,
+                fail_count INTEGER,
+                wifi_connect_ms INTEGER,
+                request_ms INTEGER
+            )
+        """)
+
         # Schema-Migration check (falls Spalten in einer bestehenden Datenbank fehlen)
         try:
             cursor.execute("SELECT current_temp FROM weather_history LIMIT 1")
@@ -116,21 +131,6 @@ def init_db():
             logger.info("Migriere Datenbank: Füge watered_volume Spalte zu watering_history hinzu...")
             cursor.execute("ALTER TABLE watering_history ADD COLUMN watered_volume REAL DEFAULT 0.0")
             
-        # Kamera-Telemetrie je Upload (Ticket top). Bewusst in der Datenbank statt nur im
-        # Journal: Das hält auf dem Pi rund sechs Tage vor, und bei sechs Uploads am Tag
-        # ist das keine belastbare Stichprobe. Die Datenbank liegt vollständig im
-        # Diagnose-Paket und wird nicht abgeschnitten.
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS camera_telemetry_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                mac_address TEXT NOT NULL,
-                fail_count INTEGER,
-                wifi_connect_ms INTEGER,
-                request_ms INTEGER
-            )
-        """)
-
         try:
             cursor.execute("SELECT id FROM device_status_log LIMIT 1")
         except sqlite3.OperationalError:
@@ -790,9 +790,11 @@ def get_camera_telemetry(mac_address: str, limit: int = 200) -> list:
     """Die jüngsten Telemetrie-Zeilen einer Kamera, neueste zuerst."""
     conn = get_connection()
     try:
+        # Nach id, nicht nach timestamp: Der Primärschlüssel wächst monoton und ist auch
+        # dann eindeutig, wenn zwei Zeitstempel zusammenfallen.
         rows = conn.execute(
             "SELECT * FROM camera_telemetry_log WHERE mac_address = ? "
-            "ORDER BY timestamp DESC LIMIT ?",
+            "ORDER BY id DESC LIMIT ?",
             (mac_address, limit),
         ).fetchall()
         return [dict(r) for r in rows]

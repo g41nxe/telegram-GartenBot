@@ -162,3 +162,53 @@ class TestDiagnosePaket(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestKameraTelemetrieImSteckbrief(unittest.TestCase):
+    """Der Steckbrief nennt die Upload-Kennzahlen je Kamera (Ticket top).
+
+    Damit ist die Frage „meldet die Kamera Fehlschläge bei Uploads, die hier ankamen?"
+    beim Öffnen des Pakets sichtbar, ohne dass jemand die Datenbank abfragen muss.
+    """
+
+    def _steckbrief(self, cameras, telemetry):
+        with patch.object(diagnose.database, "get_all_cameras", return_value=cameras), \
+             patch.object(diagnose.database, "get_camera_telemetry",
+                          side_effect=lambda mac, **kw: telemetry.get(mac, [])):
+            return diagnose._system_info([])
+
+    def test_zeigt_kennzahlen_je_kamera(self):
+        text = self._steckbrief(
+            [{"mac_address": "AA:BB", "wish_name": "Garten01"}],
+            {"AA:BB": [
+                {"fail_count": 2, "wifi_connect_ms": 1500, "request_ms": 1800},
+                {"fail_count": 0, "wifi_connect_ms": 900, "request_ms": 200},
+            ]},
+        )
+        self.assertIn("Garten01", text)
+        self.assertIn("2 Uploads", text)
+        self.assertIn("max 1800 ms", text)
+
+    def test_meldet_fehlende_kamera_kennzahlen(self):
+        """Sendet die Firmware keine Header, sagt der Steckbrief genau das."""
+        text = self._steckbrief(
+            [{"mac_address": "AA:BB", "wish_name": "Garten01"}],
+            {"AA:BB": [{"fail_count": None, "wifi_connect_ms": None, "request_ms": 250}]},
+        )
+        self.assertIn("keine Kamera-Kennzahlen gemeldet", text)
+
+    def test_kamera_ohne_uploads(self):
+        text = self._steckbrief([{"mac_address": "AA:BB", "wish_name": "Neu"}], {})
+        self.assertIn("keine Uploads protokolliert", text)
+
+    def test_ohne_kameras_keine_zeile(self):
+        text = self._steckbrief([], {})
+        self.assertNotIn("Kamera ", text)
+
+    def test_db_fehler_degradiert_statt_abbruch(self):
+        """Die Degradations-Politik gilt auch hier: ein Fehler kostet eine Zeile, nicht das Paket."""
+        with patch.object(diagnose.database, "get_all_cameras",
+                          side_effect=RuntimeError("DB weg")):
+            text = diagnose._system_info([])
+        self.assertIn("Kamera-Telemetrie", text)
+        self.assertIn("unbekannt", text)

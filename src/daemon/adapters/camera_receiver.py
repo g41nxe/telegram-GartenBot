@@ -167,7 +167,10 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
             return None
         try:
             return int(float(raw))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError gehört dazu: int(float("inf")) wirft ihn statt ValueError.
+            # Genau eine defekte Firmware, deren Verhalten hier untersucht wird, könnte
+            # so etwas senden — dann darf die Telemetrie nicht daran scheitern.
             return None
 
     def handle_upload(self):

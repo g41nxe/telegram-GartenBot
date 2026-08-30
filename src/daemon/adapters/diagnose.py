@@ -19,6 +19,7 @@ from pathlib import Path
 
 from . import database
 from .. import config
+from ..core import camera_telemetry
 
 logger = logging.getLogger("garden_diagnose")
 
@@ -112,6 +113,17 @@ def _system_info(missing: list) -> str:
     add("Freier Speicher", lambda: f"{shutil.disk_usage(str(_REPO_ROOT)).free // (1024 * 1024)} MB")
     for service in _SERVICES:
         add(f"Dienst {service}", lambda s=service: _service_state(s))
+
+    # Upload-Kennzahlen je Kamera (Ticket top). Gehört in den Steckbrief, damit die Frage
+    # „meldet die Kamera Fehlschläge bei Uploads, die hier ankamen?" beim Öffnen des Pakets
+    # sichtbar ist, statt erst durch eine Datenbank-Abfrage.
+    try:
+        for camera in database.get_all_cameras():
+            rows = database.get_camera_telemetry(camera["mac_address"])
+            lines.append(camera_telemetry.format_line(camera["wish_name"],
+                                                      camera_telemetry.summarize(rows)))
+    except Exception as e:
+        lines.append(f"Kamera-Telemetrie: unbekannt ({e})")
 
     if missing:
         lines.append("")

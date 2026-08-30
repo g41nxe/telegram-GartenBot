@@ -731,7 +731,8 @@ def test_upload_mit_unlesbarer_telemetrie_schreibt_null(running_server):
     database.add_camera(mac, "KaputtCam")
 
     assert _upload_mit_headern(running_server, mac, {
-        "X-Fail-Count": "keine Zahl",
+        # "inf" ist der heikle Fall: int(float("inf")) wirft OverflowError, nicht ValueError.
+        "X-Fail-Count": "inf",
         "X-Wifi-Connect-Ms": "",
     }) == 200
 
