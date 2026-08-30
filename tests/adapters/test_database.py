@@ -750,3 +750,78 @@ class TestCameraPairingAccessors(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCameraTelemetryLog(unittest.TestCase):
+    """Kamera-Telemetrie je Upload (Ticket top).
+
+    Die Frage, ob der Telegram-Versand früher die Kamera-Uploads blockierte, lässt sich
+    nur mit den Kennzahlen der Kamera beantworten. Das Journal taugt dafür nicht: Es hält
+    auf dem Pi rund sechs Tage vor, bei sechs Uploads am Tag ist das keine Stichprobe.
+    Die Datenbank liegt vollständig im Diagnose-Paket und wird nicht abgeschnitten.
+    """
+
+    MAC = "5C:01:3B:0D:E4:50"
+
+    def setUp(self):
+        self.db_path = _make_temp_db()
+        self._db_path_patcher = patch.object(db, "DB_PATH", self.db_path)
+        self._db_path_patcher.start()
+        db.init_db()
+
+    def tearDown(self):
+        self._db_path_patcher.stop()
+        import gc
+        gc.collect()
+        try:
+            self.db_path.unlink(missing_ok=True)
+        except PermissionError:
+            pass
+
+    def test_migration_creates_table(self):
+        """init_db() legt die Tabelle an — auch in einer bestehenden Datenbank."""
+        conn = sqlite3.connect(self.db_path)
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(camera_telemetry_log)")}
+        conn.close()
+        self.assertEqual(
+            cols, {"id", "timestamp", "mac_address", "fail_count", "wifi_connect_ms", "request_ms"}
+        )
+
+    def test_logs_one_row_per_upload(self):
+        db.log_camera_telemetry(self.MAC, fail_count=0, wifi_connect_ms=1200, request_ms=340)
+        db.log_camera_telemetry(self.MAC, fail_count=2, wifi_connect_ms=8000, request_ms=5100)
+
+        rows = db.get_camera_telemetry(self.MAC)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["fail_count"], 2)          # neueste zuerst
+        self.assertEqual(rows[0]["wifi_connect_ms"], 8000)
+        self.assertEqual(rows[0]["request_ms"], 5100)
+
+    def test_missing_values_are_stored_as_null(self):
+        """Eine Firmware ohne Telemetrie-Header darf den Upload nicht scheitern lassen.
+
+        NULL ist hier selbst eine Aussage: Bleiben die Spalten leer, sendet die Kamera die
+        Kennzahlen nicht — dann liegt es an ihr und nicht am Daemon.
+        """
+        db.log_camera_telemetry(self.MAC, fail_count=None, wifi_connect_ms=None, request_ms=12)
+
+        rows = db.get_camera_telemetry(self.MAC)
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0]["fail_count"])
+        self.assertIsNone(rows[0]["wifi_connect_ms"])
+        self.assertEqual(rows[0]["request_ms"], 12)
+
+    def test_isolates_cameras(self):
+        db.log_camera_telemetry(self.MAC, 1, 100, 10)
+        db.log_camera_telemetry("AA:BB:CC:DD:EE:FF", 9, 900, 90)
+
+        self.assertEqual(len(db.get_camera_telemetry(self.MAC)), 1)
+        self.assertEqual(db.get_camera_telemetry(self.MAC)[0]["fail_count"], 1)
+
+    def test_unknown_camera_returns_empty(self):
+        self.assertEqual(db.get_camera_telemetry("GIBT:ES:NICHT"), [])
+
+    def test_write_failure_does_not_raise(self):
+        """Telemetrie ist Beiwerk — ein Schreibfehler darf den Upload nicht abbrechen."""
+        with patch.object(db, "get_connection", side_effect=sqlite3.OperationalError("kaputt")):
+            db.log_camera_telemetry(self.MAC, 1, 2, 3)   # darf nicht werfen

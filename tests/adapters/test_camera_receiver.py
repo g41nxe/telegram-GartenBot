@@ -670,3 +670,85 @@ class TestTageslichtFilterVerdrahtung:
             "Der Aufnahme-Zeitpunkt muss als bedient vermerkt sein, sonst gilt er als verpasst"
         )
         assert database.get_metadata(schluessel) == ziel.isoformat()
+
+
+# ===========================================================================
+# Kamera-Telemetrie je Upload (Ticket top)
+# ===========================================================================
+
+def _upload_mit_headern(running_server, mac, extra_header=None):
+    """Laedt ein Minimal-JPEG hoch und gibt den HTTP-Status zurueck."""
+    url = f"http://127.0.0.1:{running_server}/upload"
+    payload = b"\xFF\xD8" + b"x" * 100
+    headers = {"X-Camera-MAC": mac, "Content-Type": "image/jpeg"}
+    headers.update(extra_header or {})
+    req = urllib.request.Request(url, headers=headers, data=payload, method="POST")
+    with urllib.request.urlopen(req) as resp:
+        return resp.status
+
+
+def test_upload_erfasst_kamera_telemetrie(running_server):
+    """Die von der Kamera gemeldeten Kennzahlen landen in der Datenbank (Ticket top)."""
+    mac = "1A:2B:3C:4D:5E:6F"
+    database.add_camera(mac, "TelemetrieCam")
+
+    assert _upload_mit_headern(running_server, mac, {
+        "X-Fail-Count": "3",
+        "X-Wifi-Connect-Ms": "8200",
+    }) == 200
+
+    assert _warte_auf(lambda: len(database.get_camera_telemetry(mac)) == 1),         "Telemetrie-Zeile blieb aus"
+    rows = database.get_camera_telemetry(mac)
+    assert rows[0]["fail_count"] == 3
+    assert rows[0]["wifi_connect_ms"] == 8200
+    # Die Bearbeitungsdauer misst die Steuerzentrale selbst — sie ist der Gegenwert zur
+    # Sicht der Kamera und damit der Kern der Verdachtsfrage.
+    assert rows[0]["request_ms"] is not None
+    assert rows[0]["request_ms"] >= 0
+
+
+def test_upload_ohne_telemetrie_header_schreibt_null(running_server):
+    """Eine Firmware ohne die Header darf den Upload nicht scheitern lassen.
+
+    Bleiben die Spalten leer, ist das selbst die Antwort: Dann sendet die Kamera die
+    Kennzahlen nicht, und es liegt nicht am Daemon.
+    """
+    mac = "2A:2B:3C:4D:5E:6F"
+    database.add_camera(mac, "AlteFirmwareCam")
+
+    assert _upload_mit_headern(running_server, mac) == 200
+
+    assert _warte_auf(lambda: len(database.get_camera_telemetry(mac)) == 1),         "Telemetrie-Zeile blieb aus"
+    rows = database.get_camera_telemetry(mac)
+    assert rows[0]["fail_count"] is None
+    assert rows[0]["wifi_connect_ms"] is None
+    assert rows[0]["request_ms"] is not None
+
+
+def test_upload_mit_unlesbarer_telemetrie_schreibt_null(running_server):
+    """Unsinnige Header-Werte werden verworfen, nicht durchgereicht."""
+    mac = "3A:2B:3C:4D:5E:6F"
+    database.add_camera(mac, "KaputtCam")
+
+    assert _upload_mit_headern(running_server, mac, {
+        "X-Fail-Count": "keine Zahl",
+        "X-Wifi-Connect-Ms": "",
+    }) == 200
+
+    assert _warte_auf(lambda: len(database.get_camera_telemetry(mac)) == 1),         "Telemetrie-Zeile blieb aus"
+    rows = database.get_camera_telemetry(mac)
+    assert rows[0]["fail_count"] is None
+    assert rows[0]["wifi_connect_ms"] is None
+
+
+def test_telemetrie_fehler_bricht_upload_nicht_ab(running_server, monkeypatch):
+    """Telemetrie ist Beiwerk: Ihr Scheitern darf das Bild nicht kosten."""
+    mac = "4A:2B:3C:4D:5E:6F"
+    database.add_camera(mac, "FehlerCam")
+
+    def kaputt(*args, **kwargs):
+        raise RuntimeError("Telemetrie kaputt")
+
+    monkeypatch.setattr(camera_receiver.database, "log_camera_telemetry", kaputt)
+
+    assert _upload_mit_headern(running_server, mac, {"X-Fail-Count": "1"}) == 200

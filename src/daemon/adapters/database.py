@@ -116,6 +116,21 @@ def init_db():
             logger.info("Migriere Datenbank: Füge watered_volume Spalte zu watering_history hinzu...")
             cursor.execute("ALTER TABLE watering_history ADD COLUMN watered_volume REAL DEFAULT 0.0")
             
+        # Kamera-Telemetrie je Upload (Ticket top). Bewusst in der Datenbank statt nur im
+        # Journal: Das hält auf dem Pi rund sechs Tage vor, und bei sechs Uploads am Tag
+        # ist das keine belastbare Stichprobe. Die Datenbank liegt vollständig im
+        # Diagnose-Paket und wird nicht abgeschnitten.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS camera_telemetry_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                mac_address TEXT NOT NULL,
+                fail_count INTEGER,
+                wifi_connect_ms INTEGER,
+                request_ms INTEGER
+            )
+        """)
+
         try:
             cursor.execute("SELECT id FROM device_status_log LIMIT 1")
         except sqlite3.OperationalError:
@@ -734,6 +749,56 @@ def get_watering_skip_count_last_24h() -> int:
     except Exception as e:
         logger.error(f"Fehler beim Laden der Übersprungen-Statistik: {e}")
         return 0
+    finally:
+        conn.close()
+
+
+def log_camera_telemetry(mac_address: str, fail_count, wifi_connect_ms, request_ms) -> None:
+    """Hält die Kennzahlen eines Kamera-Uploads fest (Ticket top).
+
+    `fail_count` und `wifi_connect_ms` meldet die Kamera per Header, `request_ms` misst die
+    Steuerzentrale selbst: wie lange sie den /upload-Request offen hielt. Erst beides
+    zusammen beantwortet die Frage, ob die Kamera einen Upload als gescheitert wertet,
+    den der Daemon als erfolgreich protokolliert.
+
+    Ein `None` ist hier selbst eine Aussage — bleiben die Spalten leer, sendet die Firmware
+    die Kennzahlen nicht.
+
+    Fehler werden geschluckt: Telemetrie ist Beiwerk und darf einen sonst erfolgreichen
+    Upload nicht scheitern lassen.
+    """
+    try:
+        conn = get_connection()
+    except Exception as e:
+        logger.error(f"Fehler beim Protokollieren der Kamera-Telemetrie: {e}")
+        return
+    try:
+        conn.execute(
+            "INSERT INTO camera_telemetry_log "
+            "(timestamp, mac_address, fail_count, wifi_connect_ms, request_ms) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (datetime.now().isoformat(), mac_address, fail_count, wifi_connect_ms, request_ms),
+        )
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Fehler beim Protokollieren der Kamera-Telemetrie: {e}")
+    finally:
+        conn.close()
+
+
+def get_camera_telemetry(mac_address: str, limit: int = 200) -> list:
+    """Die jüngsten Telemetrie-Zeilen einer Kamera, neueste zuerst."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM camera_telemetry_log WHERE mac_address = ? "
+            "ORDER BY timestamp DESC LIMIT ?",
+            (mac_address, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.error(f"Fehler beim Lesen der Kamera-Telemetrie: {e}")
+        return []
     finally:
         conn.close()
 

@@ -156,7 +156,25 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(settings).encode('utf-8'))
 
+    def _int_header(self, name: str):
+        """Liest einen ganzzahligen Telemetrie-Header; fehlt er oder ist unlesbar, None.
+
+        None ist hier keine Notlösung, sondern eine Aussage: Eine Firmware, die die
+        Kennzahl nicht sendet, unterscheidet sich von einer, die 0 meldet.
+        """
+        raw = self.headers.get(name)
+        if raw is None:
+            return None
+        try:
+            return int(float(raw))
+        except (TypeError, ValueError):
+            return None
+
     def handle_upload(self):
+        # Beginn der Wartezeit der Kamera. Sie ist die Gegengröße zu dem, was die Kamera
+        # selbst meldet: Wertet sie einen Upload als gescheitert, den wir als erfolgreich
+        # protokollieren, steht die Antwort hier (Ticket top).
+        t_start = time.monotonic()
         mac = self.headers.get("X-Camera-MAC")
         if not mac:
             self.send_response(400)
@@ -228,6 +246,19 @@ class CameraHTTPRequestHandler(BaseHTTPRequestHandler):
             self.wfile.flush()  # Ohne Content-Length wartete die Kamera bis zum Verbindungsschluss.
         except Exception:
             pass
+
+        # Erst jetzt, aus demselben Grund wie die Ereignisse weiter unten: Die Messung gilt
+        # der Wartezeit der Kamera, und das Festhalten darf sie nicht verlängern.
+        try:
+            database.log_camera_telemetry(
+                mac,
+                self._int_header("X-Fail-Count"),
+                self._int_header("X-Wifi-Connect-Ms"),
+                int((time.monotonic() - t_start) * 1000),
+            )
+        except Exception as e:
+            # Telemetrie ist Beiwerk — ihr Scheitern darf das Bild nicht kosten.
+            logger.error(f"Kamera-Telemetrie nicht protokolliert: {e}")
 
         if _global_bus:
             _global_bus.publish(CameraImageReceived(mac, wish_name, str(file_path)))
