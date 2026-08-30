@@ -1,3 +1,20 @@
+## v1.21.0 — 2026-08-30
+
+### Neu
+- Diagnose-Paket nennt je Kamera die Upload-Kennzahlen: gemeldete Fehlschläge,
+  WLAN-Aufbau und wie lange die Steuerzentrale den Upload offen hielt
+
+### Behoben
+- Ventil-Ausfall wird binnen Minuten gemeldet statt erst zur nächsten vollen Stunde
+- Foto-Ankündigung im Status prüft die Dunkelheit jetzt nachweislich
+
+### Wartung
+- Aufnahme-Zeitpunkte als Plan-Typ gebündelt — der Dunkelheits-Filter kann beim
+  Programmieren nicht mehr versehentlich weggelassen werden
+- Nebel-Bezeichner im Code auf Englisch (`mist`); Konfiguration und Bot-Texte unverändert
+
+---
+
 ## v1.20.1 — 2026-08-26
 
 ### Behoben
