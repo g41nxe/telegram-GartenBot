@@ -462,3 +462,40 @@ class TestPhotoPlan:
         plan = self._plan(None)
         with pytest.raises(Exception):
             plan.after_offset_minutes = 99
+
+    def test_plan_ignores_later_changes_to_the_source_list(self):
+        """Der Plan hält eine eigene Kopie — sonst wäre die Beständigkeit Fassade.
+
+        Review-Befund: `frozen=True` verbietet nur die Attributzuweisung. Solange der Plan
+        die übergebene Liste selbst hält, ändert eine spätere Mutation von außerhalb sein
+        Verhalten — bei einem Objekt, dessen Docstring Beständigkeit zusagt, die
+        heimtückischste Sorte Fehler.
+        """
+        schedules = [_schedule("10:00", 10)]
+        plan = camera_schedule.PhotoPlan.unfiltered(schedules, [], OFFSET)
+        now = _now(12, 0)
+        vorher = len(plan.targets(now))
+
+        schedules.append(_schedule("11:00", 10))
+
+        assert len(plan.targets(now)) == vorher
+
+    def test_plan_ignores_later_changes_to_photo_times(self):
+        """Dasselbe gilt für die festen Fotozeiten."""
+        photo_times = [_photo_time("08:00")]
+        plan = camera_schedule.PhotoPlan.unfiltered([], photo_times, OFFSET)
+        now = _now(12, 0)
+        vorher = len(plan.targets(now))
+
+        photo_times.append(_photo_time("09:00"))
+
+        assert len(plan.targets(now)) == vorher
+
+    def test_plan_is_hashable(self):
+        """Ein eingefrorener Plan gehört in ein Dict legbar — etwa als Zwischenspeicher.
+
+        Review-Befund: `frozen=True` legt Hashbarkeit nahe, das erzeugte __hash__ lief aber
+        über die Listenfelder und warf TypeError.
+        """
+        plan = camera_schedule.PhotoPlan.unfiltered([_schedule("10:00", 10)], [], OFFSET)
+        assert {plan: "geht"}[plan] == "geht"

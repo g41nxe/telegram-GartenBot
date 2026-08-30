@@ -17,7 +17,7 @@ doppelte Stunde wird als erstes Vorkommen gewertet (``fold=0``).
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Callable
+from typing import Callable
 
 
 def _md_escape(text) -> str:
@@ -157,7 +157,7 @@ def caption_with_delay(
     return f"{caption} · aufgenommen {zeit}"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class PhotoPlan:
     """Welche Aufnahme-Zeitpunkte es gibt — und welche davon zählen.
 
@@ -177,13 +177,28 @@ class PhotoPlan:
     Moment. Derselbe Plan beantwortet Fragen zu beliebigen Zeitpunkten.
     """
 
-    schedules: list
-    photo_times: list
+    schedules: tuple
+    photo_times: tuple
     after_offset_minutes: int
     photo_allowed: Callable[[datetime, dict], bool] | None
 
+    def __post_init__(self):
+        """Kopiert die Eingaben, damit der Plan wirklich fest steht.
+
+        `frozen=True` verbietet nur die Attributzuweisung. Ohne diese Kopie hielte der
+        Plan die Liste des Aufrufers: Wer sie später ergänzt, änderte damit still das
+        Verhalten eines Objekts, dessen Docstring Beständigkeit zusagt (Review-Befund).
+
+        `eq=False` in der Dekoration hängt daran: Die erzeugte `__hash__` einer
+        eingefrorenen Dataclass läuft über alle Felder, und die enthalten Dicts — der
+        Plan wäre trotz `frozen` nicht hashbar. Mit `eq=False` bleibt es bei Identität,
+        womit ein Plan sich zwischenspeichern lässt. Verglichen wird er nirgends.
+        """
+        object.__setattr__(self, "schedules", tuple(self.schedules))
+        object.__setattr__(self, "photo_times", tuple(self.photo_times))
+
     @classmethod
-    def unfiltered(cls, schedules: list, photo_times: list, after_offset_minutes: int) -> "PhotoPlan":
+    def unfiltered(cls, schedules, photo_times, after_offset_minutes: int) -> "PhotoPlan":
         """Ein Plan ohne Dunkelheits-Filter — für Tests und den Fall ohne Koordinaten."""
         return cls(schedules, photo_times, after_offset_minutes, None)
 

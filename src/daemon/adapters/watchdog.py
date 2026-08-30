@@ -265,8 +265,15 @@ def run_watchdog_check():
     # maximal verzögert. Der Ereignis-Pfad (_on_timed_photo_captured) sieht nur erfüllte
     # Zeitpunkte — ausgebliebene bemerkt niemand, wenn nicht hier nachgesehen wird.
     # Zeitpläne und Fotozeiten sind kameraunabhängig — einmal lesen, nicht je Kamera.
-    schedules = database.get_schedules()
-    photo_times = database.get_photo_times()
+    # Das gilt für den daraus gebauten Plan genauso: Ein bei Dunkelheit unterdrückter
+    # Zeitpunkt ist kein Verzug, sondern Absicht — und diese Bewertung fällt für alle
+    # Kameras gleich aus.
+    plan = camera_schedule.PhotoPlan(
+        database.get_schedules(),
+        database.get_photo_times(),
+        config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
+        camera_daylight.build_photo_filter(),
+    )
 
     for camera in database.get_all_cameras():
         mac = camera["mac_address"]
@@ -281,11 +288,6 @@ def run_watchdog_check():
             database.get_metadata(f"watchdog_delay_last_judged_camera_{mac}")
         )
 
-        # Ein bei Dunkelheit unterdrueckter Zeitpunkt ist kein Verzug, sondern Absicht.
-        plan = camera_schedule.PhotoPlan(
-            schedules, photo_times, config.CAMERA_AFTER_GUSS_OFFSET_MINUTES,
-            camera_daylight.build_photo_filter(),
-        )
         verpasst = plan.missed(now, zuletzt)
 
         for target_dt in verpasst:
